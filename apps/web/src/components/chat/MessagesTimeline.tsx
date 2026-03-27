@@ -60,16 +60,21 @@ import { InlineDiffPreview } from "./InlineDiffPreview";
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
-const WORK_ROW_BASE_HEIGHT = 112;
+const WORK_GROUP_OVERHEAD_HEIGHT = 56;
+const WORK_ENTRY_HEIGHT = 30;
 const DIFF_PREVIEW_HEADER_HEIGHT = 32;
 const DIFF_PREVIEW_LINE_HEIGHT = 18;
 const DIFF_PREVIEW_MAX_HEIGHT = 260;
+const DIFF_HUNK_SPACING = 8;
 
 function estimateWorkRowHeight(
   groupedEntries: ReadonlyArray<TimelineWorkEntry>,
   showInlineDiffs: boolean,
 ): number {
-  if (!showInlineDiffs) return WORK_ROW_BASE_HEIGHT;
+  const visibleCount = Math.min(groupedEntries.length, MAX_VISIBLE_WORK_LOG_ENTRIES);
+  const baseHeight = WORK_GROUP_OVERHEAD_HEIGHT + visibleCount * WORK_ENTRY_HEIGHT;
+
+  if (!showInlineDiffs) return baseHeight;
 
   let diffHeight = 0;
   const visibleEntries =
@@ -85,11 +90,11 @@ function estimateWorkRowHeight(
         hunk.lines.length * DIFF_PREVIEW_LINE_HEIGHT,
         DIFF_PREVIEW_MAX_HEIGHT,
       );
-      diffHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + 8;
+      diffHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + DIFF_HUNK_SPACING;
     }
   }
 
-  return WORK_ROW_BASE_HEIGHT + diffHeight;
+  return baseHeight + diffHeight;
 }
 
 interface MessagesTimelineProps {
@@ -613,7 +618,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       className="mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
     >
       {virtualizedRowCount > 0 && (
-        <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+        <div
+          className="relative [contain:layout_style]"
+          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+        >
           {virtualRows.map((virtualRow: VirtualItem) => {
             const row = rows[virtualRow.index];
             if (!row) return null;
@@ -623,7 +631,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 key={`virtual-row:${row.id}`}
                 data-index={virtualRow.index}
                 ref={rowVirtualizer.measureElement}
-                className="absolute left-0 top-0 w-full"
+                className="absolute left-0 top-0 w-full [contain:layout_style_paint] [will-change:transform]"
                 style={{ transform: `translateY(${virtualRow.start}px)` }}
               >
                 {renderRowContent(row)}
