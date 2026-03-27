@@ -55,6 +55,7 @@ import {
   formatInlineTerminalContextLabel,
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
+import { InlineDiffPreview } from "./InlineDiffPreview";
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
@@ -81,6 +82,7 @@ interface MessagesTimelineProps {
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
+  showInlineDiffs: boolean;
   workspaceRoot: string | undefined;
 }
 
@@ -106,6 +108,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   markdownCwd,
   resolvedTheme,
   timestampFormat,
+  showInlineDiffs,
   workspaceRoot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -347,7 +350,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               )}
               <div className="space-y-0.5">
                 {visibleEntries.map((workEntry) => (
-                  <SimpleWorkEntryRow key={`work-row:${workEntry.id}`} workEntry={workEntry} />
+                  <SimpleWorkEntryRow
+                    key={`work-row:${workEntry.id}`}
+                    workEntry={workEntry}
+                    showInlineDiffs={showInlineDiffs}
+                  />
                 ))}
               </div>
             </div>
@@ -859,8 +866,9 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
+  showInlineDiffs: boolean;
 }) {
-  const { workEntry } = props;
+  const { workEntry, showInlineDiffs } = props;
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
@@ -868,6 +876,9 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
+
+  const hasDiffPreviews = (workEntry.diffPreviews?.length ?? 0) > 0;
+  const shouldShowDiffs = showInlineDiffs && hasDiffPreviews;
 
   return (
     <div className="rounded-lg px-1 py-1">
@@ -893,23 +904,32 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           </p>
         </div>
       </div>
-      {hasChangedFiles && !previewIsChangedFiles && (
-        <div className="mt-1 flex flex-wrap gap-1 pl-6">
-          {workEntry.changedFiles?.slice(0, 4).map((filePath) => (
-            <span
-              key={`${workEntry.id}:${filePath}`}
-              className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
-              title={filePath}
-            >
-              {filePath}
-            </span>
+      {shouldShowDiffs ? (
+        <div className="mt-0.5 pl-5">
+          {(workEntry.diffPreviews ?? []).map((hunk) => (
+            <InlineDiffPreview key={`${workEntry.id}:diff:${hunk.filePath}`} hunk={hunk} />
           ))}
-          {(workEntry.changedFiles?.length ?? 0) > 4 && (
-            <span className="px-1 text-[10px] text-muted-foreground/55">
-              +{(workEntry.changedFiles?.length ?? 0) - 4}
-            </span>
-          )}
         </div>
+      ) : (
+        hasChangedFiles &&
+        !previewIsChangedFiles && (
+          <div className="mt-1 flex flex-wrap gap-1 pl-6">
+            {workEntry.changedFiles?.slice(0, 4).map((filePath) => (
+              <span
+                key={`${workEntry.id}:${filePath}`}
+                className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
+                title={filePath}
+              >
+                {filePath}
+              </span>
+            ))}
+            {(workEntry.changedFiles?.length ?? 0) > 4 && (
+              <span className="px-1 text-[10px] text-muted-foreground/55">
+                +{(workEntry.changedFiles?.length ?? 0) - 4}
+              </span>
+            )}
+          </div>
+        )
       )}
     </div>
   );

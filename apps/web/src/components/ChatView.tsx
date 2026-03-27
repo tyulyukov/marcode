@@ -259,6 +259,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
+  const showInlineDiffs = settings.showInlineDiffs;
   const navigate = useNavigate();
   const rawSearch = useSearch({
     strict: false,
@@ -3639,6 +3640,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
+                showInlineDiffs={showInlineDiffs}
                 workspaceRoot={activeProject?.cwd ?? undefined}
               />
             </div>

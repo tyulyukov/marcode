@@ -53,10 +53,10 @@ This project uses Tailwind CSS v4. In v4, `px-*` generates `padding-inline` (a l
 
 ```tsx
 // BAD — sm:px-5 overrides pl-[90px] in Tailwind v4
-className="px-3 sm:px-5 pl-[90px]"
+className = "px-3 sm:px-5 pl-[90px]";
 
 // GOOD — no conflict, each side controlled independently
-className="pr-3 sm:pr-5 pl-[90px]"
+className = "pr-3 sm:pr-5 pl-[90px]";
 ```
 
 The same applies to `py-*` vs `pt-*`/`pb-*`.
