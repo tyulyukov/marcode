@@ -26,12 +26,16 @@ export function buildCommitMessagePrompt(input: CommitMessagePromptInput) {
   const wantsBranch = input.includeBranch;
 
   const prompt = [
-    "You write concise git commit messages.",
+    "You write concise git commit messages following the Conventional Commits specification.",
     wantsBranch
       ? "Return a JSON object with keys: subject, body, branch."
       : "Return a JSON object with keys: subject, body.",
     "Rules:",
-    "- subject must be imperative, <= 72 chars, and no trailing period",
+    "- subject MUST follow the Conventional Commits format: <type>(<optional scope>): <description>",
+    "- allowed types: feat, fix, refactor, perf, test, docs, style, build, ci, chore, revert",
+    "- scope is optional but encouraged — use a noun describing the affected area (e.g. feat(auth):, fix(ws):)",
+    "- description must be lowercase, imperative mood, <= 72 chars total, no trailing period",
+    "- for breaking changes, append ! before the colon (e.g. feat(api)!: remove deprecated endpoint)",
     "- body can be empty string or short bullet points",
     ...(wantsBranch
       ? ["- branch must be a short semantic git branch fragment for this change"]
@@ -81,10 +85,14 @@ export interface PrContentPromptInput {
 
 export function buildPrContentPrompt(input: PrContentPromptInput) {
   const prompt = [
-    "You write GitHub pull request content.",
+    "You write GitHub pull request content following the Conventional Commits specification.",
     "Return a JSON object with keys: title, body.",
     "Rules:",
-    "- title should be concise and specific",
+    "- title MUST follow the Conventional Commits format: <type>(<optional scope>): <description>",
+    "- allowed types: feat, fix, refactor, perf, test, docs, style, build, ci, chore, revert",
+    "- scope is optional but encouraged — use a noun describing the affected area",
+    "- title description must be lowercase, concise, and specific",
+    "- for breaking changes, append ! before the colon (e.g. feat(api)!: remove deprecated endpoint)",
     "- body must be markdown and include headings '## Summary' and '## Testing'",
     "- under Summary, provide short bullet points",
     "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",

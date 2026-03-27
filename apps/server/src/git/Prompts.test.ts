@@ -17,12 +17,13 @@ describe("buildCommitMessagePrompt", () => {
       includeBranch: false,
     });
 
+    expect(result.prompt).toContain("Conventional Commits");
+    expect(result.prompt).toContain("<type>(<optional scope>): <description>");
     expect(result.prompt).toContain("Staged files:");
     expect(result.prompt).toContain("M README.md");
     expect(result.prompt).toContain("Staged patch:");
     expect(result.prompt).toContain("diff --git a/README.md b/README.md");
     expect(result.prompt).toContain("Branch: main");
-    // Should NOT include the branch generation instruction
     expect(result.prompt).not.toContain("branch must be a short semantic git branch fragment");
   });
 
@@ -60,6 +61,8 @@ describe("buildPrContentPrompt", () => {
       diffPatch: "diff --git a/auth.ts b/auth.ts\n+export function login()",
     });
 
+    expect(result.prompt).toContain("Conventional Commits");
+    expect(result.prompt).toContain("<type>(<optional scope>): <description>");
     expect(result.prompt).toContain("Base branch: main");
     expect(result.prompt).toContain("Head branch: feature/auth");
     expect(result.prompt).toContain("Commits:");
