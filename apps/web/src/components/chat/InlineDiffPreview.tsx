@@ -189,6 +189,7 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
   const highlightVersionRef = useRef(0);
 
   useEffect(() => {
+    if (collapsed) return;
     const version = ++highlightVersionRef.current;
     const language = resolveLanguageFromPath(hunk.filePath);
     if (language === "text") return;
@@ -206,28 +207,32 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
     const code = codeFragments.join("\n");
     const themeName = resolveDiffThemeName(resolvedTheme);
 
-    getHighlighterPromise(language)
-      .then((highlighter) => {
-        if (highlightVersionRef.current !== version) return;
-        try {
-          const html = highlighter.codeToHtml(code, { lang: language, theme: themeName });
-          const extracted = extractLineHtmls(html);
-          if (extracted.length === codeFragments.length) {
-            const mapped: (string | null)[] = Array(hunk.lines.length).fill(null) as (
-              | string
-              | null
-            )[];
-            for (let i = 0; i < codeLineIndices.length; i++) {
-              mapped[codeLineIndices[i]!] = extracted[i]!;
+    const timerId = setTimeout(() => {
+      getHighlighterPromise(language)
+        .then((highlighter) => {
+          if (highlightVersionRef.current !== version) return;
+          try {
+            const html = highlighter.codeToHtml(code, { lang: language, theme: themeName });
+            const extracted = extractLineHtmls(html);
+            if (extracted.length === codeFragments.length) {
+              const mapped: (string | null)[] = Array(hunk.lines.length).fill(null) as (
+                | string
+                | null
+              )[];
+              for (let i = 0; i < codeLineIndices.length; i++) {
+                mapped[codeLineIndices[i]!] = extracted[i]!;
+              }
+              setLineHtmls(mapped as string[]);
             }
-            setLineHtmls(mapped as string[]);
+          } catch {
+            // noop
           }
-        } catch {
-          // noop
-        }
-      })
-      .catch(() => {});
-  }, [hunk.filePath, hunk.lines, resolvedTheme]);
+        })
+        .catch(() => {});
+    }, 150);
+
+    return () => clearTimeout(timerId);
+  }, [collapsed, hunk.filePath, hunk.lines, resolvedTheme]);
 
   const CollapseIcon = collapsed ? ChevronRightIcon : ChevronDownIcon;
 
