@@ -45,6 +45,22 @@ Docs:
 
 - Codex App Server docs: https://developers.openai.com/codex/sdk/#app-server
 
+## Tailwind v4 Pitfall: `px-*` vs `pl-*`/`pr-*`
+
+This project uses Tailwind CSS v4. In v4, `px-*` generates `padding-inline` (a logical CSS property) while `pl-*`/`pr-*` generate `padding-left`/`padding-right` (physical properties). Responsive variants (e.g. `sm:px-5`) are placed later in the generated stylesheet than non-responsive physical utilities (e.g. `pl-[90px]`), so the responsive `padding-inline` silently wins the cascade and overrides the physical `padding-left`.
+
+**Rule:** Never layer `pl-*`/`pr-*` on top of `px-*` (or responsive `px-*` variants) on the same element. Instead, split into separate `pl-*` and `pr-*` when you need independent control over one side.
+
+```tsx
+// BAD — sm:px-5 overrides pl-[90px] in Tailwind v4
+className="px-3 sm:px-5 pl-[90px]"
+
+// GOOD — no conflict, each side controlled independently
+className="pr-3 sm:pr-5 pl-[90px]"
+```
+
+The same applies to `py-*` vs `pt-*`/`pb-*`.
+
 ## Reference Repos
 
 - Open-source Codex repo: https://github.com/openai/codex

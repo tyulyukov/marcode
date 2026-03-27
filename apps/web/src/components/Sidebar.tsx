@@ -427,6 +427,7 @@ export default function Sidebar() {
   const dragInProgressRef = useRef(false);
   const suppressProjectClickAfterDragRef = useRef(false);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const [isDesktopFullscreen, setIsDesktopFullscreen] = useState(false);
   const selectedThreadIds = useThreadSelectionStore((s) => s.selectedThreadIds);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
@@ -1511,6 +1512,14 @@ export default function Sidebar() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isElectron) return;
+    const bridge = window.desktopBridge;
+    if (!bridge || typeof bridge.onFullscreenChange !== "function") return;
+
+    return bridge.onFullscreenChange(setIsDesktopFullscreen);
+  }, []);
+
   const showDesktopUpdateButton = isElectron && shouldShowDesktopUpdateButton(desktopUpdateState);
 
   const desktopUpdateTooltip = desktopUpdateState
@@ -1643,7 +1652,9 @@ export default function Sidebar() {
     <>
       {isElectron ? (
         <>
-          <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 px-4 py-0 pl-[90px]">
+          <SidebarHeader
+            className={`drag-region h-[52px] flex-row items-center gap-2 pr-4 py-0 ${isDesktopFullscreen ? "pl-4" : "pl-[90px]"}`}
+          >
             {wordmark}
             {showDesktopUpdateButton && (
               <Tooltip>

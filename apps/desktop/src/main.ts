@@ -57,6 +57,7 @@ const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
 const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 const GET_WS_URL_CHANNEL = "desktop:get-ws-url";
+const FULLSCREEN_STATE_CHANNEL = "desktop:fullscreen-state";
 const BASE_DIR = process.env.MARCODE_HOME?.trim() || Path.join(OS.homedir(), ".marcode");
 const STATE_DIR = Path.join(BASE_DIR, "userdata");
 const DESKTOP_SCHEME = "marcode";
@@ -1308,6 +1309,13 @@ function createWindow(): BrowserWindow {
   window.webContents.on("did-finish-load", () => {
     window.setTitle(APP_DISPLAY_NAME);
     emitUpdateState();
+    window.webContents.send(FULLSCREEN_STATE_CHANNEL, window.isFullScreen());
+  });
+  window.on("enter-full-screen", () => {
+    window.webContents.send(FULLSCREEN_STATE_CHANNEL, true);
+  });
+  window.on("leave-full-screen", () => {
+    window.webContents.send(FULLSCREEN_STATE_CHANNEL, false);
   });
   window.once("ready-to-show", () => {
     window.show();
