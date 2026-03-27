@@ -89,6 +89,7 @@ describe("MessagesTimeline", () => {
         markdownCwd={undefined}
         resolvedTheme="light"
         timestampFormat="locale"
+        showInlineDiffs
         workspaceRoot={undefined}
       />,
     );
@@ -135,6 +136,7 @@ describe("MessagesTimeline", () => {
         markdownCwd={undefined}
         resolvedTheme="light"
         timestampFormat="locale"
+        showInlineDiffs
         workspaceRoot={undefined}
       />,
     );

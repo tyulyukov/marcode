@@ -367,6 +367,9 @@ function SettingsRouteView() {
     ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
       ? ["Diff line wrapping"]
       : []),
+    ...(settings.showInlineDiffs !== DEFAULT_UNIFIED_SETTINGS.showInlineDiffs
+      ? ["Inline diff previews"]
+      : []),
     ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
       ? ["Assistant output"]
       : []),
@@ -707,6 +710,34 @@ function SettingsRouteView() {
                       })
                     }
                     aria-label="Wrap diff lines by default"
+                  />
+                }
+              />
+
+              <SettingsRow
+                title="Inline diff previews"
+                description="Show file change diffs inline in the work log instead of compact file path badges."
+                resetAction={
+                  settings.showInlineDiffs !== DEFAULT_UNIFIED_SETTINGS.showInlineDiffs ? (
+                    <SettingResetButton
+                      label="inline diff previews"
+                      onClick={() =>
+                        updateSettings({
+                          showInlineDiffs: DEFAULT_UNIFIED_SETTINGS.showInlineDiffs,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <Switch
+                    checked={settings.showInlineDiffs}
+                    onCheckedChange={(checked) =>
+                      updateSettings({
+                        showInlineDiffs: Boolean(checked),
+                      })
+                    }
+                    aria-label="Show inline diff previews"
                   />
                 }
               />

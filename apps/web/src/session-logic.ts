@@ -11,6 +11,8 @@ import {
   type TurnId,
 } from "@marcode/contracts";
 
+import { type InlineDiffHunk, extractDiffPreviews, mergeDiffPreviews } from "./lib/inlineDiff";
+
 import type {
   ChatMessage,
   ProposedPlan,
@@ -43,6 +45,7 @@ export interface WorkLogEntry {
   toolTitle?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
+  diffPreviews?: ReadonlyArray<InlineDiffHunk>;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -522,6 +525,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (requestKind) {
     entry.requestKind = requestKind;
   }
+  const diffPreviews = extractDiffPreviews(payload);
+  if (diffPreviews.length > 0) {
+    entry.diffPreviews = diffPreviews;
+  }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);
   if (collapseKey) {
     entry.collapseKey = collapseKey;
@@ -571,6 +578,10 @@ function mergeDerivedWorkLogEntries(
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
+  const mergedDiffPreviews = mergeDiffPreviews(
+    previous.diffPreviews ?? [],
+    next.diffPreviews ?? [],
+  );
   return {
     ...previous,
     ...next,
@@ -581,6 +592,7 @@ function mergeDerivedWorkLogEntries(
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
+    ...(mergedDiffPreviews.length > 0 ? { diffPreviews: mergedDiffPreviews } : {}),
   };
 }
 
