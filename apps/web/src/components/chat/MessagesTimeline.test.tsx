@@ -49,6 +49,7 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         hasMessages
         isWorking={false}
+        isSendBusy={false}
         activeTurnInProgress={false}
         activeTurnStartedAt={null}
         scrollContainer={null}
@@ -103,6 +104,7 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         hasMessages
         isWorking={false}
+        isSendBusy={false}
         activeTurnInProgress={false}
         activeTurnStartedAt={null}
         scrollContainer={null}
