@@ -5,7 +5,7 @@ import { getTimestampFormatOptions } from "./timestampFormat";
 describe("getTimestampFormatOptions", () => {
   it("omits hour12 when locale formatting is requested", () => {
     expect(getTimestampFormatOptions("locale", true)).toEqual({
-      hour: "numeric",
+      hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     });
@@ -13,7 +13,7 @@ describe("getTimestampFormatOptions", () => {
 
   it("builds a 12-hour formatter with seconds when requested", () => {
     expect(getTimestampFormatOptions("12-hour", true)).toEqual({
-      hour: "numeric",
+      hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: true,
@@ -22,7 +22,7 @@ describe("getTimestampFormatOptions", () => {
 
   it("builds a 24-hour formatter without seconds when requested", () => {
     expect(getTimestampFormatOptions("24-hour", false)).toEqual({
-      hour: "numeric",
+      hour: "2-digit",
       minute: "2-digit",
       hour12: false,
     });

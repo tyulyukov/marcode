@@ -5,7 +5,7 @@ export function getTimestampFormatOptions(
   includeSeconds: boolean,
 ): Intl.DateTimeFormatOptions {
   const baseOptions: Intl.DateTimeFormatOptions = {
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
     ...(includeSeconds ? { second: "2-digit" } : {}),
   };

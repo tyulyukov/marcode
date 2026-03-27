@@ -176,6 +176,18 @@ describe("extractDiffPreviews", () => {
     expect(result[0]!.lines.length).toBeLessThanOrEqual(40);
     expect(result[0]!.truncated).toBe(true);
   });
+
+  it("computes stats from full diff before truncation", () => {
+    const bigOld = Array.from({ length: 50 }, (_, i) => `old-${i}`).join("\n");
+    const bigNew = Array.from({ length: 50 }, (_, i) => `new-${i}`).join("\n");
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "Edit",
+        input: { file_path: "big.ts", old_string: bigOld, new_string: bigNew },
+      },
+    });
+    expect(result[0]!.stats).toEqual({ additions: 50, deletions: 50 });
+  });
 });
 
 describe("mergeDiffPreviews", () => {
@@ -184,18 +196,21 @@ describe("mergeDiffPreviews", () => {
     operation: "edit",
     lines: [{ type: "context", content: "a" }],
     truncated: false,
+    stats: { additions: 0, deletions: 0 },
   };
   const hunkB: InlineDiffHunk = {
     filePath: "b.ts",
     operation: "write",
     lines: [{ type: "addition", content: "b" }],
     truncated: false,
+    stats: { additions: 1, deletions: 0 },
   };
   const hunkAUpdated: InlineDiffHunk = {
     filePath: "a.ts",
     operation: "edit",
     lines: [{ type: "addition", content: "updated" }],
     truncated: false,
+    stats: { additions: 1, deletions: 0 },
   };
 
   it("returns b when a is empty", () => {
