@@ -62,6 +62,7 @@ const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 interface MessagesTimelineProps {
   hasMessages: boolean;
   isWorking: boolean;
+  isSendBusy: boolean;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
   scrollContainer: HTMLDivElement | null;
@@ -86,6 +87,7 @@ interface MessagesTimelineProps {
 export const MessagesTimeline = memo(function MessagesTimeline({
   hasMessages,
   isWorking,
+  isSendBusy,
   activeTurnInProgress,
   activeTurnStartedAt,
   scrollContainer,
@@ -543,9 +545,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:400ms]" />
             </span>
             <span>
-              {row.createdAt
-                ? `Working for ${formatWorkingTimer(row.createdAt, nowIso) ?? "0s"}`
-                : "Working..."}
+              {isSendBusy
+                ? "Starting\u2026"
+                : row.createdAt
+                  ? `Working for ${formatWorkingTimer(row.createdAt, nowIso) ?? "0s"}`
+                  : "Working\u2026"}
             </span>
           </div>
         </div>
@@ -720,7 +724,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
         }
 
         return (
-          <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+          <div className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground">
             {inlineNodes}
           </div>
         );
@@ -748,7 +752,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     }
 
     return (
-      <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+      <div className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground">
         {inlineNodes}
       </div>
     );
@@ -759,7 +763,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   }
 
   return (
-    <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+    <pre className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
       {props.text}
     </pre>
   );
