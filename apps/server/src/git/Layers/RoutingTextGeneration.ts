@@ -10,7 +10,12 @@
  * @module RoutingTextGeneration
  */
 import { Effect, Layer, ServiceMap } from "effect";
+import {
+  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
+  type ModelSelection,
+} from "@marcode/contracts";
 
+import type { TextGenerationError } from "../Errors.ts";
 import {
   TextGeneration,
   type TextGenerationProvider,
@@ -35,6 +40,12 @@ class ClaudeTextGen extends ServiceMap.Service<ClaudeTextGen, TextGenerationShap
 // Routing implementation
 // ---------------------------------------------------------------------------
 
+const alternateProvider = (provider: TextGenerationProvider): TextGenerationProvider =>
+  provider === "claudeAgent" ? "codex" : "claudeAgent";
+
+const isProviderNotInstalled = (err: TextGenerationError): boolean =>
+  err.detail.includes("not available on PATH");
+
 const makeRoutingTextGeneration = Effect.gen(function* () {
   const codex = yield* CodexTextGen;
   const claude = yield* ClaudeTextGen;
@@ -42,11 +53,29 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
   const route = (provider?: TextGenerationProvider): TextGenerationShape =>
     provider === "claudeAgent" ? claude : codex;
 
+  const withFallback = <I extends { modelSelection: ModelSelection }, R>(
+    method: (impl: TextGenerationShape) => (input: I) => Effect.Effect<R, TextGenerationError>,
+    input: I,
+  ): Effect.Effect<R, TextGenerationError> => {
+    const primary = input.modelSelection.provider as TextGenerationProvider;
+    return method(route(primary))(input).pipe(
+      Effect.catchIf(isProviderNotInstalled, () => {
+        const alt = alternateProvider(primary);
+        return method(route(alt))({
+          ...input,
+          modelSelection: {
+            provider: alt,
+            model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[alt],
+          } as ModelSelection,
+        });
+      }),
+    );
+  };
+
   return {
-    generateCommitMessage: (input) =>
-      route(input.modelSelection.provider).generateCommitMessage(input),
-    generatePrContent: (input) => route(input.modelSelection.provider).generatePrContent(input),
-    generateBranchName: (input) => route(input.modelSelection.provider).generateBranchName(input),
+    generateCommitMessage: (input) => withFallback((impl) => impl.generateCommitMessage, input),
+    generatePrContent: (input) => withFallback((impl) => impl.generatePrContent, input),
+    generateBranchName: (input) => withFallback((impl) => impl.generateBranchName, input),
   } satisfies TextGenerationShape;
 });
 
