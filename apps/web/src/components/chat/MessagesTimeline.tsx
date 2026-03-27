@@ -60,6 +60,38 @@ import { InlineDiffPreview } from "./InlineDiffPreview";
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
+const WORK_ROW_BASE_HEIGHT = 112;
+const DIFF_PREVIEW_HEADER_HEIGHT = 32;
+const DIFF_PREVIEW_LINE_HEIGHT = 18;
+const DIFF_PREVIEW_MAX_HEIGHT = 260;
+
+function estimateWorkRowHeight(
+  groupedEntries: ReadonlyArray<TimelineWorkEntry>,
+  showInlineDiffs: boolean,
+): number {
+  if (!showInlineDiffs) return WORK_ROW_BASE_HEIGHT;
+
+  let diffHeight = 0;
+  const visibleEntries =
+    groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES
+      ? groupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES)
+      : groupedEntries;
+
+  for (const entry of visibleEntries) {
+    const previews = entry.diffPreviews;
+    if (!previews || previews.length === 0) continue;
+    for (const hunk of previews) {
+      const bodyHeight = Math.min(
+        hunk.lines.length * DIFF_PREVIEW_LINE_HEIGHT,
+        DIFF_PREVIEW_MAX_HEIGHT,
+      );
+      diffHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + 8;
+    }
+  }
+
+  return WORK_ROW_BASE_HEIGHT + diffHeight;
+}
+
 interface MessagesTimelineProps {
   hasMessages: boolean;
   isWorking: boolean;
@@ -255,7 +287,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     estimateSize: (index: number) => {
       const row = rows[index];
       if (!row) return 96;
-      if (row.kind === "work") return 112;
+      if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries, showInlineDiffs);
       if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
       if (row.kind === "working") return 40;
       return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
