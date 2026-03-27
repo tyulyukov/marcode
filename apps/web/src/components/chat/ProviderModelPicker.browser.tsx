@@ -1,11 +1,11 @@
-import { type ProviderKind, type ServerProvider } from "@t3tools/contracts";
+import { type ProviderKind, type ServerProvider } from "@marcode/contracts";
 import { page } from "vitest/browser";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { getCustomModelOptionsByProvider } from "../../modelSelection";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_UNIFIED_SETTINGS } from "@marcode/contracts/settings";
 
 function effort(value: string, isDefault = false) {
   return {
@@ -62,7 +62,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
     models: [
       {
         slug: "claude-opus-4-6",
-        name: "Claude Opus 4.6",
+        name: "Opus 4.6",
         isCustom: false,
         capabilities: {
           reasoningEffortLevels: [
@@ -79,7 +79,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
       },
       {
         slug: "claude-sonnet-4-6",
-        name: "Claude Sonnet 4.6",
+        name: "Sonnet 4.6",
         isCustom: false,
         capabilities: {
           reasoningEffortLevels: [
@@ -96,7 +96,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
       },
       {
         slug: "claude-haiku-4-5",
-        name: "Claude Haiku 4.5",
+        name: "Haiku 4.5",
         isCustom: false,
         capabilities: {
           reasoningEffortLevels: [effort("low"), effort("medium", true), effort("high")],
@@ -168,7 +168,7 @@ describe("ProviderModelPicker", () => {
         const text = document.body.textContent ?? "";
         expect(text).toContain("Codex");
         expect(text).toContain("Claude");
-        expect(text).not.toContain("Claude Sonnet 4.6");
+        expect(text).not.toContain("Sonnet 4.6");
       });
     } finally {
       await mounted.cleanup();
@@ -232,8 +232,8 @@ describe("ProviderModelPicker", () => {
 
       await vi.waitFor(() => {
         const text = document.body.textContent ?? "";
-        expect(text).toContain("Claude Sonnet 4.6");
-        expect(text).toContain("Claude Haiku 4.5");
+        expect(text).toContain("Sonnet 4.6");
+        expect(text).toContain("Haiku 4.5");
         expect(text).not.toContain("Codex");
       });
     } finally {
@@ -250,7 +250,7 @@ describe("ProviderModelPicker", () => {
 
     try {
       await page.getByRole("button").click();
-      await page.getByRole("menuitemradio", { name: "Claude Sonnet 4.6" }).click();
+      await page.getByRole("menuitemradio", { name: "Sonnet 4.6" }).click();
 
       expect(mounted.onProviderModelChange).toHaveBeenCalledWith(
         "claudeAgent",
@@ -288,7 +288,7 @@ describe("ProviderModelPicker", () => {
         const text = document.body.textContent ?? "";
         expect(text).toContain("Claude");
         expect(text).toContain("Disabled");
-        expect(text).not.toContain("Claude Sonnet 4.6");
+        expect(text).not.toContain("Sonnet 4.6");
       });
     } finally {
       await mounted.cleanup();

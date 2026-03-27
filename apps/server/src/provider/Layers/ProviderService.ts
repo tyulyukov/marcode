@@ -21,7 +21,7 @@ import {
   ProviderStopSessionInput,
   type ProviderRuntimeEvent,
   type ProviderSession,
-} from "@t3tools/contracts";
+} from "@marcode/contracts";
 import { Effect, Layer, Option, PubSub, Queue, Schema, SchemaIssue, Stream } from "effect";
 
 import { ProviderValidationError } from "../Errors.ts";
@@ -306,7 +306,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         if (!settings.providers[input.provider].enabled) {
           return yield* toValidationError(
             "ProviderService.startSession",
-            `Provider '${input.provider}' is disabled in T3 Code settings.`,
+            `Provider '${input.provider}' is disabled in MarCode settings.`,
           );
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));

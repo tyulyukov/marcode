@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_BY_PROVIDER, ModelSelection, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_MODEL_BY_PROVIDER, ModelSelection, ThreadId } from "@marcode/contracts";
 import "../../index.css";
 
 import { page } from "vitest/browser";
@@ -48,7 +48,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
       ? [
           {
             slug: "claude-opus-4-6",
-            name: "Claude Opus 4.6",
+            name: "Opus 4.6",
             isCustom: false,
             capabilities: {
               reasoningEffortLevels: [
@@ -66,7 +66,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
           },
           {
             slug: "claude-haiku-4-5",
-            name: "Claude Haiku 4.5",
+            name: "Haiku 4.5",
             isCustom: false,
             capabilities: {
               reasoningEffortLevels: [],
@@ -78,7 +78,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
           },
           {
             slug: "claude-sonnet-4-6",
-            name: "Claude Sonnet 4.6",
+            name: "Sonnet 4.6",
             isCustom: false,
             capabilities: {
               reasoningEffortLevels: [

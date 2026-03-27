@@ -39,13 +39,13 @@ import {
   TurnId,
   type UserInputQuestion,
   ClaudeCodeEffort,
-} from "@t3tools/contracts";
+} from "@marcode/contracts";
 import {
   applyClaudePromptEffortPrefix,
   resolveApiModelId,
   resolveEffort,
   trimOrNull,
-} from "@t3tools/shared/model";
+} from "@marcode/shared/model";
 import {
   Cause,
   DateTime,

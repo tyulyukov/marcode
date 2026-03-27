@@ -6,10 +6,10 @@ import type {
   ServerProviderModel,
   ServerProviderAuthStatus,
   ServerProviderState,
-} from "@t3tools/contracts";
+} from "@marcode/contracts";
 import { Effect, Equal, Layer, Option, Result, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import { resolveContextWindow, resolveEffort } from "@t3tools/shared/model";
+import { resolveContextWindow, resolveEffort } from "@marcode/shared/model";
 
 import {
   buildServerProvider,
@@ -30,7 +30,7 @@ const PROVIDER = "claudeAgent" as const;
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
+    name: "Opus 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
@@ -51,7 +51,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
   {
     slug: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
+    name: "Sonnet 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
@@ -71,7 +71,7 @@ const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
   {
     slug: "claude-haiku-4-5",
-    name: "Claude Haiku 4.5",
+    name: "Haiku 4.5",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [],
@@ -248,7 +248,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
           version: null,
           status: "warning",
           authStatus: "unknown",
-          message: "Claude is disabled in T3 Code settings.",
+          message: "Claude is disabled in MarCode settings.",
         },
       });
     }

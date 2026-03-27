@@ -9,7 +9,7 @@ import {
   ProjectId,
   type ServerProvider,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@marcode/contracts";
 import { page } from "vitest/browser";
 import { useCallback } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,7 @@ import {
   useComposerThreadDraft,
   useEffectiveComposerModelState,
 } from "../../composerDraftStore";
-import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_CLIENT_SETTINGS } from "@marcode/contracts/settings";
 
 // ── Claude TraitsPicker tests ─────────────────────────────────────────
 
@@ -66,7 +66,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
     models: [
       {
         slug: "claude-opus-4-6",
-        name: "Claude Opus 4.6",
+        name: "Opus 4.6",
         isCustom: false,
         capabilities: {
           reasoningEffortLevels: [
@@ -84,7 +84,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
       },
       {
         slug: "claude-sonnet-4-6",
-        name: "Claude Sonnet 4.6",
+        name: "Sonnet 4.6",
         isCustom: false,
         capabilities: {
           reasoningEffortLevels: [
@@ -101,7 +101,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
       },
       {
         slug: "claude-haiku-4-5",
-        name: "Claude Haiku 4.5",
+        name: "Haiku 4.5",
         isCustom: false,
         capabilities: {
           reasoningEffortLevels: [],

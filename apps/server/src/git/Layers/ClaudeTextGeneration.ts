@@ -10,9 +10,9 @@
 import { Effect, Layer, Option, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
-import { ClaudeModelSelection } from "@t3tools/contracts";
-import { resolveApiModelId } from "@t3tools/shared/model";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { ClaudeModelSelection } from "@marcode/contracts";
+import { resolveApiModelId } from "@marcode/shared/model";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@marcode/shared/git";
 
 import { TextGenerationError } from "../Errors.ts";
 import { type TextGenerationShape, TextGeneration } from "../Services/TextGeneration.ts";

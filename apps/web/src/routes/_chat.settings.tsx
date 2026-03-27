@@ -16,8 +16,8 @@ import {
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+} from "@marcode/contracts";
+import { normalizeModelSlug } from "@marcode/shared/model";
 import { useSettings, useUpdateSettings } from "../hooks/useSettings";
 import {
   getCustomModelOptionsByProvider,
@@ -48,7 +48,7 @@ import { serverConfigQueryOptions, serverQueryKeys } from "../lib/serverReactQue
 import { cn } from "../lib/utils";
 import { formatRelativeTime } from "../timestampFormat";
 import { ensureNativeApi, readNativeApi } from "../nativeApi";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { DEFAULT_UNIFIED_SETTINGS } from "@marcode/contracts/settings";
 import { Equal } from "effect";
 
 const THEME_OPTIONS = [
@@ -138,7 +138,7 @@ function getProviderSummary(provider: ServerProvider | undefined): {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ?? "This provider is installed but disabled for new sessions in MarCode.",
     };
   }
   if (!provider.installed) {
@@ -608,7 +608,7 @@ function SettingsRouteView() {
             <SettingsSection title="General">
               <SettingsRow
                 title="Theme"
-                description="Choose how T3 Code looks across the app."
+                description="Choose how MarCode looks across the app."
                 resetAction={
                   theme !== "system" ? (
                     <SettingResetButton label="theme" onClick={() => setTheme("system")} />

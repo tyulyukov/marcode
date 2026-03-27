@@ -1,5 +1,5 @@
-import { type ProviderKind, type ServerProvider } from "@t3tools/contracts";
-import { resolveSelectableModel } from "@t3tools/shared/model";
+import { type ProviderKind, type ServerProvider } from "@marcode/contracts";
+import { resolveSelectableModel } from "@marcode/shared/model";
 import { memo, useState } from "react";
 import type { VariantProps } from "class-variance-authority";
 import { type ProviderPickerKind, PROVIDER_OPTIONS } from "../../session-logic";
@@ -178,7 +178,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                     <OptionIcon
                       aria-hidden="true"
                       className={cn(
-                        "size-4 shrink-0",
+                        "-mx-0.5 size-4 shrink-0",
                         providerIconClassName(option.value, "text-muted-foreground/85"),
                       )}
                     />

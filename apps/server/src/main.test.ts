@@ -1,7 +1,7 @@
 import * as Http from "node:http";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
-import type { OrchestrationReadModel } from "@t3tools/contracts";
+import type { OrchestrationReadModel } from "@marcode/contracts";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -9,9 +9,9 @@ import * as Layer from "effect/Layer";
 import * as Command from "effect/unstable/cli/Command";
 import { FetchHttpClient } from "effect/unstable/http";
 import { beforeEach } from "vitest";
-import { NetService } from "@t3tools/shared/Net";
+import { NetService } from "@marcode/shared/Net";
 
-import { CliConfig, recordStartupHeartbeat, t3Cli, type CliConfigShape } from "./main";
+import { CliConfig, recordStartupHeartbeat, marcodeCli, type CliConfigShape } from "./main";
 import { ServerConfig, type ServerConfigShape } from "./config";
 import { Open, type OpenShape } from "./open";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery";
@@ -35,7 +35,7 @@ const findAvailablePort = vi.fn((preferred: number) => Effect.succeed(preferred)
 // Shared service layer used by this CLI test suite.
 const testLayer = Layer.mergeAll(
   Layer.succeed(CliConfig, {
-    cwd: "/tmp/t3-test-workspace",
+    cwd: "/tmp/marcode-test-workspace",
     fixPath: Effect.void,
     resolveStaticDir: Effect.undefined,
   } satisfies CliConfigShape),
@@ -61,9 +61,9 @@ const testLayer = Layer.mergeAll(
 
 const runCli = (
   args: ReadonlyArray<string>,
-  env: Record<string, string> = { T3CODE_NO_BROWSER: "true" },
+  env: Record<string, string> = { MARCODE_NO_BROWSER: "true" },
 ) => {
-  return Command.runWith(t3Cli, { version: "0.0.0-test" })(args).pipe(
+  return Command.runWith(marcodeCli, { version: "0.0.0-test" })(args).pipe(
     Effect.provide(
       ConfigProvider.layer(
         ConfigProvider.fromEnv({
@@ -95,7 +95,7 @@ it.layer(testLayer)("server CLI command", (it) => {
         "--host",
         "0.0.0.0",
         "--home-dir",
-        "/tmp/t3-cli-home",
+        "/tmp/marcode-cli-home",
         "--dev-url",
         "http://127.0.0.1:5173",
         "--no-browser",
@@ -107,8 +107,8 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.mode, "desktop");
       assert.equal(resolvedConfig?.port, 4010);
       assert.equal(resolvedConfig?.host, "0.0.0.0");
-      assert.equal(resolvedConfig?.baseDir, "/tmp/t3-cli-home");
-      assert.equal(resolvedConfig?.stateDir, "/tmp/t3-cli-home/dev");
+      assert.equal(resolvedConfig?.baseDir, "/tmp/marcode-cli-home");
+      assert.equal(resolvedConfig?.stateDir, "/tmp/marcode-cli-home/dev");
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://127.0.0.1:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "auth-secret");
@@ -130,21 +130,21 @@ it.layer(testLayer)("server CLI command", (it) => {
   it.effect("uses env fallbacks when flags are not provided", () =>
     Effect.gen(function* () {
       yield* runCli([], {
-        T3CODE_MODE: "desktop",
-        T3CODE_PORT: "4999",
-        T3CODE_HOST: "100.88.10.4",
-        T3CODE_HOME: "/tmp/t3-env-home",
+        MARCODE_MODE: "desktop",
+        MARCODE_PORT: "4999",
+        MARCODE_HOST: "100.88.10.4",
+        MARCODE_HOME: "/tmp/marcode-env-home",
         VITE_DEV_SERVER_URL: "http://localhost:5173",
-        T3CODE_NO_BROWSER: "true",
-        T3CODE_AUTH_TOKEN: "env-token",
+        MARCODE_NO_BROWSER: "true",
+        MARCODE_AUTH_TOKEN: "env-token",
       });
 
       assert.equal(start.mock.calls.length, 1);
       assert.equal(resolvedConfig?.mode, "desktop");
       assert.equal(resolvedConfig?.port, 4999);
       assert.equal(resolvedConfig?.host, "100.88.10.4");
-      assert.equal(resolvedConfig?.baseDir, "/tmp/t3-env-home");
-      assert.equal(resolvedConfig?.stateDir, "/tmp/t3-env-home/dev");
+      assert.equal(resolvedConfig?.baseDir, "/tmp/marcode-env-home");
+      assert.equal(resolvedConfig?.stateDir, "/tmp/marcode-env-home/dev");
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://localhost:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "env-token");
@@ -156,7 +156,10 @@ it.layer(testLayer)("server CLI command", (it) => {
 
   const openBootstrapFd = Effect.fn(function* (payload: Record<string, unknown>) {
     const fs = yield* FileSystem.FileSystem;
-    const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+    const filePath = yield* fs.makeTempFileScoped({
+      prefix: "marcode-bootstrap-",
+      suffix: ".ndjson",
+    });
     yield* fs.writeFileString(filePath, `${JSON.stringify(payload)}\n`);
     const { fd } = yield* fs.open(filePath, { flag: "r" });
     return fd;
@@ -167,10 +170,10 @@ it.layer(testLayer)("server CLI command", (it) => {
       const fd = yield* openBootstrapFd({ authToken: "bootstrap-token" });
 
       yield* runCli([], {
-        T3CODE_MODE: "web",
-        T3CODE_BOOTSTRAP_FD: String(fd),
-        T3CODE_AUTH_TOKEN: "env-token",
-        T3CODE_NO_BROWSER: "true",
+        MARCODE_MODE: "web",
+        MARCODE_BOOTSTRAP_FD: String(fd),
+        MARCODE_AUTH_TOKEN: "env-token",
+        MARCODE_NO_BROWSER: "true",
       });
 
       assert.equal(start.mock.calls.length, 1);
@@ -185,7 +188,7 @@ it.layer(testLayer)("server CLI command", (it) => {
         mode: "desktop",
         port: 4888,
         host: "127.0.0.2",
-        t3Home: "/tmp/t3-bootstrap-home",
+        marcodeHome: "/tmp/marcode-bootstrap-home",
         devUrl: "http://127.0.0.1:5173",
         noBrowser: true,
         authToken: "bootstrap-token",
@@ -194,15 +197,15 @@ it.layer(testLayer)("server CLI command", (it) => {
       });
 
       yield* runCli([], {
-        T3CODE_BOOTSTRAP_FD: String(fd),
+        MARCODE_BOOTSTRAP_FD: String(fd),
       });
 
       assert.equal(start.mock.calls.length, 1);
       assert.equal(resolvedConfig?.mode, "desktop");
       assert.equal(resolvedConfig?.port, 4888);
       assert.equal(resolvedConfig?.host, "127.0.0.2");
-      assert.equal(resolvedConfig?.baseDir, "/tmp/t3-bootstrap-home");
-      assert.equal(resolvedConfig?.stateDir, "/tmp/t3-bootstrap-home/dev");
+      assert.equal(resolvedConfig?.baseDir, "/tmp/marcode-bootstrap-home");
+      assert.equal(resolvedConfig?.stateDir, "/tmp/marcode-bootstrap-home/dev");
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://127.0.0.1:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "bootstrap-token");
@@ -217,7 +220,7 @@ it.layer(testLayer)("server CLI command", (it) => {
         mode: "desktop",
         port: 4888,
         host: "127.0.0.2",
-        t3Home: "/tmp/t3-bootstrap-home",
+        marcodeHome: "/tmp/marcode-bootstrap-home",
         devUrl: "http://127.0.0.1:5173",
         noBrowser: false,
         authToken: "bootstrap-token",
@@ -226,19 +229,19 @@ it.layer(testLayer)("server CLI command", (it) => {
       });
 
       yield* runCli(["--port", "4999", "--host", "0.0.0.0", "--auth-token", "cli-token"], {
-        T3CODE_MODE: "web",
-        T3CODE_BOOTSTRAP_FD: String(fd),
-        T3CODE_HOME: "/tmp/t3-env-home",
-        T3CODE_NO_BROWSER: "true",
-        T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
-        T3CODE_LOG_WS_EVENTS: "true",
+        MARCODE_MODE: "web",
+        MARCODE_BOOTSTRAP_FD: String(fd),
+        MARCODE_HOME: "/tmp/marcode-env-home",
+        MARCODE_NO_BROWSER: "true",
+        MARCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
+        MARCODE_LOG_WS_EVENTS: "true",
       });
 
       assert.equal(start.mock.calls.length, 1);
       assert.equal(resolvedConfig?.mode, "web");
       assert.equal(resolvedConfig?.port, 4999);
       assert.equal(resolvedConfig?.host, "0.0.0.0");
-      assert.equal(resolvedConfig?.baseDir, "/tmp/t3-env-home");
+      assert.equal(resolvedConfig?.baseDir, "/tmp/marcode-env-home");
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://127.0.0.1:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "cli-token");
@@ -247,12 +250,12 @@ it.layer(testLayer)("server CLI command", (it) => {
     }),
   );
 
-  it.effect("prefers --mode over T3CODE_MODE", () =>
+  it.effect("prefers --mode over MARCODE_MODE", () =>
     Effect.gen(function* () {
       findAvailablePort.mockImplementation((_preferred: number) => Effect.succeed(4666));
       yield* runCli(["--mode", "web"], {
-        T3CODE_MODE: "desktop",
-        T3CODE_NO_BROWSER: "true",
+        MARCODE_MODE: "desktop",
+        MARCODE_NO_BROWSER: "true",
       });
 
       assert.deepStrictEqual(findAvailablePort.mock.calls, [[3773]]);
@@ -263,10 +266,10 @@ it.layer(testLayer)("server CLI command", (it) => {
     }),
   );
 
-  it.effect("prefers --no-browser over T3CODE_NO_BROWSER", () =>
+  it.effect("prefers --no-browser over MARCODE_NO_BROWSER", () =>
     Effect.gen(function* () {
       yield* runCli(["--no-browser"], {
-        T3CODE_NO_BROWSER: "false",
+        MARCODE_NO_BROWSER: "false",
       });
 
       assert.equal(start.mock.calls.length, 1);
@@ -289,8 +292,8 @@ it.layer(testLayer)("server CLI command", (it) => {
   it.effect("uses fixed localhost defaults in desktop mode", () =>
     Effect.gen(function* () {
       yield* runCli([], {
-        T3CODE_MODE: "desktop",
-        T3CODE_NO_BROWSER: "true",
+        MARCODE_MODE: "desktop",
+        MARCODE_NO_BROWSER: "true",
       });
 
       assert.equal(findAvailablePort.mock.calls.length, 0);
@@ -304,8 +307,8 @@ it.layer(testLayer)("server CLI command", (it) => {
   it.effect("allows overriding desktop host with --host", () =>
     Effect.gen(function* () {
       yield* runCli(["--host", "0.0.0.0"], {
-        T3CODE_MODE: "desktop",
-        T3CODE_NO_BROWSER: "true",
+        MARCODE_MODE: "desktop",
+        MARCODE_NO_BROWSER: "true",
       });
 
       assert.equal(start.mock.calls.length, 1);
@@ -317,10 +320,10 @@ it.layer(testLayer)("server CLI command", (it) => {
   it.effect("supports CLI and env for bootstrap/log websocket toggles", () =>
     Effect.gen(function* () {
       yield* runCli(["--auto-bootstrap-project-from-cwd"], {
-        T3CODE_MODE: "desktop",
-        T3CODE_LOG_WS_EVENTS: "false",
-        T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
-        T3CODE_NO_BROWSER: "true",
+        MARCODE_MODE: "desktop",
+        MARCODE_LOG_WS_EVENTS: "false",
+        MARCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "false",
+        MARCODE_NO_BROWSER: "true",
       });
 
       assert.equal(start.mock.calls.length, 1);

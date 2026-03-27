@@ -17,8 +17,8 @@ import {
   type ProviderTurnStartResult,
   RuntimeMode,
   ProviderInteractionMode,
-} from "@t3tools/contracts";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+} from "@marcode/contracts";
+import { normalizeModelSlug } from "@marcode/shared/model";
 import { Effect, ServiceMap } from "effect";
 
 import {
@@ -405,8 +405,8 @@ export function normalizeCodexModelSlug(
 export function buildCodexInitializeParams() {
   return {
     clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
+      name: "marcode_desktop",
+      title: "MarCode Desktop",
       version: "0.1.0",
     },
     capabilities: {

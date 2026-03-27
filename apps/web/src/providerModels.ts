@@ -6,8 +6,8 @@ import {
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
-import { normalizeModelSlug, resolveContextWindow, resolveEffort } from "@t3tools/shared/model";
+} from "@marcode/contracts";
+import { normalizeModelSlug, resolveContextWindow, resolveEffort } from "@marcode/shared/model";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = {
   reasoningEffortLevels: [],

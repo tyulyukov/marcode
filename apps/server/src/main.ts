@@ -8,7 +8,7 @@
  */
 import { Config, Data, Effect, FileSystem, Layer, Option, Path, Schema, ServiceMap } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
-import { NetService } from "@t3tools/shared/Net";
+import { NetService } from "@marcode/shared/Net";
 import {
   DEFAULT_PORT,
   deriveServerPaths,
@@ -41,7 +41,7 @@ const BootstrapEnvelopeSchema = Schema.Struct({
   mode: Schema.optional(Schema.String),
   port: Schema.optional(PortSchema),
   host: Schema.optional(Schema.String),
-  t3Home: Schema.optional(Schema.String),
+  marcodeHome: Schema.optional(Schema.String),
   devUrl: Schema.optional(Schema.URLFromString),
   noBrowser: Schema.optional(Schema.Boolean),
   authToken: Schema.optional(Schema.String),
@@ -53,7 +53,7 @@ interface CliInput {
   readonly mode: Option.Option<RuntimeMode>;
   readonly port: Option.Option<number>;
   readonly host: Option.Option<string>;
-  readonly t3Home: Option.Option<string>;
+  readonly marcodeHome: Option.Option<string>;
   readonly devUrl: Option.Option<URL>;
   readonly noBrowser: Option.Option<boolean>;
   readonly authToken: Option.Option<string>;
@@ -86,7 +86,7 @@ export interface CliConfigShape {
  * CliConfig - Service tag for startup CLI/runtime helpers.
  */
 export class CliConfig extends ServiceMap.Service<CliConfig, CliConfigShape>()(
-  "t3/main/CliConfig",
+  "marcode/main/CliConfig",
 ) {
   static readonly layer = Layer.effect(
     CliConfig,
@@ -106,32 +106,32 @@ export class CliConfig extends ServiceMap.Service<CliConfig, CliConfigShape>()(
 }
 
 const CliEnvConfig = Config.all({
-  mode: Config.string("T3CODE_MODE").pipe(
+  mode: Config.string("MARCODE_MODE").pipe(
     Config.option,
     Config.map(Option.map((value) => (value === "desktop" ? "desktop" : "web"))),
     Config.map(Option.getOrUndefined),
   ),
-  port: Config.port("T3CODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
-  host: Config.string("T3CODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
-  t3Home: Config.string("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  port: Config.port("MARCODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  host: Config.string("MARCODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  marcodeHome: Config.string("MARCODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
   devUrl: Config.url("VITE_DEV_SERVER_URL").pipe(Config.option, Config.map(Option.getOrUndefined)),
-  noBrowser: Config.boolean("T3CODE_NO_BROWSER").pipe(
+  noBrowser: Config.boolean("MARCODE_NO_BROWSER").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  authToken: Config.string("T3CODE_AUTH_TOKEN").pipe(
+  authToken: Config.string("MARCODE_AUTH_TOKEN").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  bootstrapFd: Config.int("T3CODE_BOOTSTRAP_FD").pipe(
+  bootstrapFd: Config.int("MARCODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  autoBootstrapProjectFromCwd: Config.boolean("T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD").pipe(
+  autoBootstrapProjectFromCwd: Config.boolean("MARCODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  logWebSocketEvents: Config.boolean("T3CODE_LOG_WS_EVENTS").pipe(
+  logWebSocketEvents: Config.boolean("MARCODE_LOG_WS_EVENTS").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
@@ -209,10 +209,10 @@ const ServerConfigLive = (input: CliInput) =>
       const baseDir = yield* resolveBaseDir(
         Option.getOrUndefined(
           resolveOptionPrecedence(
-            input.t3Home,
-            Option.fromUndefinedOr(env.t3Home),
+            input.marcodeHome,
+            Option.fromUndefinedOr(env.marcodeHome),
             Option.flatMap(bootstrapEnvelope, (bootstrap) =>
-              Option.fromUndefinedOr(bootstrap.t3Home),
+              Option.fromUndefinedOr(bootstrap.marcodeHome),
             ),
           ),
         ),
@@ -358,7 +358,7 @@ const makeServerRuntimeProgram = (input: CliInput) =>
         ? `http://${formatHostForUrl(config.host)}:${config.port}`
         : localUrl;
     const { authToken, devUrl, ...safeConfig } = config;
-    yield* Effect.logInfo("T3 Code running", {
+    yield* Effect.logInfo("MarCode running", {
       ...safeConfig,
       devUrl: devUrl?.toString(),
       authEnabled: Boolean(authToken),
@@ -402,8 +402,8 @@ const hostFlag = Flag.string("host").pipe(
   Flag.withDescription("Host/interface to bind (for example 127.0.0.1, 0.0.0.0, or a Tailnet IP)."),
   Flag.optional,
 );
-const t3HomeFlag = Flag.string("home-dir").pipe(
-  Flag.withDescription("Base directory for all T3 Code data (equivalent to T3CODE_HOME)."),
+const marcodeHomeFlag = Flag.string("home-dir").pipe(
+  Flag.withDescription("Base directory for all MarCode data (equivalent to MARCODE_HOME)."),
   Flag.optional,
 );
 const devUrlFlag = Flag.string("dev-url").pipe(
@@ -433,17 +433,17 @@ const autoBootstrapProjectFromCwdFlag = Flag.boolean("auto-bootstrap-project-fro
 );
 const logWebSocketEventsFlag = Flag.boolean("log-websocket-events").pipe(
   Flag.withDescription(
-    "Emit server-side logs for outbound WebSocket push traffic (equivalent to T3CODE_LOG_WS_EVENTS).",
+    "Emit server-side logs for outbound WebSocket push traffic (equivalent to MARCODE_LOG_WS_EVENTS).",
   ),
   Flag.withAlias("log-ws-events"),
   Flag.optional,
 );
 
-export const t3Cli = Command.make("t3", {
+export const marcodeCli = Command.make("marcode", {
   mode: modeFlag,
   port: portFlag,
   host: hostFlag,
-  t3Home: t3HomeFlag,
+  marcodeHome: marcodeHomeFlag,
   devUrl: devUrlFlag,
   noBrowser: noBrowserFlag,
   authToken: authTokenFlag,
@@ -451,6 +451,6 @@ export const t3Cli = Command.make("t3", {
   autoBootstrapProjectFromCwd: autoBootstrapProjectFromCwdFlag,
   logWebSocketEvents: logWebSocketEventsFlag,
 }).pipe(
-  Command.withDescription("Run the T3 Code server."),
+  Command.withDescription("Run the MarCode server."),
   Command.withHandler((input) => Effect.scoped(makeServerProgram(input))),
 );

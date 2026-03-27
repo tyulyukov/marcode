@@ -3,9 +3,9 @@ import type {
   ServerProviderAuthStatus,
   ServerProviderModel,
   ServerProviderState,
-} from "@t3tools/contracts";
+} from "@marcode/contracts";
 import { Effect, Stream } from "effect";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+import { normalizeModelSlug } from "@marcode/shared/model";
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
 

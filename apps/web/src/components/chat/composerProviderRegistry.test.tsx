@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ServerProviderModel } from "@t3tools/contracts";
+import type { ServerProviderModel } from "@marcode/contracts";
 import { getComposerProviderState } from "./composerProviderRegistry";
 
 const CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
@@ -25,7 +25,7 @@ const CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
 const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
+    name: "Opus 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
@@ -42,7 +42,7 @@ const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
   {
     slug: "claude-sonnet-4-6",
-    name: "Claude Sonnet 4.6",
+    name: "Sonnet 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
@@ -59,7 +59,7 @@ const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
   {
     slug: "claude-haiku-4-5",
-    name: "Claude Haiku 4.5",
+    name: "Haiku 4.5",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [],
