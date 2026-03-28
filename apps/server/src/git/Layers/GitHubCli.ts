@@ -1,23 +1,33 @@
+import { randomUUID } from "node:crypto";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { Effect, Layer, Schema } from "effect";
 import { PositiveInt, TrimmedNonEmptyString } from "@marcode/contracts";
 
 import { runProcess } from "../../processRunner";
-import { GitHubCliError } from "../Errors.ts";
+import { GitHostCliError } from "../Errors.ts";
 import {
   GitHubCli,
   type GitHubRepositoryCloneUrls,
   type GitHubCliShape,
   type GitHubPullRequestSummary,
 } from "../Services/GitHubCli.ts";
+import type {
+  GitHostCliShape,
+  HostPullRequestSummary,
+  HostRepositoryCloneUrls,
+} from "../Services/GitHostCli.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown): GitHubCliError {
+function normalizeGitHubCliError(operation: string, error: unknown): GitHostCliError {
   if (error instanceof Error) {
     if (error.message.includes("Command not found: gh")) {
-      return new GitHubCliError({
+      return new GitHostCliError({
         operation,
         detail: "GitHub CLI (`gh`) is required but not available on PATH.",
+        provider: "github",
         cause: error,
       });
     }
@@ -29,9 +39,10 @@ function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown
       lower.includes("gh auth login") ||
       lower.includes("no oauth token")
     ) {
-      return new GitHubCliError({
+      return new GitHostCliError({
         operation,
         detail: "GitHub CLI is not authenticated. Run `gh auth login` and retry.",
+        provider: "github",
         cause: error,
       });
     }
@@ -42,23 +53,26 @@ function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown
       lower.includes("no pull requests found for branch") ||
       lower.includes("pull request not found")
     ) {
-      return new GitHubCliError({
+      return new GitHostCliError({
         operation,
         detail: "Pull request not found. Check the PR number or URL and try again.",
+        provider: "github",
         cause: error,
       });
     }
 
-    return new GitHubCliError({
+    return new GitHostCliError({
       operation,
       detail: `GitHub CLI command failed: ${error.message}`,
+      provider: "github",
       cause: error,
     });
   }
 
-  return new GitHubCliError({
+  return new GitHostCliError({
     operation,
     detail: "GitHub CLI command failed.",
+    provider: "github",
     cause: error,
   });
 }
@@ -86,6 +100,7 @@ const RawGitHubPullRequestSchema = Schema.Struct({
   headRefName: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
   isCrossRepository: Schema.optional(Schema.Boolean),
   headRepository: Schema.optional(
     Schema.NullOr(
@@ -111,7 +126,7 @@ const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
 
 function normalizePullRequestSummary(
   raw: Schema.Schema.Type<typeof RawGitHubPullRequestSchema>,
-): GitHubPullRequestSummary {
+): HostPullRequestSummary {
   const headRepositoryNameWithOwner = raw.headRepository?.nameWithOwner ?? null;
   const headRepositoryOwnerLogin =
     raw.headRepositoryOwner?.login ??
@@ -125,6 +140,7 @@ function normalizePullRequestSummary(
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
     state: normalizePullRequestState(raw),
+    updatedAt: raw.updatedAt ?? null,
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),
@@ -135,7 +151,7 @@ function normalizePullRequestSummary(
 
 function normalizeRepositoryCloneUrls(
   raw: Schema.Schema.Type<typeof RawGitHubRepositoryCloneUrlsSchema>,
-): GitHubRepositoryCloneUrls {
+): HostRepositoryCloneUrls {
   return {
     nameWithOwner: raw.nameWithOwner,
     url: raw.url,
@@ -146,72 +162,118 @@ function normalizeRepositoryCloneUrls(
 function decodeGitHubJson<S extends Schema.Top>(
   raw: string,
   schema: S,
-  operation: "listOpenPullRequests" | "getPullRequest" | "getRepositoryCloneUrls",
+  operation: string,
   invalidDetail: string,
-): Effect.Effect<S["Type"], GitHubCliError, S["DecodingServices"]> {
+): Effect.Effect<S["Type"], GitHostCliError, S["DecodingServices"]> {
   return Schema.decodeEffect(Schema.fromJsonString(schema))(raw).pipe(
     Effect.mapError(
       (error) =>
-        new GitHubCliError({
+        new GitHostCliError({
           operation,
           detail: error instanceof Error ? `${invalidDetail}: ${error.message}` : invalidDetail,
+          provider: "github",
           cause: error,
         }),
     ),
   );
 }
 
+const tempDir = process.env.TMPDIR ?? process.env.TEMP ?? process.env.TMP ?? "/tmp";
+
+function writeTempBodyFile(body: string): string {
+  const filePath = join(tempDir, `marcode-pr-body-${process.pid}-${randomUUID()}.md`);
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(filePath, body, "utf-8");
+  return filePath;
+}
+
+function removeTempBodyFile(filePath: string): void {
+  try {
+    rmSync(filePath, { force: true });
+  } catch {
+    // best-effort cleanup
+  }
+}
+
+const executeGh = (input: {
+  readonly cwd: string;
+  readonly args: ReadonlyArray<string>;
+  readonly timeoutMs?: number;
+}) =>
+  Effect.tryPromise({
+    try: () =>
+      runProcess("gh", input.args, {
+        cwd: input.cwd,
+        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      }),
+    catch: (error) => normalizeGitHubCliError("execute", error),
+  });
+
+function listPullRequestsViaGh(
+  run: (input: {
+    readonly cwd: string;
+    readonly args: ReadonlyArray<string>;
+  }) => Effect.Effect<{ stdout: string }, GitHostCliError>,
+): GitHostCliShape["listPullRequests"] {
+  return (input) => {
+    const jsonFields =
+      input.state === "all"
+        ? "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt"
+        : "number,title,url,baseRefName,headRefName";
+    return run({
+      cwd: input.cwd,
+      args: [
+        "pr",
+        "list",
+        "--head",
+        input.headSelector,
+        "--state",
+        input.state === "all" ? "all" : "open",
+        "--limit",
+        String(input.limit ?? 1),
+        "--json",
+        jsonFields,
+      ],
+    }).pipe(
+      Effect.map((result) => result.stdout.trim()),
+      Effect.flatMap((raw) =>
+        raw.length === 0
+          ? Effect.succeed([])
+          : decodeGitHubJson(
+              raw,
+              Schema.Array(RawGitHubPullRequestSchema),
+              "listPullRequests",
+              "GitHub CLI returned invalid PR list JSON.",
+            ),
+      ),
+      Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
+    );
+  };
+}
+
 const makeGitHubCli = Effect.sync(() => {
-  const execute: GitHubCliShape["execute"] = (input) =>
-    Effect.tryPromise({
-      try: () =>
-        runProcess("gh", input.args, {
-          cwd: input.cwd,
-          timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        }),
-      catch: (error) => normalizeGitHubCliError("execute", error),
-    });
+  const execute: GitHubCliShape["execute"] = (input) => executeGh(input);
+
+  const listPullRequests = listPullRequestsViaGh(executeGh);
 
   const service = {
     execute,
     listOpenPullRequests: (input) =>
-      execute({
+      listPullRequests({
         cwd: input.cwd,
-        args: [
-          "pr",
-          "list",
-          "--head",
-          input.headSelector,
-          "--state",
-          "open",
-          "--limit",
-          String(input.limit ?? 1),
-          "--json",
-          "number,title,url,baseRefName,headRefName",
-        ],
-      }).pipe(
-        Effect.map((result) => result.stdout.trim()),
-        Effect.flatMap((raw) =>
-          raw.length === 0
-            ? Effect.succeed([])
-            : decodeGitHubJson(
-                raw,
-                Schema.Array(RawGitHubPullRequestSchema),
-                "listOpenPullRequests",
-                "GitHub CLI returned invalid PR list JSON.",
-              ),
-        ),
-        Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
-      ),
+        headSelector: input.headSelector,
+        state: "open",
+        ...(input.limit !== undefined ? { limit: input.limit } : {}),
+      }),
     getPullRequest: (input) =>
-      execute({
+      executeGh({
         cwd: input.cwd,
         args: [
           "pr",
           "view",
           input.reference,
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -226,7 +288,7 @@ const makeGitHubCli = Effect.sync(() => {
         Effect.map(normalizePullRequestSummary),
       ),
     getRepositoryCloneUrls: (input) =>
-      execute({
+      executeGh({
         cwd: input.cwd,
         args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
       }).pipe(
@@ -242,7 +304,7 @@ const makeGitHubCli = Effect.sync(() => {
         Effect.map(normalizeRepositoryCloneUrls),
       ),
     createPullRequest: (input) =>
-      execute({
+      executeGh({
         cwd: input.cwd,
         args: [
           "pr",
@@ -258,7 +320,7 @@ const makeGitHubCli = Effect.sync(() => {
         ],
       }).pipe(Effect.asVoid),
     getDefaultBranch: (input) =>
-      execute({
+      executeGh({
         cwd: input.cwd,
         args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
       }).pipe(
@@ -268,7 +330,7 @@ const makeGitHubCli = Effect.sync(() => {
         }),
       ),
     checkoutPullRequest: (input) =>
-      execute({
+      executeGh({
         cwd: input.cwd,
         args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
       }).pipe(Effect.asVoid),
@@ -278,3 +340,29 @@ const makeGitHubCli = Effect.sync(() => {
 });
 
 export const GitHubCliLive = Layer.effect(GitHubCli, makeGitHubCli);
+
+export function toGitHostCliShape(github: GitHubCliShape): GitHostCliShape {
+  return {
+    provider: "github" as const,
+    listPullRequests: listPullRequestsViaGh((input) => github.execute(input)),
+    getPullRequest: (input) => github.getPullRequest(input),
+    getRepositoryCloneUrls: (input) => github.getRepositoryCloneUrls(input),
+    createPullRequest: (input) => {
+      const bodyFile = writeTempBodyFile(input.body);
+      return github
+        .createPullRequest({
+          cwd: input.cwd,
+          baseBranch: input.baseBranch,
+          headSelector: input.headSelector,
+          title: input.title,
+          bodyFile,
+        })
+        .pipe(Effect.ensuring(Effect.sync(() => removeTempBodyFile(bodyFile))));
+    },
+    getDefaultBranch: (input) => github.getDefaultBranch(input),
+    checkoutPullRequest: (input) => github.checkoutPullRequest(input),
+    pullRequestRefspecPrefix: () => "refs/pull",
+  };
+}
+
+export type { GitHubPullRequestSummary, GitHubRepositoryCloneUrls };

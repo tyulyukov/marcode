@@ -1,0 +1,1697 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index f5bff47..98e1a9e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -45,6 +45,19 @@ Docs:
+ 
+ - Codex App Server docs: https://developers.openai.com/codex/sdk/#app-server
+ 
++## Git Host Provider Abstraction (GitHub + GitLab)
++
++MarCode supports both GitHub and GitLab (including self-hosted instances) for PR/MR operations. The integration is provider-agnostic:
++
++- `GitHostCli` (service contract in `apps/server/src/git/Services/GitHostCli.ts`) defines the abstract interface.
++- `GitHubCli` layer wraps `gh` CLI, `GitLabCli` layer wraps `glab` CLI.
++- `RoutingGitHostCli` auto-detects the provider from `remote.origin.url` hostname, with fallback to `git config marcode.gitHostProvider github|gitlab` and CLI auth probing.
++- `GitManager` depends only on `GitHostCli` — never on a specific provider.
++- The web UI dynamically shows "PR" or "MR" labels based on `gitHostProvider` from `GitStatusResult`.
++- Fork-based MR workflows for GitLab are deferred (graceful error).
++
++When adding new git-host-specific functionality, implement it in both `GitHubCli.ts` and `GitLabCli.ts` layers behind the `GitHostCliShape` interface.
++
+ ## Tailwind v4 Pitfall: `px-*` vs `pl-*`/`pr-*`
+ 
+ This project uses Tailwind CSS v4. In v4, `px-*` generates `padding-inline` (a logical CSS property) while `pl-*`/`pr-*` generate `padding-left`/`padding-right` (physical properties). Responsive variants (e.g. `sm:px-5`) are placed later in the generated stylesheet than non-responsive physical utilities (e.g. `pl-[90px]`), so the responsive `padding-inline` silently wins the cascade and overrides the physical `padding-left`.
+diff --git a/apps/server/src/git/Errors.ts b/apps/server/src/git/Errors.ts
+index 15bf482..0e458fa 100644
+--- a/apps/server/src/git/Errors.ts
++++ b/apps/server/src/git/Errors.ts
+@@ -16,18 +16,26 @@ export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()(
+ }
+ 
+ /**
+- * GitHubCliError - GitHub CLI execution or authentication failed.
++ * GitHostCliError - Git host CLI execution or authentication failed.
++ *
++ * Covers both GitHub (`gh`) and GitLab (`glab`) CLI errors.
+  */
+-export class GitHubCliError extends Schema.TaggedErrorClass<GitHubCliError>()("GitHubCliError", {
++export class GitHostCliError extends Schema.TaggedErrorClass<GitHostCliError>()("GitHostCliError", {
+   operation: Schema.String,
+   detail: Schema.String,
++  provider: Schema.optional(Schema.String),
+   cause: Schema.optional(Schema.Defect),
+ }) {
+   override get message(): string {
+-    return `GitHub CLI failed in ${this.operation}: ${this.detail}`;
++    return `Git host CLI failed in ${this.operation}: ${this.detail}`;
+   }
+ }
+ 
++/** @deprecated Use `GitHostCliError` instead. */
++export type GitHubCliError = GitHostCliError;
++/** @deprecated Use `GitHostCliError` instead. */
++export const GitHubCliError = GitHostCliError;
++
+ /**
+  * TextGenerationError - Commit or PR text generation failed.
+  */
+@@ -63,5 +71,5 @@ export class GitManagerError extends Schema.TaggedErrorClass<GitManagerError>()(
+ export type GitManagerServiceError =
+   | GitManagerError
+   | GitCommandError
+-  | GitHubCliError
++  | GitHostCliError
+   | TextGenerationError;
+diff --git a/apps/server/src/git/Layers/GitCore.ts b/apps/server/src/git/Layers/GitCore.ts
+index 8d4817e..dae27dd 100644
+--- a/apps/server/src/git/Layers/GitCore.ts
++++ b/apps/server/src/git/Layers/GitCore.ts
+@@ -1600,6 +1600,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
+     const fetchPullRequestBranch: GitCoreShape["fetchPullRequestBranch"] = (input) =>
+       Effect.gen(function* () {
+         const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
++        const prefix = input.refspecPrefix ?? "refs/pull";
+         yield* executeGit(
+           "GitCore.fetchPullRequestBranch",
+           input.cwd,
+@@ -1608,7 +1609,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
+             "--quiet",
+             "--no-tags",
+             remoteName,
+-            `+refs/pull/${input.prNumber}/head:refs/heads/${input.branch}`,
++            `+${prefix}/${input.prNumber}/head:refs/heads/${input.branch}`,
+           ],
+           {
+             fallbackErrorMessage: "git fetch pull request branch failed",
+diff --git a/apps/server/src/git/Layers/GitHubCli.test.ts b/apps/server/src/git/Layers/GitHubCli.test.ts
+index aafc796..0135225 100644
+--- a/apps/server/src/git/Layers/GitHubCli.test.ts
++++ b/apps/server/src/git/Layers/GitHubCli.test.ts
+@@ -58,6 +58,7 @@ layer("GitHubCliLive", (it) => {
+         baseRefName: "main",
+         headRefName: "feature/pr-threads",
+         state: "open",
++        updatedAt: null,
+         isCrossRepository: true,
+         headRepositoryNameWithOwner: "octocat/codething-mvp",
+         headRepositoryOwnerLogin: "octocat",
+@@ -69,7 +70,7 @@ layer("GitHubCliLive", (it) => {
+           "view",
+           "#42",
+           "--json",
+-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
++          "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+         ],
+         expect.objectContaining({ cwd: "/repo" }),
+       );
+diff --git a/apps/server/src/git/Layers/GitHubCli.ts b/apps/server/src/git/Layers/GitHubCli.ts
+index b22cddd..1a39601 100644
+--- a/apps/server/src/git/Layers/GitHubCli.ts
++++ b/apps/server/src/git/Layers/GitHubCli.ts
+@@ -1,23 +1,33 @@
++import { randomUUID } from "node:crypto";
++import { mkdirSync, rmSync, writeFileSync } from "node:fs";
++import { join } from "node:path";
++
+ import { Effect, Layer, Schema } from "effect";
+ import { PositiveInt, TrimmedNonEmptyString } from "@marcode/contracts";
+ 
+ import { runProcess } from "../../processRunner";
+-import { GitHubCliError } from "../Errors.ts";
++import { GitHostCliError } from "../Errors.ts";
+ import {
+   GitHubCli,
+   type GitHubRepositoryCloneUrls,
+   type GitHubCliShape,
+   type GitHubPullRequestSummary,
+ } from "../Services/GitHubCli.ts";
++import type {
++  GitHostCliShape,
++  HostPullRequestSummary,
++  HostRepositoryCloneUrls,
++} from "../Services/GitHostCli.ts";
+ 
+ const DEFAULT_TIMEOUT_MS = 30_000;
+ 
+-function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown): GitHubCliError {
++function normalizeGitHubCliError(operation: string, error: unknown): GitHostCliError {
+   if (error instanceof Error) {
+     if (error.message.includes("Command not found: gh")) {
+-      return new GitHubCliError({
++      return new GitHostCliError({
+         operation,
+         detail: "GitHub CLI (`gh`) is required but not available on PATH.",
++        provider: "github",
+         cause: error,
+       });
+     }
+@@ -29,9 +39,10 @@ function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown
+       lower.includes("gh auth login") ||
+       lower.includes("no oauth token")
+     ) {
+-      return new GitHubCliError({
++      return new GitHostCliError({
+         operation,
+         detail: "GitHub CLI is not authenticated. Run `gh auth login` and retry.",
++        provider: "github",
+         cause: error,
+       });
+     }
+@@ -42,23 +53,26 @@ function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown
+       lower.includes("no pull requests found for branch") ||
+       lower.includes("pull request not found")
+     ) {
+-      return new GitHubCliError({
++      return new GitHostCliError({
+         operation,
+         detail: "Pull request not found. Check the PR number or URL and try again.",
++        provider: "github",
+         cause: error,
+       });
+     }
+ 
+-    return new GitHubCliError({
++    return new GitHostCliError({
+       operation,
+       detail: `GitHub CLI command failed: ${error.message}`,
++      provider: "github",
+       cause: error,
+     });
+   }
+ 
+-  return new GitHubCliError({
++  return new GitHostCliError({
+     operation,
+     detail: "GitHub CLI command failed.",
++    provider: "github",
+     cause: error,
+   });
+ }
+@@ -86,6 +100,7 @@ const RawGitHubPullRequestSchema = Schema.Struct({
+   headRefName: TrimmedNonEmptyString,
+   state: Schema.optional(Schema.NullOr(Schema.String)),
+   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
++  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
+   isCrossRepository: Schema.optional(Schema.Boolean),
+   headRepository: Schema.optional(
+     Schema.NullOr(
+@@ -111,7 +126,7 @@ const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
+ 
+ function normalizePullRequestSummary(
+   raw: Schema.Schema.Type<typeof RawGitHubPullRequestSchema>,
+-): GitHubPullRequestSummary {
++): HostPullRequestSummary {
+   const headRepositoryNameWithOwner = raw.headRepository?.nameWithOwner ?? null;
+   const headRepositoryOwnerLogin =
+     raw.headRepositoryOwner?.login ??
+@@ -125,6 +140,7 @@ function normalizePullRequestSummary(
+     baseRefName: raw.baseRefName,
+     headRefName: raw.headRefName,
+     state: normalizePullRequestState(raw),
++    updatedAt: raw.updatedAt ?? null,
+     ...(typeof raw.isCrossRepository === "boolean"
+       ? { isCrossRepository: raw.isCrossRepository }
+       : {}),
+@@ -135,7 +151,7 @@ function normalizePullRequestSummary(
+ 
+ function normalizeRepositoryCloneUrls(
+   raw: Schema.Schema.Type<typeof RawGitHubRepositoryCloneUrlsSchema>,
+-): GitHubRepositoryCloneUrls {
++): HostRepositoryCloneUrls {
+   return {
+     nameWithOwner: raw.nameWithOwner,
+     url: raw.url,
+@@ -146,72 +162,109 @@ function normalizeRepositoryCloneUrls(
+ function decodeGitHubJson<S extends Schema.Top>(
+   raw: string,
+   schema: S,
+-  operation: "listOpenPullRequests" | "getPullRequest" | "getRepositoryCloneUrls",
++  operation: string,
+   invalidDetail: string,
+-): Effect.Effect<S["Type"], GitHubCliError, S["DecodingServices"]> {
++): Effect.Effect<S["Type"], GitHostCliError, S["DecodingServices"]> {
+   return Schema.decodeEffect(Schema.fromJsonString(schema))(raw).pipe(
+     Effect.mapError(
+       (error) =>
+-        new GitHubCliError({
++        new GitHostCliError({
+           operation,
+           detail: error instanceof Error ? `${invalidDetail}: ${error.message}` : invalidDetail,
++          provider: "github",
+           cause: error,
+         }),
+     ),
+   );
+ }
+ 
++const tempDir = process.env.TMPDIR ?? process.env.TEMP ?? process.env.TMP ?? "/tmp";
++
++function writeTempBodyFile(body: string): string {
++  const filePath = join(tempDir, `marcode-pr-body-${process.pid}-${randomUUID()}.md`);
++  mkdirSync(tempDir, { recursive: true });
++  writeFileSync(filePath, body, "utf-8");
++  return filePath;
++}
++
++function removeTempBodyFile(filePath: string): void {
++  try {
++    rmSync(filePath, { force: true });
++  } catch {
++    // best-effort cleanup
++  }
++}
++
++const executeGh = (input: {
++  readonly cwd: string;
++  readonly args: ReadonlyArray<string>;
++  readonly timeoutMs?: number;
++}) =>
++  Effect.tryPromise({
++    try: () =>
++      runProcess("gh", input.args, {
++        cwd: input.cwd,
++        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
++      }),
++    catch: (error) => normalizeGitHubCliError("execute", error),
++  });
++
+ const makeGitHubCli = Effect.sync(() => {
+-  const execute: GitHubCliShape["execute"] = (input) =>
+-    Effect.tryPromise({
+-      try: () =>
+-        runProcess("gh", input.args, {
+-          cwd: input.cwd,
+-          timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+-        }),
+-      catch: (error) => normalizeGitHubCliError("execute", error),
+-    });
++  const execute: GitHubCliShape["execute"] = (input) => executeGh(input);
++
++  const listPullRequests: GitHostCliShape["listPullRequests"] = (input) => {
++    const jsonFields =
++      input.state === "all"
++        ? "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt"
++        : "number,title,url,baseRefName,headRefName";
++    return executeGh({
++      cwd: input.cwd,
++      args: [
++        "pr",
++        "list",
++        "--head",
++        input.headSelector,
++        "--state",
++        input.state === "all" ? "all" : "open",
++        "--limit",
++        String(input.limit ?? 1),
++        "--json",
++        jsonFields,
++      ],
++    }).pipe(
++      Effect.map((result) => result.stdout.trim()),
++      Effect.flatMap((raw) =>
++        raw.length === 0
++          ? Effect.succeed([])
++          : decodeGitHubJson(
++              raw,
++              Schema.Array(RawGitHubPullRequestSchema),
++              "listPullRequests",
++              "GitHub CLI returned invalid PR list JSON.",
++            ),
++      ),
++      Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
++    );
++  };
+ 
+   const service = {
+     execute,
+     listOpenPullRequests: (input) =>
+-      execute({
++      listPullRequests({
+         cwd: input.cwd,
+-        args: [
+-          "pr",
+-          "list",
+-          "--head",
+-          input.headSelector,
+-          "--state",
+-          "open",
+-          "--limit",
+-          String(input.limit ?? 1),
+-          "--json",
+-          "number,title,url,baseRefName,headRefName",
+-        ],
+-      }).pipe(
+-        Effect.map((result) => result.stdout.trim()),
+-        Effect.flatMap((raw) =>
+-          raw.length === 0
+-            ? Effect.succeed([])
+-            : decodeGitHubJson(
+-                raw,
+-                Schema.Array(RawGitHubPullRequestSchema),
+-                "listOpenPullRequests",
+-                "GitHub CLI returned invalid PR list JSON.",
+-              ),
+-        ),
+-        Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
+-      ),
++        headSelector: input.headSelector,
++        state: "open",
++        ...(input.limit !== undefined ? { limit: input.limit } : {}),
++      }),
+     getPullRequest: (input) =>
+-      execute({
++      executeGh({
+         cwd: input.cwd,
+         args: [
+           "pr",
+           "view",
+           input.reference,
+           "--json",
+-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
++          "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+         ],
+       }).pipe(
+         Effect.map((result) => result.stdout.trim()),
+@@ -226,7 +279,7 @@ const makeGitHubCli = Effect.sync(() => {
+         Effect.map(normalizePullRequestSummary),
+       ),
+     getRepositoryCloneUrls: (input) =>
+-      execute({
++      executeGh({
+         cwd: input.cwd,
+         args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
+       }).pipe(
+@@ -242,7 +295,7 @@ const makeGitHubCli = Effect.sync(() => {
+         Effect.map(normalizeRepositoryCloneUrls),
+       ),
+     createPullRequest: (input) =>
+-      execute({
++      executeGh({
+         cwd: input.cwd,
+         args: [
+           "pr",
+@@ -258,7 +311,7 @@ const makeGitHubCli = Effect.sync(() => {
+         ],
+       }).pipe(Effect.asVoid),
+     getDefaultBranch: (input) =>
+-      execute({
++      executeGh({
+         cwd: input.cwd,
+         args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+       }).pipe(
+@@ -268,7 +321,7 @@ const makeGitHubCli = Effect.sync(() => {
+         }),
+       ),
+     checkoutPullRequest: (input) =>
+-      execute({
++      executeGh({
+         cwd: input.cwd,
+         args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
+       }).pipe(Effect.asVoid),
+@@ -278,3 +331,64 @@ const makeGitHubCli = Effect.sync(() => {
+ });
+ 
+ export const GitHubCliLive = Layer.effect(GitHubCli, makeGitHubCli);
++
++export function toGitHostCliShape(github: GitHubCliShape): GitHostCliShape {
++  return {
++    provider: "github" as const,
++    listPullRequests: (input) => {
++      const jsonFields =
++        input.state === "all"
++          ? "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt"
++          : "number,title,url,baseRefName,headRefName";
++      return github
++        .execute({
++          cwd: input.cwd,
++          args: [
++            "pr",
++            "list",
++            "--head",
++            input.headSelector,
++            "--state",
++            input.state === "all" ? "all" : "open",
++            "--limit",
++            String(input.limit ?? 1),
++            "--json",
++            jsonFields,
++          ],
++        })
++        .pipe(
++          Effect.map((result) => result.stdout.trim()),
++          Effect.flatMap((raw) =>
++            raw.length === 0
++              ? Effect.succeed([])
++              : decodeGitHubJson(
++                  raw,
++                  Schema.Array(RawGitHubPullRequestSchema),
++                  "listPullRequests",
++                  "GitHub CLI returned invalid PR list JSON.",
++                ),
++          ),
++          Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
++        );
++    },
++    getPullRequest: (input) => github.getPullRequest(input),
++    getRepositoryCloneUrls: (input) => github.getRepositoryCloneUrls(input),
++    createPullRequest: (input) => {
++      const bodyFile = writeTempBodyFile(input.body);
++      return github
++        .createPullRequest({
++          cwd: input.cwd,
++          baseBranch: input.baseBranch,
++          headSelector: input.headSelector,
++          title: input.title,
++          bodyFile,
++        })
++        .pipe(Effect.ensuring(Effect.sync(() => removeTempBodyFile(bodyFile))));
++    },
++    getDefaultBranch: (input) => github.getDefaultBranch(input),
++    checkoutPullRequest: (input) => github.checkoutPullRequest(input),
++    pullRequestRefspecPrefix: () => "refs/pull",
++  };
++}
++
++export type { GitHubPullRequestSummary, GitHubRepositoryCloneUrls };
+diff --git a/apps/server/src/git/Layers/GitManager.test.ts b/apps/server/src/git/Layers/GitManager.test.ts
+index d379cc2..29c386d 100644
+--- a/apps/server/src/git/Layers/GitManager.test.ts
++++ b/apps/server/src/git/Layers/GitManager.test.ts
+@@ -8,13 +8,13 @@ import { Effect, FileSystem, Layer, PlatformError, Scope } from "effect";
+ import { expect } from "vitest";
+ import type { GitActionProgressEvent } from "@marcode/contracts";
+ 
+-import { GitCommandError, GitHubCliError, TextGenerationError } from "../Errors.ts";
++import { GitCommandError, GitHostCliError, TextGenerationError } from "../Errors.ts";
+ import { type GitManagerShape } from "../Services/GitManager.ts";
+ import {
+-  type GitHubCliShape,
+-  type GitHubPullRequestSummary,
+-  GitHubCli,
+-} from "../Services/GitHubCli.ts";
++  type GitHostCliShape,
++  type HostPullRequestSummary,
++  GitHostCli,
++} from "../Services/GitHostCli.ts";
+ import { type TextGenerationShape, TextGeneration } from "../Services/TextGeneration.ts";
+ import { GitCoreLive } from "./GitCore.ts";
+ import { GitCore } from "../Services/GitCore.ts";
+@@ -39,7 +39,7 @@ interface FakeGhScenario {
+     headRepositoryOwnerLogin?: string | null;
+   };
+   repositoryCloneUrls?: Record<string, { url: string; sshUrl: string }>;
+-  failWith?: GitHubCliError;
++  failWith?: GitHostCliError;
+ }
+ 
+ interface FakeGitTextGeneration {
+@@ -77,18 +77,18 @@ function runGitSyncForFakeGh(cwd: string, args: readonly string[]): void {
+   if (result.status === 0) {
+     return;
+   }
+-  throw new GitHubCliError({
++  throw new GitHostCliError({
+     operation: "execute",
+     detail: `Failed to simulate gh checkout with git ${args.join(" ")}: ${result.stderr?.trim() || "unknown error"}`,
+   });
+ }
+ 
+-function isGitHubCliError(error: unknown): error is GitHubCliError {
++function isGitHostCliError(error: unknown): error is GitHostCliError {
+   return (
+     typeof error === "object" &&
+     error !== null &&
+     "_tag" in error &&
+-    (error as { _tag?: unknown })._tag === "GitHubCliError"
++    (error as { _tag?: unknown })._tag === "GitHostCliError"
+   );
+ }
+ 
+@@ -208,14 +208,26 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
+   };
+ }
+ 
+-function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+-  service: GitHubCliShape;
++function createGitHostCliWithFakeGh(scenario: FakeGhScenario = {}): {
++  service: GitHostCliShape;
+   ghCalls: string[];
+ } {
+   const prListQueue = [...(scenario.prListSequence ?? [])];
+   const ghCalls: string[] = [];
+ 
+-  const execute: GitHubCliShape["execute"] = (input) => {
++  type FakeExecuteInput = {
++    readonly cwd: string;
++    readonly args: ReadonlyArray<string>;
++    readonly timeoutMs?: number;
++  };
++  type FakeExecuteResult = {
++    stdout: string;
++    stderr: string;
++    code: number;
++    signal: null;
++    timedOut: boolean;
++  };
++  const execute = (input: FakeExecuteInput): Effect.Effect<FakeExecuteResult, GitHostCliError> => {
+     const args = [...input.args];
+     ghCalls.push(args.join(" "));
+ 
+@@ -317,9 +329,9 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+           };
+         },
+         catch: (error) =>
+-          isGitHubCliError(error)
++          isGitHostCliError(error)
+             ? error
+-            : new GitHubCliError({
++            : new GitHostCliError({
+                 operation: "execute",
+                 detail:
+                   error instanceof Error
+@@ -335,7 +347,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+         const cloneUrls = scenario.repositoryCloneUrls?.[repository];
+         if (!cloneUrls) {
+           return Effect.fail(
+-            new GitHubCliError({
++            new GitHostCliError({
+               operation: "execute",
+               detail: `Unexpected repository lookup: ${repository}`,
+             }),
+@@ -364,7 +376,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+     }
+ 
+     return Effect.fail(
+-      new GitHubCliError({
++      new GitHostCliError({
+         operation: "execute",
+         detail: `Unexpected gh command: ${args.join(" ")}`,
+       }),
+@@ -373,8 +385,8 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+ 
+   return {
+     service: {
+-      execute,
+-      listOpenPullRequests: (input) =>
++      provider: "github" as const,
++      listPullRequests: (input) =>
+         execute({
+           cwd: input.cwd,
+           args: [
+@@ -383,16 +395,30 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+             "--head",
+             input.headSelector,
+             "--state",
+-            "open",
++            input.state === "all" ? "all" : "open",
+             "--limit",
+             String(input.limit ?? 1),
+             "--json",
+             "number,title,url,baseRefName,headRefName",
+           ],
+         }).pipe(
+-          Effect.map(
+-            (result) => JSON.parse(result.stdout) as ReadonlyArray<GitHubPullRequestSummary>,
+-          ),
++          Effect.map((result) => {
++            const raw = JSON.parse(result.stdout) as ReadonlyArray<Record<string, unknown>>;
++            return raw.map((entry) => {
++              const state = typeof entry.state === "string" ? entry.state : undefined;
++              const mergedAt = typeof entry.mergedAt === "string" ? entry.mergedAt : undefined;
++              let normalized: "open" | "closed" | "merged" = "open";
++              if ((mergedAt && mergedAt.trim().length > 0) || state === "MERGED") {
++                normalized = "merged";
++              } else if (state === "CLOSED") {
++                normalized = "closed";
++              }
++              return Object.assign({}, entry, {
++                state: normalized,
++                updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : null,
++              }) as unknown as HostPullRequestSummary;
++            });
++          }),
+         ),
+       createPullRequest: (input) =>
+         execute({
+@@ -406,8 +432,8 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+             input.headSelector,
+             "--title",
+             input.title,
+-            "--body-file",
+-            input.bodyFile,
++            "--body",
++            input.body,
+           ],
+         }).pipe(Effect.asVoid),
+       getDefaultBranch: (input) =>
+@@ -430,7 +456,24 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+             "--json",
+             "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+           ],
+-        }).pipe(Effect.map((result) => JSON.parse(result.stdout) as GitHubPullRequestSummary)),
++        }).pipe(
++          Effect.map((result) => {
++            const entry = JSON.parse(result.stdout) as Record<string, unknown>;
++            const state = typeof entry.state === "string" ? entry.state : undefined;
++            const mergedAt = typeof entry.mergedAt === "string" ? entry.mergedAt : undefined;
++            let normalized: "open" | "closed" | "merged" = "open";
++            if ((mergedAt && mergedAt.trim().length > 0) || state === "MERGED") {
++              normalized = "merged";
++            } else if (state === "CLOSED") {
++              normalized = "closed";
++            }
++            return {
++              ...entry,
++              state: normalized,
++              updatedAt: null,
++            } as HostPullRequestSummary;
++          }),
++        ),
+       getRepositoryCloneUrls: (input) =>
+         execute({
+           cwd: input.cwd,
+@@ -441,6 +484,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
+           cwd: input.cwd,
+           args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
+         }).pipe(Effect.asVoid),
++      pullRequestRefspecPrefix: () => "refs/pull",
+     },
+     ghCalls,
+   };
+@@ -482,7 +526,7 @@ function makeManager(input?: {
+   ghScenario?: FakeGhScenario;
+   textGeneration?: Partial<FakeGitTextGeneration>;
+ }) {
+-  const { service: gitHubCli, ghCalls } = createGitHubCliWithFakeGh(input?.ghScenario);
++  const { service: gitHostCli, ghCalls } = createGitHostCliWithFakeGh(input?.ghScenario);
+   const textGeneration = createTextGeneration(input?.textGeneration);
+   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
+     prefix: "marcode-git-manager-test-",
+@@ -496,7 +540,7 @@ function makeManager(input?: {
+   );
+ 
+   const managerLayer = Layer.mergeAll(
+-    Layer.succeed(GitHubCli, gitHubCli),
++    Layer.succeed(GitHostCli, gitHostCli),
+     Layer.succeed(TextGeneration, textGeneration),
+     gitCoreLayer,
+     serverSettingsLayer,
+@@ -604,7 +648,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
+           state: "open",
+         });
+         expect(ghCalls).toContain(
+-          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt",
++          "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName",
+         );
+       }),
+     12_000,
+@@ -706,7 +750,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
+ 
+       const { manager } = yield* makeManager({
+         ghScenario: {
+-          failWith: new GitHubCliError({
++          failWith: new GitHostCliError({
+             operation: "execute",
+             detail: "GitHub CLI (`gh`) is required but not available on PATH.",
+           }),
+@@ -1374,7 +1418,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
+ 
+       const { manager } = yield* makeManager({
+         ghScenario: {
+-          failWith: new GitHubCliError({
++          failWith: new GitHostCliError({
+             operation: "execute",
+             detail: "GitHub CLI (`gh`) is required but not available on PATH.",
+           }),
+@@ -1403,7 +1447,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
+ 
+       const { manager } = yield* makeManager({
+         ghScenario: {
+-          failWith: new GitHubCliError({
++          failWith: new GitHostCliError({
+             operation: "execute",
+             detail: "GitHub CLI is not authenticated. Run `gh auth login` and retry.",
+           }),
+diff --git a/apps/server/src/git/Layers/GitManager.ts b/apps/server/src/git/Layers/GitManager.ts
+index 12fc125..f511218 100644
+--- a/apps/server/src/git/Layers/GitManager.ts
++++ b/apps/server/src/git/Layers/GitManager.ts
+@@ -1,8 +1,9 @@
+ import { randomUUID } from "node:crypto";
+ import { realpathSync } from "node:fs";
+ 
+-import { Effect, FileSystem, Layer, Path } from "effect";
++import { Effect, Layer } from "effect";
+ import { GitActionProgressEvent, GitActionProgressPhase, ModelSelection } from "@marcode/contracts";
++import type { GitHostProvider } from "@marcode/contracts";
+ import {
+   resolveAutoFeatureBranchName,
+   sanitizeBranchFragment,
+@@ -17,7 +18,7 @@ import {
+   type GitRunStackedActionOptions,
+ } from "../Services/GitManager.ts";
+ import { GitCore } from "../Services/GitCore.ts";
+-import { GitHubCli } from "../Services/GitHubCli.ts";
++import { GitHostCli } from "../Services/GitHostCli.ts";
+ import { TextGeneration } from "../Services/TextGeneration.ts";
+ import { ServerSettingsService } from "../../serverSettings.ts";
+ 
+@@ -67,9 +68,13 @@ interface BranchHeadContext {
+ 
+ function parseRepositoryNameFromPullRequestUrl(url: string): string | null {
+   const trimmed = url.trim();
+-  const match = /^https:\/\/github\.com\/[^/]+\/([^/]+)\/pull\/\d+(?:\/.*)?$/i.exec(trimmed);
+-  const repositoryName = match?.[1]?.trim() ?? "";
+-  return repositoryName.length > 0 ? repositoryName : null;
++  const ghMatch = /^https:\/\/[^/]+\/[^/]+\/([^/]+)\/pull\/\d+(?:\/.*)?$/i.exec(trimmed);
++  if (ghMatch?.[1]?.trim()) return ghMatch[1].trim();
++  const glMatch = /^https:\/\/[^/]+\/[^/]+\/([^/]+)\/-\/merge_requests\/\d+(?:\/.*)?$/i.exec(
++    trimmed,
++  );
++  if (glMatch?.[1]?.trim()) return glMatch[1].trim();
++  return null;
+ }
+ 
+ function resolveHeadRepositoryNameWithOwner(
+@@ -105,14 +110,14 @@ function resolvePullRequestWorktreeLocalBranchName(
+   return `marcode/pr-${pullRequest.number}/${suffix}`;
+ }
+ 
+-function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
++function parseRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
+   const trimmed = url?.trim() ?? "";
+   if (trimmed.length === 0) {
+     return null;
+   }
+ 
+   const match =
+-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i.exec(
++    /^(?:git@[^:]+:|ssh:\/\/git@[^/]+\/|https:\/\/[^/]+\/|git:\/\/[^/]+\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/i.exec(
+       trimmed,
+     );
+   const repositoryNameWithOwner = match?.[1]?.trim() ?? "";
+@@ -129,57 +134,6 @@ function parseRepositoryOwnerLogin(nameWithOwner: string | null): string | null
+   return normalizedOwnerLogin.length > 0 ? normalizedOwnerLogin : null;
+ }
+ 
+-function parsePullRequestList(raw: unknown): PullRequestInfo[] {
+-  if (!Array.isArray(raw)) return [];
+-
+-  const parsed: PullRequestInfo[] = [];
+-  for (const entry of raw) {
+-    if (!entry || typeof entry !== "object") continue;
+-    const record = entry as Record<string, unknown>;
+-    const number = record.number;
+-    const title = record.title;
+-    const url = record.url;
+-    const baseRefName = record.baseRefName;
+-    const headRefName = record.headRefName;
+-    const state = record.state;
+-    const mergedAt = record.mergedAt;
+-    const updatedAt = record.updatedAt;
+-    if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) {
+-      continue;
+-    }
+-    if (
+-      typeof title !== "string" ||
+-      typeof url !== "string" ||
+-      typeof baseRefName !== "string" ||
+-      typeof headRefName !== "string"
+-    ) {
+-      continue;
+-    }
+-
+-    let normalizedState: "open" | "closed" | "merged";
+-    if ((typeof mergedAt === "string" && mergedAt.trim().length > 0) || state === "MERGED") {
+-      normalizedState = "merged";
+-    } else if (state === "OPEN" || state === undefined || state === null) {
+-      normalizedState = "open";
+-    } else if (state === "CLOSED") {
+-      normalizedState = "closed";
+-    } else {
+-      continue;
+-    }
+-
+-    parsed.push({
+-      number,
+-      title,
+-      url,
+-      baseRefName,
+-      headRefName,
+-      state: normalizedState,
+-      updatedAt: typeof updatedAt === "string" && updatedAt.trim().length > 0 ? updatedAt : null,
+-    });
+-  }
+-  return parsed;
+-}
+-
+ function gitManagerError(operation: string, detail: string, cause?: unknown): GitManagerError {
+   return new GitManagerError({
+     operation,
+@@ -357,7 +311,7 @@ function toPullRequestHeadRemoteInfo(pr: {
+ 
+ export const makeGitManager = Effect.gen(function* () {
+   const gitCore = yield* GitCore;
+-  const gitHubCli = yield* GitHubCli;
++  const gitHostCli = yield* GitHostCli;
+   const textGeneration = yield* TextGeneration;
+   const serverSettingsService = yield* ServerSettingsService;
+ 
+@@ -395,7 +349,7 @@ export const makeGitManager = Effect.gen(function* () {
+         return;
+       }
+ 
+-      const cloneUrls = yield* gitHubCli.getRepositoryCloneUrls({
++      const cloneUrls = yield* gitHostCli.getRepositoryCloneUrls({
+         cwd,
+         repository: repositoryNameWithOwner,
+       });
+@@ -425,6 +379,18 @@ export const makeGitManager = Effect.gen(function* () {
+       ),
+     );
+ 
++  const resolveRefspecPrefix = (cwd: string) => {
++    const routing = gitHostCli as typeof gitHostCli & {
++      pullRequestRefspecPrefixForCwd?: (cwd: string) => Effect.Effect<string, GitManagerError>;
++    };
++    if (typeof routing.pullRequestRefspecPrefixForCwd === "function") {
++      return routing
++        .pullRequestRefspecPrefixForCwd(cwd)
++        .pipe(Effect.catch(() => Effect.succeed(gitHostCli.pullRequestRefspecPrefix())));
++    }
++    return Effect.succeed(gitHostCli.pullRequestRefspecPrefix());
++  };
++
+   const materializePullRequestHeadBranch = (
+     cwd: string,
+     pullRequest: ResolvedPullRequest & PullRequestHeadRemoteInfo,
+@@ -434,15 +400,17 @@ export const makeGitManager = Effect.gen(function* () {
+       const repositoryNameWithOwner = resolveHeadRepositoryNameWithOwner(pullRequest) ?? "";
+ 
+       if (repositoryNameWithOwner.length === 0) {
++        const refspecPrefix = yield* resolveRefspecPrefix(cwd);
+         yield* gitCore.fetchPullRequestBranch({
+           cwd,
+           prNumber: pullRequest.number,
+           branch: localBranch,
++          refspecPrefix,
+         });
+         return;
+       }
+ 
+-      const cloneUrls = yield* gitHubCli.getRepositoryCloneUrls({
++      const cloneUrls = yield* gitHostCli.getRepositoryCloneUrls({
+         cwd,
+         repository: repositoryNameWithOwner,
+       });
+@@ -472,17 +440,17 @@ export const makeGitManager = Effect.gen(function* () {
+       });
+     }).pipe(
+       Effect.catch(() =>
+-        gitCore.fetchPullRequestBranch({
+-          cwd,
+-          prNumber: pullRequest.number,
+-          branch: localBranch,
++        Effect.gen(function* () {
++          const refspecPrefix = yield* resolveRefspecPrefix(cwd);
++          yield* gitCore.fetchPullRequestBranch({
++            cwd,
++            prNumber: pullRequest.number,
++            branch: localBranch,
++            refspecPrefix,
++          });
+         }),
+       ),
+     );
+-  const fileSystem = yield* FileSystem.FileSystem;
+-  const path = yield* Path.Path;
+-
+-  const tempDir = process.env.TMPDIR ?? process.env.TEMP ?? process.env.TMP ?? "/tmp";
+ 
+   const readConfigValueNullable = (cwd: string, key: string) =>
+     gitCore.readConfigValue(cwd, key).pipe(Effect.catch(() => Effect.succeed(null)));
+@@ -497,7 +465,7 @@ export const makeGitManager = Effect.gen(function* () {
+       }
+ 
+       const remoteUrl = yield* readConfigValueNullable(cwd, `remote.${remoteName}.url`);
+-      const repositoryNameWithOwner = parseGitHubRepositoryNameWithOwnerFromRemoteUrl(remoteUrl);
++      const repositoryNameWithOwner = parseRepositoryNameWithOwnerFromRemoteUrl(remoteUrl);
+       return {
+         repositoryNameWithOwner,
+         ownerLogin: parseRepositoryOwnerLogin(repositoryNameWithOwner),
+@@ -576,9 +544,10 @@ export const makeGitManager = Effect.gen(function* () {
+   const findOpenPr = (cwd: string, headSelectors: ReadonlyArray<string>) =>
+     Effect.gen(function* () {
+       for (const headSelector of headSelectors) {
+-        const pullRequests = yield* gitHubCli.listOpenPullRequests({
++        const pullRequests = yield* gitHostCli.listPullRequests({
+           cwd,
+           headSelector,
++          state: "open",
+           limit: 1,
+         });
+ 
+@@ -591,7 +560,7 @@ export const makeGitManager = Effect.gen(function* () {
+             baseRefName: firstPullRequest.baseRefName,
+             headRefName: firstPullRequest.headRefName,
+             state: "open",
+-            updatedAt: null,
++            updatedAt: firstPullRequest.updatedAt ?? null,
+           } satisfies PullRequestInfo;
+         }
+       }
+@@ -605,37 +574,24 @@ export const makeGitManager = Effect.gen(function* () {
+       const parsedByNumber = new Map<number, PullRequestInfo>();
+ 
+       for (const headSelector of headContext.headSelectors) {
+-        const stdout = yield* gitHubCli
+-          .execute({
+-            cwd,
+-            args: [
+-              "pr",
+-              "list",
+-              "--head",
+-              headSelector,
+-              "--state",
+-              "all",
+-              "--limit",
+-              "20",
+-              "--json",
+-              "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt",
+-            ],
+-          })
+-          .pipe(Effect.map((result) => result.stdout));
+-
+-        const raw = stdout.trim();
+-        if (raw.length === 0) {
+-          continue;
+-        }
+-
+-        const parsedJson = yield* Effect.try({
+-          try: () => JSON.parse(raw) as unknown,
+-          catch: (cause) =>
+-            gitManagerError("findLatestPr", "GitHub CLI returned invalid PR list JSON.", cause),
++        const pullRequests = yield* gitHostCli.listPullRequests({
++          cwd,
++          headSelector,
++          state: "all",
++          limit: 20,
+         });
+ 
+-        for (const pr of parsePullRequestList(parsedJson)) {
+-          parsedByNumber.set(pr.number, pr);
++        for (const pr of pullRequests) {
++          const normalizedState: "open" | "closed" | "merged" = pr.state ?? "open";
++          parsedByNumber.set(pr.number, {
++            number: pr.number,
++            title: pr.title,
++            url: pr.url,
++            baseRefName: pr.baseRefName,
++            headRefName: pr.headRefName,
++            state: normalizedState,
++            updatedAt: pr.updatedAt ?? null,
++          });
+         }
+       }
+ 
+@@ -669,11 +625,11 @@ export const makeGitManager = Effect.gen(function* () {
+         }
+       }
+ 
+-      const defaultFromGh = yield* gitHubCli
++      const defaultBranch = yield* gitHostCli
+         .getDefaultBranch({ cwd })
+         .pipe(Effect.catch(() => Effect.succeed(null)));
+-      if (defaultFromGh) {
+-        return defaultFromGh;
++      if (defaultBranch) {
++        return defaultBranch;
+       }
+ 
+       return "main";
+@@ -886,23 +842,13 @@ export const makeGitManager = Effect.gen(function* () {
+         modelSelection,
+       });
+ 
+-      const bodyFile = path.join(tempDir, `marcode-pr-body-${process.pid}-${randomUUID()}.md`);
+-      yield* fileSystem
+-        .writeFileString(bodyFile, generated.body)
+-        .pipe(
+-          Effect.mapError((cause) =>
+-            gitManagerError("runPrStep", "Failed to write pull request body temp file.", cause),
+-          ),
+-        );
+-      yield* gitHubCli
+-        .createPullRequest({
+-          cwd,
+-          baseBranch,
+-          headSelector: headContext.preferredHeadSelector,
+-          title: generated.title,
+-          bodyFile,
+-        })
+-        .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.catch(() => Effect.void))));
++      yield* gitHostCli.createPullRequest({
++        cwd,
++        baseBranch,
++        headSelector: headContext.preferredHeadSelector,
++        title: generated.title,
++        body: generated.body,
++      });
+ 
+       const created = yield* findOpenPr(cwd, headContext.headSelectors);
+       if (!created) {
+@@ -924,19 +870,36 @@ export const makeGitManager = Effect.gen(function* () {
+       };
+     });
+ 
++  const resolveDetectedProvider = (cwd: string): Effect.Effect<GitHostProvider | undefined> => {
++    const routing = gitHostCli as typeof gitHostCli & {
++      detectedProvider?: (cwd: string) => Effect.Effect<GitHostProvider, GitManagerError>;
++    };
++    if (typeof routing.detectedProvider === "function") {
++      return routing
++        .detectedProvider(cwd)
++        .pipe(Effect.catch(() => Effect.succeed(undefined as GitHostProvider | undefined)));
++    }
++    return Effect.succeed(gitHostCli.provider as GitHostProvider | undefined);
++  };
++
+   const status: GitManagerShape["status"] = Effect.fnUntraced(function* (input) {
+     const details = yield* gitCore.statusDetails(input.cwd);
+ 
+-    const pr =
+-      details.branch !== null
+-        ? yield* findLatestPr(input.cwd, {
+-            branch: details.branch,
+-            upstreamRef: details.upstreamRef,
+-          }).pipe(
+-            Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
+-            Effect.catch(() => Effect.succeed(null)),
+-          )
+-        : null;
++    const [pr, gitHostProvider] = yield* Effect.all(
++      [
++        details.branch !== null
++          ? findLatestPr(input.cwd, {
++              branch: details.branch,
++              upstreamRef: details.upstreamRef,
++            }).pipe(
++              Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
++              Effect.catch(() => Effect.succeed(null)),
++            )
++          : Effect.succeed(null),
++        resolveDetectedProvider(input.cwd),
++      ],
++      { concurrency: "unbounded" },
++    );
+ 
+     return {
+       branch: details.branch,
+@@ -946,12 +909,13 @@ export const makeGitManager = Effect.gen(function* () {
+       aheadCount: details.aheadCount,
+       behindCount: details.behindCount,
+       pr,
++      ...(gitHostProvider ? { gitHostProvider } : {}),
+     };
+   });
+ 
+   const resolvePullRequest: GitManagerShape["resolvePullRequest"] = Effect.fnUntraced(
+     function* (input) {
+-      const pullRequest = yield* gitHubCli
++      const pullRequest = yield* gitHostCli
+         .getPullRequest({
+           cwd: input.cwd,
+           reference: normalizePullRequestReference(input.reference),
+@@ -966,14 +930,14 @@ export const makeGitManager = Effect.gen(function* () {
+     function* (input) {
+       const normalizedReference = normalizePullRequestReference(input.reference);
+       const rootWorktreePath = canonicalizeExistingPath(input.cwd);
+-      const pullRequestSummary = yield* gitHubCli.getPullRequest({
++      const pullRequestSummary = yield* gitHostCli.getPullRequest({
+         cwd: input.cwd,
+         reference: normalizedReference,
+       });
+       const pullRequest = toResolvedPullRequest(pullRequestSummary);
+ 
+       if (input.mode === "local") {
+-        yield* gitHubCli.checkoutPullRequest({
++        yield* gitHostCli.checkoutPullRequest({
+           cwd: input.cwd,
+           reference: normalizedReference,
+           force: true,
+diff --git a/apps/server/src/git/Services/GitCore.ts b/apps/server/src/git/Services/GitCore.ts
+index e8d4261..feb7f63 100644
+--- a/apps/server/src/git/Services/GitCore.ts
++++ b/apps/server/src/git/Services/GitCore.ts
+@@ -106,6 +106,7 @@ export interface GitFetchPullRequestBranchInput {
+   cwd: string;
+   prNumber: number;
+   branch: string;
++  refspecPrefix?: string;
+ }
+ 
+ export interface GitEnsureRemoteInput {
+diff --git a/apps/server/src/git/Services/GitHubCli.ts b/apps/server/src/git/Services/GitHubCli.ts
+index 47a9c9f..9f470b1 100644
+--- a/apps/server/src/git/Services/GitHubCli.ts
++++ b/apps/server/src/git/Services/GitHubCli.ts
+@@ -18,6 +18,7 @@ export interface GitHubPullRequestSummary {
+   readonly baseRefName: string;
+   readonly headRefName: string;
+   readonly state?: "open" | "closed" | "merged";
++  readonly updatedAt?: string | null;
+   readonly isCrossRepository?: boolean;
+   readonly headRepositoryNameWithOwner?: string | null;
+   readonly headRepositoryOwnerLogin?: string | null;
+diff --git a/apps/server/src/serverLayers.ts b/apps/server/src/serverLayers.ts
+index ef2373f..a789f25 100644
+--- a/apps/server/src/serverLayers.ts
++++ b/apps/server/src/serverLayers.ts
+@@ -31,6 +31,7 @@ import { KeybindingsLive } from "./keybindings";
+ import { GitManagerLive } from "./git/Layers/GitManager";
+ import { GitCoreLive } from "./git/Layers/GitCore";
+ import { GitHubCliLive } from "./git/Layers/GitHubCli";
++import { RoutingGitHostCliLive } from "./git/Layers/RoutingGitHostCli";
+ import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
+ import { PtyAdapter } from "./terminal/Services/PTY";
+ 
+@@ -125,9 +126,14 @@ export function makeServerRuntimeServicesLayer() {
+ 
+   const terminalLayer = TerminalManagerLive.pipe(Layer.provide(makeRuntimePtyAdapterLayer()));
+ 
++  const routingGitHostCliLayer = RoutingGitHostCliLive.pipe(
++    Layer.provide(GitHubCliLive),
++    Layer.provide(GitCoreLive),
++  );
++
+   const gitManagerLayer = GitManagerLive.pipe(
+     Layer.provideMerge(GitCoreLive),
+-    Layer.provideMerge(GitHubCliLive),
++    Layer.provideMerge(routingGitHostCliLayer),
+     Layer.provideMerge(textGenerationLayer),
+   );
+ 
+diff --git a/apps/web/src/components/GitActionsControl.logic.ts b/apps/web/src/components/GitActionsControl.logic.ts
+index fc97f6c..f46c69c 100644
+--- a/apps/web/src/components/GitActionsControl.logic.ts
++++ b/apps/web/src/components/GitActionsControl.logic.ts
+@@ -1,4 +1,5 @@
+ import type {
++  GitHostProvider,
+   GitRunStackedActionResult,
+   GitStackedAction,
+   GitStatusResult,
+@@ -36,6 +37,10 @@ export type DefaultBranchConfirmableAction = "commit_push" | "commit_push_pr";
+ const SHORT_SHA_LENGTH = 7;
+ const TOAST_DESCRIPTION_MAX = 72;
+ 
++function prLabel(provider: GitHostProvider | undefined): "MR" | "PR" {
++  return provider === "gitlab" ? "MR" : "PR";
++}
++
+ function shortenSha(sha: string | undefined): string | null {
+   if (!sha) return null;
+   return sha.slice(0, SHORT_SHA_LENGTH);
+@@ -58,7 +63,9 @@ export function buildGitActionProgressStages(input: {
+   forcePushOnly?: boolean;
+   pushTarget?: string;
+   featureBranch?: boolean;
++  gitHostProvider?: GitHostProvider;
+ }): string[] {
++  const label = prLabel(input.gitHostProvider);
+   const branchStages = input.featureBranch ? ["Preparing feature branch..."] : [];
+   const shouldIncludeCommitStages =
+     !input.forcePushOnly && (input.action === "commit" || input.hasWorkingTreeChanges);
+@@ -74,19 +81,23 @@ export function buildGitActionProgressStages(input: {
+   if (input.action === "commit_push") {
+     return [...branchStages, ...commitStages, pushStage];
+   }
+-  return [...branchStages, ...commitStages, pushStage, "Creating PR..."];
++  return [...branchStages, ...commitStages, pushStage, `Creating ${label}...`];
+ }
+ 
+ const withDescription = (title: string, description: string | undefined) =>
+   description ? { title, description } : { title };
+ 
+-export function summarizeGitResult(result: GitRunStackedActionResult): {
++export function summarizeGitResult(
++  result: GitRunStackedActionResult,
++  gitHostProvider?: GitHostProvider,
++): {
+   title: string;
+   description?: string;
+ } {
++  const label = prLabel(gitHostProvider);
+   if (result.pr.status === "created" || result.pr.status === "opened_existing") {
+     const prNumber = result.pr.number ? ` #${result.pr.number}` : "";
+-    const title = `${result.pr.status === "created" ? "Created PR" : "Opened PR"}${prNumber}`;
++    const title = `${result.pr.status === "created" ? `Created ${label}` : `Opened ${label}`}${prNumber}`;
+     return withDescription(title, truncateText(result.pr.title));
+   }
+ 
+@@ -117,6 +128,7 @@ export function buildMenuItems(
+ ): GitActionMenuItem[] {
+   if (!gitStatus) return [];
+ 
++  const label = prLabel(gitStatus.gitHostProvider);
+   const hasBranch = gitStatus.branch !== null;
+   const hasChanges = gitStatus.hasWorkingTreeChanges;
+   const hasOpenPr = gitStatus.pr?.state === "open";
+@@ -160,14 +172,14 @@ export function buildMenuItems(
+     hasOpenPr
+       ? {
+           id: "pr",
+-          label: "View PR",
++          label: `View ${label}`,
+           disabled: !canOpenPr,
+           icon: "pr",
+           kind: "open_pr",
+         }
+       : {
+           id: "pr",
+-          label: "Create PR",
++          label: `Create ${label}`,
+           disabled: !canCreatePr,
+           icon: "pr",
+           kind: "open_dialog",
+@@ -195,6 +207,7 @@ export function resolveQuickAction(
+     };
+   }
+ 
++  const label = prLabel(gitStatus.gitHostProvider);
+   const hasBranch = gitStatus.branch !== null;
+   const hasChanges = gitStatus.hasWorkingTreeChanges;
+   const hasOpenPr = gitStatus.pr?.state === "open";
+@@ -207,7 +220,7 @@ export function resolveQuickAction(
+       label: "Commit",
+       disabled: true,
+       kind: "show_hint",
+-      hint: "Create and checkout a branch before pushing or opening a PR.",
++      hint: `Create and checkout a branch before pushing or opening a ${label}.`,
+     };
+   }
+ 
+@@ -219,7 +232,7 @@ export function resolveQuickAction(
+       return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
+     }
+     return {
+-      label: "Commit, push & PR",
++      label: `Commit, push & ${label}`,
+       disabled: false,
+       kind: "run_action",
+       action: "commit_push_pr",
+@@ -229,18 +242,18 @@ export function resolveQuickAction(
+   if (!gitStatus.hasUpstream) {
+     if (!hasOriginRemote) {
+       if (hasOpenPr && !isAhead) {
+-        return { label: "View PR", disabled: false, kind: "open_pr" };
++        return { label: `View ${label}`, disabled: false, kind: "open_pr" };
+       }
+       return {
+         label: "Push",
+         disabled: true,
+         kind: "show_hint",
+-        hint: 'Add an "origin" remote before pushing or creating a PR.',
++        hint: `Add an "origin" remote before pushing or creating a ${label}.`,
+       };
+     }
+     if (!isAhead) {
+       if (hasOpenPr) {
+-        return { label: "View PR", disabled: false, kind: "open_pr" };
++        return { label: `View ${label}`, disabled: false, kind: "open_pr" };
+       }
+       return {
+         label: "Push",
+@@ -253,7 +266,7 @@ export function resolveQuickAction(
+       return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
+     }
+     return {
+-      label: "Push & create PR",
++      label: `Push & create ${label}`,
+       disabled: false,
+       kind: "run_action",
+       action: "commit_push_pr",
+@@ -282,7 +295,7 @@ export function resolveQuickAction(
+       return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
+     }
+     return {
+-      label: "Push & create PR",
++      label: `Push & create ${label}`,
+       disabled: false,
+       kind: "run_action",
+       action: "commit_push_pr",
+@@ -290,7 +303,7 @@ export function resolveQuickAction(
+   }
+ 
+   if (hasOpenPr && gitStatus.hasUpstream) {
+-    return { label: "View PR", disabled: false, kind: "open_pr" };
++    return { label: `View ${label}`, disabled: false, kind: "open_pr" };
+   }
+ 
+   return {
+@@ -313,7 +326,9 @@ export function resolveDefaultBranchActionDialogCopy(input: {
+   action: DefaultBranchConfirmableAction;
+   branchName: string;
+   includesCommit: boolean;
++  gitHostProvider?: GitHostProvider;
+ }): DefaultBranchActionDialogCopy {
++  const label = prLabel(input.gitHostProvider);
+   const branchLabel = input.branchName;
+   const suffix = ` on "${branchLabel}". You can continue on this branch or create a feature branch and run the same action there.`;
+ 
+@@ -334,15 +349,15 @@ export function resolveDefaultBranchActionDialogCopy(input: {
+ 
+   if (input.includesCommit) {
+     return {
+-      title: "Commit, push & create PR from default branch?",
+-      description: `This action will commit, push, and create a PR${suffix}`,
+-      continueLabel: `Commit, push & create PR`,
++      title: `Commit, push & create ${label} from default branch?`,
++      description: `This action will commit, push, and create a ${label}${suffix}`,
++      continueLabel: `Commit, push & create ${label}`,
+     };
+   }
+   return {
+-    title: "Push & create PR from default branch?",
+-    description: `This action will push local commits and create a PR${suffix}`,
+-    continueLabel: "Push & create PR",
++    title: `Push & create ${label} from default branch?`,
++    description: `This action will push local commits and create a ${label}${suffix}`,
++    continueLabel: `Push & create ${label}`,
+   };
+ }
+ 
+diff --git a/apps/web/src/components/GitActionsControl.tsx b/apps/web/src/components/GitActionsControl.tsx
+index 4a7e111..dba6224 100644
+--- a/apps/web/src/components/GitActionsControl.tsx
++++ b/apps/web/src/components/GitActionsControl.tsx
+@@ -1,5 +1,6 @@
+ import type {
+   GitActionProgressEvent,
++  GitHostProvider,
+   GitStackedAction,
+   GitStatusResult,
+   ThreadId,
+@@ -7,7 +8,7 @@ import type {
+ import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+ import { ChevronDownIcon, CloudUploadIcon, GitCommitIcon, InfoIcon } from "lucide-react";
+-import { GitHubIcon } from "./Icons";
++import { GitHubIcon, GitLabIcon } from "./Icons";
+ import {
+   buildGitActionProgressStages,
+   buildMenuItems,
+@@ -184,20 +185,44 @@ const COMMIT_DIALOG_TITLE = "Commit changes";
+ const COMMIT_DIALOG_DESCRIPTION =
+   "Review and confirm your commit. Leave the message blank to auto-generate one.";
+ 
+-function GitActionItemIcon({ icon }: { icon: GitActionIconName }) {
++function GitHostIcon({
++  provider,
++  className,
++}: {
++  provider: GitHostProvider | undefined;
++  className?: string;
++}) {
++  if (provider === "gitlab") return <GitLabIcon className={className} />;
++  return <GitHubIcon className={className} />;
++}
++
++function GitActionItemIcon({
++  icon,
++  gitHostProvider,
++}: {
++  icon: GitActionIconName;
++  gitHostProvider: GitHostProvider | undefined;
++}) {
+   if (icon === "commit") return <GitCommitIcon />;
+   if (icon === "push") return <CloudUploadIcon />;
+-  return <GitHubIcon />;
++  return <GitHostIcon provider={gitHostProvider} />;
+ }
+ 
+-function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
++function GitQuickActionIcon({
++  quickAction,
++  gitHostProvider,
++}: {
++  quickAction: GitQuickAction;
++  gitHostProvider: GitHostProvider | undefined;
++}) {
+   const iconClassName = "size-3.5";
+-  if (quickAction.kind === "open_pr") return <GitHubIcon className={iconClassName} />;
++  if (quickAction.kind === "open_pr")
++    return <GitHostIcon provider={gitHostProvider} className={iconClassName} />;
+   if (quickAction.kind === "run_pull") return <InfoIcon className={iconClassName} />;
+   if (quickAction.kind === "run_action") {
+     if (quickAction.action === "commit") return <GitCommitIcon className={iconClassName} />;
+     if (quickAction.action === "commit_push") return <CloudUploadIcon className={iconClassName} />;
+-    return <GitHubIcon className={iconClassName} />;
++    return <GitHostIcon provider={gitHostProvider} className={iconClassName} />;
+   }
+   if (quickAction.label === "Commit") return <GitCommitIcon className={iconClassName} />;
+   return <InfoIcon className={iconClassName} />;
+@@ -291,6 +316,9 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+         action: pendingDefaultBranchAction.action,
+         branchName: pendingDefaultBranchAction.branchName,
+         includesCommit: pendingDefaultBranchAction.includesCommit,
++        ...(gitStatusForActions?.gitHostProvider
++          ? { gitHostProvider: gitStatusForActions.gitHostProvider }
++          : {}),
+       })
+     : null;
+ 
+@@ -450,6 +478,9 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+         hasWorkingTreeChanges: !!actionStatus?.hasWorkingTreeChanges,
+         forcePushOnly: forcePushOnlyProgress,
+         featureBranch,
++        ...(gitStatusForActions?.gitHostProvider
++          ? { gitHostProvider: gitStatusForActions.gitHostProvider }
++          : {}),
+       });
+       const actionId = randomUUID();
+       const resolvedProgressToastId =
+@@ -494,7 +525,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+       try {
+         const result = await promise;
+         activeGitActionProgressRef.current = null;
+-        const resultToast = summarizeGitResult(result);
++        const resultToast = summarizeGitResult(result, gitStatusForActions?.gitHostProvider);
+ 
+         const existingOpenPrUrl =
+           actionStatus?.pr?.state === "open" ? actionStatus.pr.url : undefined;
+@@ -542,7 +573,8 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+             : shouldOfferOpenPrCta
+               ? {
+                   actionProps: {
+-                    children: "View PR",
++                    children:
++                      gitStatusForActions?.gitHostProvider === "gitlab" ? "View MR" : "View PR",
+                     onClick: () => {
+                       const api = readNativeApi();
+                       if (!api) return;
+@@ -554,7 +586,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+               : shouldOfferCreatePrCta
+                 ? {
+                     actionProps: {
+-                      children: "Create PR",
++                      children:
++                        gitStatusForActions?.gitHostProvider === "gitlab"
++                          ? "Create MR"
++                          : "Create PR",
+                       onClick: () => {
+                         closeResultToast();
+                         void runGitActionWithToast({
+@@ -764,7 +799,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+                   />
+                 }
+               >
+-                <GitQuickActionIcon quickAction={quickAction} />
++                <GitQuickActionIcon
++                  quickAction={quickAction}
++                  gitHostProvider={gitStatusForActions?.gitHostProvider}
++                />
+                 <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
+                   {quickAction.label}
+                 </span>
+@@ -780,7 +818,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+               disabled={isGitActionRunning || quickAction.disabled}
+               onClick={runQuickAction}
+             >
+-              <GitQuickActionIcon quickAction={quickAction} />
++              <GitQuickActionIcon
++                quickAction={quickAction}
++                gitHostProvider={gitStatusForActions?.gitHostProvider}
++              />
+               <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
+                 {quickAction.label}
+               </span>
+@@ -815,7 +856,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+                         render={<span className="block w-max cursor-not-allowed" />}
+                       >
+                         <MenuItem className="w-full" disabled>
+-                          <GitActionItemIcon icon={item.icon} />
++                          <GitActionItemIcon
++                            icon={item.icon}
++                            gitHostProvider={gitStatusForActions?.gitHostProvider}
++                          />
+                           {item.label}
+                         </MenuItem>
+                       </PopoverTrigger>
+@@ -834,14 +878,18 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
+                       openDialogForMenuItem(item);
+                     }}
+                   >
+-                    <GitActionItemIcon icon={item.icon} />
++                    <GitActionItemIcon
++                      icon={item.icon}
++                      gitHostProvider={gitStatusForActions?.gitHostProvider}
++                    />
+                     {item.label}
+                   </MenuItem>
+                 );
+               })}
+               {gitStatusForActions?.branch === null && (
+                 <p className="px-2 py-1.5 text-xs text-warning">
+-                  Detached HEAD: create and checkout a branch to enable push and PR actions.
++                  Detached HEAD: create and checkout a branch to enable push and{" "}
++                  {gitStatusForActions?.gitHostProvider === "gitlab" ? "MR" : "PR"} actions.
+                 </p>
+               )}
+               {gitStatusForActions &&
+diff --git a/apps/web/src/components/Icons.tsx b/apps/web/src/components/Icons.tsx
+index 7d210fa..946f6b5 100644
+--- a/apps/web/src/components/Icons.tsx
++++ b/apps/web/src/components/Icons.tsx
+@@ -14,6 +14,30 @@ export const GitHubIcon: Icon = (props) => (
+   </svg>
+ );
+ 
++export const GitLabIcon: Icon = (props) => (
++  <svg {...props} viewBox="0 0 380 380" fill="none">
++    <path d="M190.044 362.985L256.641 157.605H123.447L190.044 362.985Z" fill="#E24329" />
++    <path d="M190.044 362.985L123.447 157.605H18.5762L190.044 362.985Z" fill="#FC6D26" />
++    <path
++      d="M18.5762 157.605L3.35469 204.356C2.00215 208.511 3.38379 213.075 6.91815 215.643L190.044 362.985L18.5762 157.605Z"
++      fill="#FCA326"
++    />
++    <path
++      d="M18.5762 157.605H123.447L80.614 25.6044C78.999 20.5836 71.89 20.5836 70.275 25.6044L18.5762 157.605Z"
++      fill="#E24329"
++    />
++    <path d="M190.044 362.985L256.641 157.605H361.512L190.044 362.985Z" fill="#FC6D26" />
++    <path
++      d="M361.512 157.605L376.733 204.356C378.086 208.511 376.704 213.075 373.17 215.643L190.044 362.985L361.512 157.605Z"
++      fill="#FCA326"
++    />
++    <path
++      d="M361.512 157.605H256.641L299.474 25.6044C301.089 20.5836 308.198 20.5836 309.813 25.6044L361.512 157.605Z"
++      fill="#E24329"
++    />
++  </svg>
++);
++
+ export const CursorIcon: Icon = (props) => (
+   <svg {...props} viewBox="0 0 466.73 532.09" fill="currentColor">
+     <path d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z" />
+diff --git a/apps/web/src/components/PullRequestThreadDialog.tsx b/apps/web/src/components/PullRequestThreadDialog.tsx
+index 1f6ec7b..3343214 100644
+--- a/apps/web/src/components/PullRequestThreadDialog.tsx
++++ b/apps/web/src/components/PullRequestThreadDialog.tsx
+@@ -153,9 +153,9 @@ export function PullRequestThreadDialog({
+   const validationMessage = !referenceDirty
+     ? null
+     : reference.trim().length === 0
+-      ? "Paste a GitHub pull request URL, `gh pr checkout 123`, or enter 123 / #123."
++      ? "Paste a PR/MR URL, `gh pr checkout 123`, `glab mr checkout 42`, or enter 123 / #123."
+       : parsedReference === null
+-        ? "Use a GitHub pull request URL, `gh pr checkout 123`, 123, or #123."
++        ? "Use a PR/MR URL, `gh pr checkout 123`, `glab mr checkout 42`, 123, or #123."
+         : null;
+   const errorMessage =
+     validationMessage ??
+@@ -180,10 +180,10 @@ export function PullRequestThreadDialog({
+     >
+       <DialogPopup className="max-w-xl">
+         <DialogHeader>
+-          <DialogTitle>Checkout Pull Request</DialogTitle>
++          <DialogTitle>Checkout Pull/Merge Request</DialogTitle>
+           <DialogDescription>
+-            Resolve a GitHub pull request, then create the draft thread in the main repo or in a
+-            dedicated worktree.
++            Resolve a pull request or merge request, then create the draft thread in the main repo
++            or in a dedicated worktree.
+           </DialogDescription>
+         </DialogHeader>
+         <DialogPanel className="space-y-4">
+@@ -191,7 +191,7 @@ export function PullRequestThreadDialog({
+             <span className="text-xs font-medium text-foreground">Pull request</span>
+             <Input
+               ref={referenceInputRef}
+-              placeholder="https://github.com/owner/repo/pull/42, gh pr checkout 42, or #42"
++              placeholder="PR/MR URL, gh pr checkout 42, glab mr checkout 42, or #42"
+               value={reference}
+               onChange={(event) => {
+                 setReferenceDirty(true);
+diff --git a/apps/web/src/pullRequestReference.ts b/apps/web/src/pullRequestReference.ts
+index c775c1c..3d9cd65 100644
+--- a/apps/web/src/pullRequestReference.ts
++++ b/apps/web/src/pullRequestReference.ts
+@@ -1,7 +1,10 @@
+ const GITHUB_PULL_REQUEST_URL_PATTERN =
+   /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)(?:[/?#].*)?$/i;
++const GITLAB_MERGE_REQUEST_URL_PATTERN =
++  /^https:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/i;
+ const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
+ const GITHUB_CLI_PR_CHECKOUT_PATTERN = /^gh\s+pr\s+checkout\s+(.+)$/i;
++const GITLAB_CLI_MR_CHECKOUT_PATTERN = /^glab\s+mr\s+checkout\s+(.+)$/i;
+ 
+ export function parsePullRequestReference(input: string): string | null {
+   const trimmed = input.trim();
+@@ -10,13 +13,20 @@ export function parsePullRequestReference(input: string): string | null {
+   }
+ 
+   const ghCliCheckoutMatch = GITHUB_CLI_PR_CHECKOUT_PATTERN.exec(trimmed);
+-  const normalizedInput = ghCliCheckoutMatch?.[1]?.trim() ?? trimmed;
++  const glabCliCheckoutMatch = GITLAB_CLI_MR_CHECKOUT_PATTERN.exec(trimmed);
++  const normalizedInput =
++    ghCliCheckoutMatch?.[1]?.trim() ?? glabCliCheckoutMatch?.[1]?.trim() ?? trimmed;
+   if (normalizedInput.length === 0) {
+     return null;
+   }
+ 
+-  const urlMatch = GITHUB_PULL_REQUEST_URL_PATTERN.exec(normalizedInput);
+-  if (urlMatch?.[1]) {
++  const ghUrlMatch = GITHUB_PULL_REQUEST_URL_PATTERN.exec(normalizedInput);
++  if (ghUrlMatch?.[1]) {
++    return normalizedInput;
++  }
++
++  const glUrlMatch = GITLAB_MERGE_REQUEST_URL_PATTERN.exec(normalizedInput);
++  if (glUrlMatch?.[1]) {
+     return normalizedInput;
+   }
+ 
+diff --git a/packages/contracts/src/git.ts b/packages/contracts/src/git.ts
+index f8b65ab..e0c6d52 100644
+--- a/packages/contracts/src/git.ts
++++ b/packages/contracts/src/git.ts
+@@ -34,6 +34,9 @@ const GitPullRequestReference = TrimmedNonEmptyStringSchema;
+ const GitPullRequestState = Schema.Literals(["open", "closed", "merged"]);
+ const GitPreparePullRequestThreadMode = Schema.Literals(["local", "worktree"]);
+ 
++export const GitHostProvider = Schema.Literals(["github", "gitlab"]);
++export type GitHostProvider = typeof GitHostProvider.Type;
++
+ export const GitBranch = Schema.Struct({
+   name: TrimmedNonEmptyStringSchema,
+   isRemote: Schema.optional(Schema.Boolean),
+@@ -161,6 +164,7 @@ export const GitStatusResult = Schema.Struct({
+   aheadCount: NonNegativeInt,
+   behindCount: NonNegativeInt,
+   pr: Schema.NullOr(GitStatusPr),
++  gitHostProvider: Schema.optional(GitHostProvider),
+ });
+ export type GitStatusResult = typeof GitStatusResult.Type;
+ 

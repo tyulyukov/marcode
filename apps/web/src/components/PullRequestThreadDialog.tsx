@@ -153,9 +153,9 @@ export function PullRequestThreadDialog({
   const validationMessage = !referenceDirty
     ? null
     : reference.trim().length === 0
-      ? "Paste a GitHub pull request URL, `gh pr checkout 123`, or enter 123 / #123."
+      ? "Paste a PR/MR URL, `gh pr checkout 123`, `glab mr checkout 42`, or enter 123 / #123."
       : parsedReference === null
-        ? "Use a GitHub pull request URL, `gh pr checkout 123`, 123, or #123."
+        ? "Use a PR/MR URL, `gh pr checkout 123`, `glab mr checkout 42`, 123, or #123."
         : null;
   const errorMessage =
     validationMessage ??
@@ -180,10 +180,10 @@ export function PullRequestThreadDialog({
     >
       <DialogPopup className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Checkout Pull Request</DialogTitle>
+          <DialogTitle>Checkout Pull/Merge Request</DialogTitle>
           <DialogDescription>
-            Resolve a GitHub pull request, then create the draft thread in the main repo or in a
-            dedicated worktree.
+            Resolve a pull request or merge request, then create the draft thread in the main repo
+            or in a dedicated worktree.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-4">
@@ -191,7 +191,7 @@ export function PullRequestThreadDialog({
             <span className="text-xs font-medium text-foreground">Pull request</span>
             <Input
               ref={referenceInputRef}
-              placeholder="https://github.com/owner/repo/pull/42, gh pr checkout 42, or #42"
+              placeholder="PR/MR URL, gh pr checkout 42, glab mr checkout 42, or #42"
               value={reference}
               onChange={(event) => {
                 setReferenceDirty(true);

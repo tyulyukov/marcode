@@ -1600,6 +1600,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
     const fetchPullRequestBranch: GitCoreShape["fetchPullRequestBranch"] = (input) =>
       Effect.gen(function* () {
         const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
+        const prefix = input.refspecPrefix ?? "refs/pull";
         yield* executeGit(
           "GitCore.fetchPullRequestBranch",
           input.cwd,
@@ -1608,7 +1609,7 @@ export const makeGitCore = (options?: { executeOverride?: GitCoreShape["execute"
             "--quiet",
             "--no-tags",
             remoteName,
-            `+refs/pull/${input.prNumber}/head:refs/heads/${input.branch}`,
+            `+${prefix}/${input.prNumber}/head:refs/heads/${input.branch}`,
           ],
           {
             fallbackErrorMessage: "git fetch pull request branch failed",
