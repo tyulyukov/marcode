@@ -483,20 +483,54 @@ export function deriveWorkLogEntries(
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity));
 
-  const taskGroups = buildTaskGroups(filtered);
-  const taskActivityIds = new Set([...taskGroups.values()].flatMap((group) => group.activityIds));
+  const taskLaunchGroup = new Map<string, number>();
+  let groupIndex = -1;
+  let sawNonTaskSinceLastLaunch = true;
 
-  let agentGroupEmitted = false;
+  for (const activity of filtered) {
+    if (!isTaskActivity(activity)) {
+      sawNonTaskSinceLastLaunch = true;
+      continue;
+    }
+    const taskId = extractTaskId(activity);
+    if (taskId && !taskLaunchGroup.has(taskId)) {
+      if (sawNonTaskSinceLastLaunch) groupIndex++;
+      taskLaunchGroup.set(taskId, groupIndex);
+      sawNonTaskSinceLastLaunch = false;
+    }
+  }
+
+  const groupActivities = new Map<number, OrchestrationThreadActivity[]>();
+  const taskActivityIds = new Set<string>();
+
+  for (const activity of filtered) {
+    if (!isTaskActivity(activity)) continue;
+    const taskId = extractTaskId(activity);
+    if (!taskId) continue;
+    const gIdx = taskLaunchGroup.get(taskId);
+    if (gIdx === undefined) continue;
+    taskActivityIds.add(activity.id);
+    let arr = groupActivities.get(gIdx);
+    if (!arr) {
+      arr = [];
+      groupActivities.set(gIdx, arr);
+    }
+    arr.push(activity);
+  }
+
+  const emittedGroups = new Set<number>();
   const entries: DerivedWorkLogEntry[] = [];
 
   for (const activity of filtered) {
     if (taskActivityIds.has(activity.id)) {
-      if (!agentGroupEmitted) {
-        agentGroupEmitted = true;
+      const taskId = extractTaskId(activity);
+      const gIdx = taskId !== null ? taskLaunchGroup.get(taskId) : undefined;
+      if (gIdx !== undefined && !emittedGroups.has(gIdx)) {
+        emittedGroups.add(gIdx);
+        const waveActivities = groupActivities.get(gIdx) ?? [];
+        const taskGroups = buildTaskGroups(waveActivities);
         const groupEntry = buildAgentGroupEntry(activity, taskGroups);
-        if (groupEntry) {
-          entries.push(groupEntry);
-        }
+        if (groupEntry) entries.push(groupEntry);
       }
       continue;
     }

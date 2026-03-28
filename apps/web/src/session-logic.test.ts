@@ -772,6 +772,114 @@ describe("deriveWorkLogEntries", () => {
     expect(ids[2]).toBe("tool-2");
   });
 
+  it("splits sequential subagents separated by non-task activities into separate groups", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "First agent" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed", usage: { total_tokens: 5000, tool_uses: 3 } },
+      }),
+      makeActivity({
+        id: "tool-between",
+        createdAt: "2026-02-23T00:00:04.000Z",
+        kind: "tool.completed",
+        summary: "Read file",
+        tone: "tool",
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Second agent" },
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:07.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t2", status: "completed", usage: { total_tokens: 8000, tool_uses: 5 } },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(3);
+
+    expect(entries[0]!.agentGroup).toBeDefined();
+    expect(entries[0]!.agentGroup!.tasks).toHaveLength(1);
+    expect(entries[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
+    expect(entries[0]!.label).toBe("1 agent finished");
+
+    expect(entries[1]!.id).toBe("tool-between");
+
+    expect(entries[2]!.agentGroup).toBeDefined();
+    expect(entries[2]!.agentGroup!.tasks).toHaveLength(1);
+    expect(entries[2]!.agentGroup!.tasks[0]!.taskId).toBe("t2");
+    expect(entries[2]!.label).toBe("1 agent finished");
+  });
+
+  it("keeps parallel subagents in one group even when completions are split by non-task activities", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Parallel A" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:01.500Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Parallel B" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "tool-after",
+        createdAt: "2026-02-23T00:00:06.000Z",
+        kind: "tool.completed",
+        summary: "Read result",
+        tone: "tool",
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:07.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t2", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(2);
+
+    expect(entries[0]!.agentGroup).toBeDefined();
+    expect(entries[0]!.agentGroup!.tasks).toHaveLength(2);
+    expect(entries[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
+    expect(entries[0]!.agentGroup!.tasks[1]!.taskId).toBe("t2");
+    expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
+    expect(entries[0]!.agentGroup!.tasks[1]!.status).toBe("completed");
+    expect(entries[0]!.label).toBe("2 agents finished");
+
+    expect(entries[1]!.id).toBe("tool-after");
+  });
+
   it("shows mixed label when some tasks are running and some completed", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

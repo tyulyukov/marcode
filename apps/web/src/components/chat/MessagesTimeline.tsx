@@ -10,11 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  measureElement as measureVirtualElement,
-  type VirtualItem,
-  useVirtualizer,
-} from "@tanstack/react-virtual";
-import {
   deriveTimelineEntries,
   formatElapsed,
   formatTokenCount,
@@ -22,7 +17,6 @@ import {
   type AgentGroup,
   type AgentTaskSummary,
 } from "../../session-logic";
-import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../../chat-scroll";
 import { type TurnDiffSummary } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import ChatMarkdown from "../ChatMarkdown";
@@ -43,7 +37,6 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { clamp } from "effect/Number";
 import { estimateTimelineMessageHeight } from "../timelineHeight";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
@@ -67,7 +60,6 @@ import {
 import { InlineDiffPreview } from "./InlineDiffPreview";
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
-const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
 const WORK_GROUP_OVERHEAD_HEIGHT = 56;
 const WORK_ENTRY_HEIGHT = 30;
@@ -84,8 +76,6 @@ function estimateWorkRowHeight(
   const visibleCount = Math.min(groupedEntries.length, MAX_VISIBLE_WORK_LOG_ENTRIES);
   const baseHeight = WORK_GROUP_OVERHEAD_HEIGHT + visibleCount * WORK_ENTRY_HEIGHT;
 
-  if (!showInlineDiffs) return baseHeight;
-
   let extraHeight = 0;
   const visibleEntries =
     groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES
@@ -97,6 +87,7 @@ function estimateWorkRowHeight(
       extraHeight += AGENT_GROUP_HEADER_HEIGHT;
       continue;
     }
+    if (!showInlineDiffs) continue;
     const previews = entry.diffPreviews;
     if (!previews || previews.length === 0) continue;
     for (const hunk of previews) {
@@ -115,14 +106,11 @@ interface MessagesTimelineProps {
   hasMessages: boolean;
   isWorking: boolean;
   isSendBusy: boolean;
-  activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
-  scrollContainer: HTMLDivElement | null;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   completionDividerBeforeEntryId: string | null;
   completionSummary: string | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
-  nowIso: string;
   expandedWorkGroups: Record<string, boolean>;
   onToggleWorkGroup: (groupId: string) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -141,14 +129,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hasMessages,
   isWorking,
   isSendBusy,
-  activeTurnInProgress,
   activeTurnStartedAt,
-  scrollContainer,
   timelineEntries,
   completionDividerBeforeEntryId,
   completionSummary,
   turnDiffSummaryByAssistantMessageId,
-  nowIso,
   expandedWorkGroups,
   onToggleWorkGroup,
   onOpenTurnDiff,
@@ -255,100 +240,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     return nextRows;
   }, [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt]);
 
-  const firstUnvirtualizedRowIndex = useMemo(() => {
-    const firstTailRowIndex = Math.max(rows.length - ALWAYS_UNVIRTUALIZED_TAIL_ROWS, 0);
-    if (!activeTurnInProgress) return firstTailRowIndex;
-
-    const turnStartedAtMs =
-      typeof activeTurnStartedAt === "string" ? Date.parse(activeTurnStartedAt) : Number.NaN;
-    let firstCurrentTurnRowIndex = -1;
-    if (!Number.isNaN(turnStartedAtMs)) {
-      firstCurrentTurnRowIndex = rows.findIndex((row) => {
-        if (row.kind === "working") return true;
-        if (!row.createdAt) return false;
-        const rowCreatedAtMs = Date.parse(row.createdAt);
-        return !Number.isNaN(rowCreatedAtMs) && rowCreatedAtMs >= turnStartedAtMs;
-      });
-    }
-
-    if (firstCurrentTurnRowIndex < 0) {
-      firstCurrentTurnRowIndex = rows.findIndex(
-        (row) => row.kind === "message" && row.message.streaming,
-      );
-    }
-
-    if (firstCurrentTurnRowIndex < 0) return firstTailRowIndex;
-
-    for (let index = firstCurrentTurnRowIndex - 1; index >= 0; index -= 1) {
-      const previousRow = rows[index];
-      if (!previousRow || previousRow.kind !== "message") continue;
-      if (previousRow.message.role === "user") {
-        return Math.min(index, firstTailRowIndex);
-      }
-      if (previousRow.message.role === "assistant" && !previousRow.message.streaming) {
-        break;
-      }
-    }
-
-    return Math.min(firstCurrentTurnRowIndex, firstTailRowIndex);
-  }, [activeTurnInProgress, activeTurnStartedAt, rows]);
-
-  const virtualizedRowCount = clamp(firstUnvirtualizedRowIndex, {
-    minimum: 0,
-    maximum: rows.length,
-  });
-
-  const rowVirtualizer = useVirtualizer({
-    count: virtualizedRowCount,
-    getScrollElement: () => scrollContainer,
-    // Use stable row ids so virtual measurements do not leak across thread switches.
-    getItemKey: (index: number) => rows[index]?.id ?? index,
-    estimateSize: (index: number) => {
-      const row = rows[index];
-      if (!row) return 96;
-      if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries, showInlineDiffs);
-      if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
-      if (row.kind === "working") return 40;
-      return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
-    },
-    measureElement: measureVirtualElement,
-    useAnimationFrameWithResizeObserver: true,
-    overscan: 8,
-  });
-  useEffect(() => {
-    if (timelineWidthPx === null) return;
-    rowVirtualizer.measure();
-  }, [rowVirtualizer, timelineWidthPx]);
-  useEffect(() => {
-    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (_item, _delta, instance) => {
-      const viewportHeight = instance.scrollRect?.height ?? 0;
-      const scrollOffset = instance.scrollOffset ?? 0;
-      const remainingDistance = instance.getTotalSize() - (scrollOffset + viewportHeight);
-      return remainingDistance > AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
-    };
-    return () => {
-      rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
-    };
-  }, [rowVirtualizer]);
-  const pendingMeasureFrameRef = useRef<number | null>(null);
-  const onTimelineImageLoad = useCallback(() => {
-    if (pendingMeasureFrameRef.current !== null) return;
-    pendingMeasureFrameRef.current = window.requestAnimationFrame(() => {
-      pendingMeasureFrameRef.current = null;
-      rowVirtualizer.measure();
-    });
-  }, [rowVirtualizer]);
-  useEffect(() => {
-    return () => {
-      const frame = pendingMeasureFrameRef.current;
-      if (frame !== null) {
-        window.cancelAnimationFrame(frame);
-      }
-    };
-  }, []);
-
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const nonVirtualizedRows = rows.slice(virtualizedRowCount);
   const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
     Record<string, boolean>
   >({});
@@ -453,8 +344,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                                 src={image.previewUrl}
                                 alt={image.name}
                                 className="h-full max-h-[220px] w-full object-cover"
-                                onLoad={onTimelineImageLoad}
-                                onError={onTimelineImageLoad}
                               />
                             </button>
                           ) : (
@@ -579,12 +468,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                   );
                 })()}
                 <p className="mt-1.5 text-[10px] text-muted-foreground/30">
-                  {formatMessageMeta(
-                    row.message.createdAt,
-                    row.message.streaming
-                      ? formatElapsed(row.durationStart, nowIso)
-                      : formatElapsed(row.durationStart, row.message.completedAt),
-                    timestampFormat,
+                  {row.message.streaming ? (
+                    <StreamingMessageMeta
+                      createdAt={row.message.createdAt}
+                      durationStart={row.durationStart}
+                      timestampFormat={timestampFormat}
+                    />
+                  ) : (
+                    formatMessageMeta(
+                      row.message.createdAt,
+                      formatElapsed(row.durationStart, row.message.completedAt),
+                      timestampFormat,
+                    )
                   )}
                 </p>
               </div>
@@ -611,11 +506,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:400ms]" />
             </span>
             <span>
-              {isSendBusy
-                ? "Starting\u2026"
-                : row.createdAt
-                  ? `Working for ${formatWorkingTimer(row.createdAt, nowIso) ?? "0s"}`
-                  : "Working\u2026"}
+              {isSendBusy ? (
+                "Starting\u2026"
+              ) : row.createdAt ? (
+                <WorkingElapsedLabel startIso={row.createdAt} />
+              ) : (
+                "Working\u2026"
+              )}
             </span>
           </div>
         </div>
@@ -639,32 +536,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       data-timeline-root="true"
       className="mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
     >
-      {virtualizedRowCount > 0 && (
+      {rows.map((row) => (
         <div
-          className="relative [contain:layout_style]"
-          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+          key={row.id}
+          style={{
+            contentVisibility: "auto",
+            containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,
+          }}
         >
-          {virtualRows.map((virtualRow: VirtualItem) => {
-            const row = rows[virtualRow.index];
-            if (!row) return null;
-
-            return (
-              <div
-                key={`virtual-row:${row.id}`}
-                data-index={virtualRow.index}
-                ref={rowVirtualizer.measureElement}
-                className="absolute left-0 top-0 w-full [contain:layout_style_paint] [will-change:transform]"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                {renderRowContent(row)}
-              </div>
-            );
-          })}
+          {renderRowContent(row)}
         </div>
-      )}
-
-      {nonVirtualizedRows.map((row) => (
-        <div key={`non-virtual-row:${row.id}`}>{renderRowContent(row)}</div>
       ))}
     </div>
   );
@@ -702,6 +583,17 @@ function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan):
   return 120 + Math.min(estimatedLines * 22, 880);
 }
 
+function estimateRowHeight(
+  row: TimelineRow,
+  showInlineDiffs: boolean,
+  timelineWidthPx: number | null,
+): number {
+  if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries, showInlineDiffs);
+  if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
+  if (row.kind === "working") return 40;
+  return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
+}
+
 function formatWorkingTimer(startIso: string, endIso: string): string | null {
   const startedAtMs = Date.parse(startIso);
   const endedAtMs = Date.parse(endIso);
@@ -733,6 +625,30 @@ function formatMessageMeta(
   if (!duration) return formatTimestamp(createdAt, timestampFormat);
   return `${formatTimestamp(createdAt, timestampFormat)} • ${duration}`;
 }
+
+function useLiveTick(): string {
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return new Date(tick).toISOString();
+}
+
+const WorkingElapsedLabel = memo(function WorkingElapsedLabel(props: { startIso: string }) {
+  const nowIso = useLiveTick();
+  return <>Working for {formatWorkingTimer(props.startIso, nowIso) ?? "0s"}</>;
+});
+
+const StreamingMessageMeta = memo(function StreamingMessageMeta(props: {
+  createdAt: string;
+  durationStart: string;
+  timestampFormat: TimestampFormat;
+}) {
+  const nowIso = useLiveTick();
+  const duration = formatElapsed(props.durationStart, nowIso);
+  return <>{formatMessageMeta(props.createdAt, duration, props.timestampFormat)}</>;
+});
 
 const UserMessageTerminalContextInlineLabel = memo(
   function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {

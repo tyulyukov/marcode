@@ -50,9 +50,7 @@ describe("MessagesTimeline", () => {
         hasMessages
         isWorking={false}
         isSendBusy={false}
-        activeTurnInProgress={false}
         activeTurnStartedAt={null}
-        scrollContainer={null}
         timelineEntries={[
           {
             id: "entry-1",
@@ -78,7 +76,6 @@ describe("MessagesTimeline", () => {
         completionDividerBeforeEntryId={null}
         completionSummary={null}
         turnDiffSummaryByAssistantMessageId={new Map()}
-        nowIso="2026-03-17T19:12:30.000Z"
         expandedWorkGroups={{}}
         onToggleWorkGroup={() => {}}
         onOpenTurnDiff={() => {}}
@@ -106,9 +103,7 @@ describe("MessagesTimeline", () => {
         hasMessages
         isWorking={false}
         isSendBusy={false}
-        activeTurnInProgress={false}
         activeTurnStartedAt={null}
-        scrollContainer={null}
         timelineEntries={[
           {
             id: "entry-1",
@@ -125,7 +120,6 @@ describe("MessagesTimeline", () => {
         completionDividerBeforeEntryId={null}
         completionSummary={null}
         turnDiffSummaryByAssistantMessageId={new Map()}
-        nowIso="2026-03-17T19:12:30.000Z"
         expandedWorkGroups={{}}
         onToggleWorkGroup={() => {}}
         onOpenTurnDiff={() => {}}
