@@ -31,6 +31,7 @@ import { KeybindingsLive } from "./keybindings";
 import { GitManagerLive } from "./git/Layers/GitManager";
 import { GitCoreLive } from "./git/Layers/GitCore";
 import { GitHubCliLive } from "./git/Layers/GitHubCli";
+import { RoutingGitHostCliLive } from "./git/Layers/RoutingGitHostCli";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
 
@@ -125,9 +126,14 @@ export function makeServerRuntimeServicesLayer() {
 
   const terminalLayer = TerminalManagerLive.pipe(Layer.provide(makeRuntimePtyAdapterLayer()));
 
+  const routingGitHostCliLayer = RoutingGitHostCliLive.pipe(
+    Layer.provide(GitHubCliLive),
+    Layer.provide(GitCoreLive),
+  );
+
   const gitManagerLayer = GitManagerLive.pipe(
     Layer.provideMerge(GitCoreLive),
-    Layer.provideMerge(GitHubCliLive),
+    Layer.provideMerge(routingGitHostCliLayer),
     Layer.provideMerge(textGenerationLayer),
   );
 

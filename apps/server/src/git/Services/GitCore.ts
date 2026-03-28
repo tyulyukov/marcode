@@ -106,6 +106,7 @@ export interface GitFetchPullRequestBranchInput {
   cwd: string;
   prNumber: number;
   branch: string;
+  refspecPrefix?: string;
 }
 
 export interface GitEnsureRemoteInput {

@@ -34,6 +34,9 @@ const GitPullRequestReference = TrimmedNonEmptyStringSchema;
 const GitPullRequestState = Schema.Literals(["open", "closed", "merged"]);
 const GitPreparePullRequestThreadMode = Schema.Literals(["local", "worktree"]);
 
+export const GitHostProvider = Schema.Literals(["github", "gitlab"]);
+export type GitHostProvider = typeof GitHostProvider.Type;
+
 export const GitBranch = Schema.Struct({
   name: TrimmedNonEmptyStringSchema,
   isRemote: Schema.optional(Schema.Boolean),
@@ -161,6 +164,7 @@ export const GitStatusResult = Schema.Struct({
   aheadCount: NonNegativeInt,
   behindCount: NonNegativeInt,
   pr: Schema.NullOr(GitStatusPr),
+  gitHostProvider: Schema.optional(GitHostProvider),
 });
 export type GitStatusResult = typeof GitStatusResult.Type;
 
