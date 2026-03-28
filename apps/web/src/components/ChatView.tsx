@@ -50,6 +50,7 @@ import {
   findSidebarProposedPlan,
   findLatestProposedPlan,
   deriveWorkLogEntries,
+  deriveTodoItems,
   hasActionableProposedPlan,
   hasToolActivityForTurn,
   isLatestTurnSettled,
@@ -155,6 +156,7 @@ import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu"
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./chat/ComposerPlanFollowUpBanner";
+import { ComposerTodoListPanel } from "./chat/ComposerActiveTasksPanel";
 import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
@@ -260,6 +262,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const showInlineDiffs = settings.showInlineDiffs;
+  const showTodosInComposer = settings.showTodosInComposer;
   const navigate = useNavigate();
   const rawSearch = useSearch({
     strict: false,
@@ -673,9 +676,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
     sendStartedAt,
   );
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const activeTodoItems = useMemo(
+    () =>
+      showTodosInComposer
+        ? deriveTodoItems(threadActivities, activeLatestTurn?.turnId ?? undefined)
+        : [],
+    [showTodosInComposer, threadActivities, activeLatestTurn?.turnId],
+  );
   const workLogEntries = useMemo(
-    () => deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined),
-    [activeLatestTurn?.turnId, threadActivities],
+    () =>
+      deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined, {
+        excludeTodoToolCalls: showTodosInComposer,
+      }),
+    [activeLatestTurn?.turnId, threadActivities, showTodosInComposer],
   );
   const latestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(threadActivities, activeLatestTurn?.turnId),
@@ -755,7 +768,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const hasComposerHeader =
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
-    (showPlanFollowUpPrompt && activeProposedPlan !== null);
+    (showPlanFollowUpPrompt && activeProposedPlan !== null) ||
+    activeTodoItems.length > 0;
   const composerFooterHasWideActions = showPlanFollowUpPrompt || activePendingProgress !== null;
   const lastSyncedPendingInputRef = useRef<{
     requestId: string | null;
@@ -3692,6 +3706,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         key={activeProposedPlan.id}
                         planTitle={proposedPlanTitle(activeProposedPlan.planMarkdown) ?? null}
                       />
+                    </div>
+                  ) : activeTodoItems.length > 0 ? (
+                    <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
+                      <ComposerTodoListPanel items={activeTodoItems} />
                     </div>
                   ) : null}
                   <div

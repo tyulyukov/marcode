@@ -370,6 +370,9 @@ function SettingsRouteView() {
     ...(settings.showInlineDiffs !== DEFAULT_UNIFIED_SETTINGS.showInlineDiffs
       ? ["Inline diff previews"]
       : []),
+    ...(settings.showTodosInComposer !== DEFAULT_UNIFIED_SETTINGS.showTodosInComposer
+      ? ["Todos in composer"]
+      : []),
     ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
       ? ["Assistant output"]
       : []),
@@ -738,6 +741,34 @@ function SettingsRouteView() {
                       })
                     }
                     aria-label="Show inline diff previews"
+                  />
+                }
+              />
+
+              <SettingsRow
+                title="Todos in composer"
+                description="Show the agent's internal todo checklist in the composer bar and hide TodoWrite entries from the work log."
+                resetAction={
+                  settings.showTodosInComposer !== DEFAULT_UNIFIED_SETTINGS.showTodosInComposer ? (
+                    <SettingResetButton
+                      label="todos in composer"
+                      onClick={() =>
+                        updateSettings({
+                          showTodosInComposer: DEFAULT_UNIFIED_SETTINGS.showTodosInComposer,
+                        })
+                      }
+                    />
+                  ) : null
+                }
+                control={
+                  <Switch
+                    checked={settings.showTodosInComposer}
+                    onCheckedChange={(checked) =>
+                      updateSettings({
+                        showTodosInComposer: Boolean(checked),
+                      })
+                    }
+                    aria-label="Show todos in composer"
                   />
                 }
               />

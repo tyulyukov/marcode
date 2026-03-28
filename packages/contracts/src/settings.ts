@@ -34,6 +34,7 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   timestampFormat: TimestampFormat.pipe(Schema.withDecodingDefault(() => DEFAULT_TIMESTAMP_FORMAT)),
   showInlineDiffs: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  showTodosInComposer: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 

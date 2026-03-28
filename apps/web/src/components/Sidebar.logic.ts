@@ -91,7 +91,7 @@ export function resolveThreadRowClassName(input: {
   if (input.isActive) {
     return cn(
       baseClassName,
-      "bg-accent/85 text-foreground font-medium hover:bg-accent hover:text-foreground dark:bg-accent/55 dark:hover:bg-accent/70",
+      "bg-primary/10 text-foreground font-medium hover:bg-primary/14 hover:text-foreground dark:bg-primary/14 dark:hover:bg-primary/20",
     );
   }
 

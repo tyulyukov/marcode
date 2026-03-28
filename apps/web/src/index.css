@@ -117,11 +117,11 @@
 
   @variant dark {
     color-scheme: dark;
-    --background: #222222;
+    --background: color-mix(in srgb, #7fa1ff 3%, #222222);
     --foreground: #f9fdfd;
-    --card: color-mix(in srgb, #265253 8%, #222222);
+    --card: color-mix(in srgb, #7fa1ff 6%, #222222);
     --card-foreground: #f9fdfd;
-    --popover: color-mix(in srgb, #265253 12%, #222222);
+    --popover: color-mix(in srgb, #7fa1ff 10%, #222222);
     --popover-foreground: #f9fdfd;
     --primary: #77e6e9;
     --primary-foreground: #222222;
@@ -319,9 +319,9 @@ label:has(> select#reasoning-effort) select {
 }
 
 .chat-markdown a {
-  color: var(--info-foreground);
+  color: var(--primary);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--info-foreground) 40%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--primary) 40%, transparent);
 }
 
 .chat-markdown a:hover {
