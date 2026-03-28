@@ -199,6 +199,7 @@ describe("ProviderCommandReactor", () => {
           sessionModelSwitch: input?.sessionModelSwitch ?? "in-session",
         }),
       rollbackConversation: () => unsupported(),
+      listCommands: () => Effect.succeed([]),
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
     };
 
