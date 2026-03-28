@@ -4,6 +4,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildThreadNamePrompt,
 } from "./Prompts.ts";
 import { normalizeCliError } from "./Utils.ts";
 import { TextGenerationError } from "./Errors.ts";
@@ -87,6 +88,39 @@ describe("buildBranchNamePrompt", () => {
 
   it("includes attachment metadata when attachments are provided", () => {
     const result = buildBranchNamePrompt({
+      message: "Fix the layout from screenshot",
+      attachments: [
+        {
+          type: "image" as const,
+          id: "att-123",
+          name: "screenshot.png",
+          mimeType: "image/png",
+          sizeBytes: 12345,
+        },
+      ],
+    });
+
+    expect(result.prompt).toContain("Attachment metadata:");
+    expect(result.prompt).toContain("screenshot.png");
+    expect(result.prompt).toContain("image/png");
+    expect(result.prompt).toContain("12345 bytes");
+  });
+});
+
+describe("buildThreadNamePrompt", () => {
+  it("includes the user message in the prompt", () => {
+    const result = buildThreadNamePrompt({
+      message: "Fix the login timeout bug",
+    });
+
+    expect(result.prompt).toContain("User message:");
+    expect(result.prompt).toContain("Fix the login timeout bug");
+    expect(result.prompt).toContain("thread titles");
+    expect(result.prompt).not.toContain("Attachment metadata:");
+  });
+
+  it("includes attachment metadata when attachments are provided", () => {
+    const result = buildThreadNamePrompt({
       message: "Fix the layout from screenshot",
       attachments: [
         {

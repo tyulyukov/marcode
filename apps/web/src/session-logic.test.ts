@@ -959,6 +959,90 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("stopped");
   });
 
+  it("extracts agentType from task.started payload", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Explore files", agentType: "Explore" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]!.agentGroup!.tasks[0]!.agentType).toBe("Explore");
+  });
+
+  it("sets agentType to null when not present in payload", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Quick check" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]!.agentGroup!.tasks[0]!.agentType).toBeNull();
+  });
+
+  it("omits collab_agent_tool_call entries from work log", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "subagent-tool",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.completed",
+        summary: "Subagent task",
+        tone: "tool",
+        payload: { itemType: "collab_agent_tool_call" },
+      }),
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Run analysis" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:04.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "regular-tool",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "tool.completed",
+        summary: "Read file",
+        tone: "tool",
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const ids = entries.map((e) => e.id);
+    expect(ids).not.toContain("subagent-tool");
+    expect(ids).toContain("regular-tool");
+    expect(entries.find((e) => e.agentGroup)).toBeDefined();
+  });
+
   it("filters by turn id when provided", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({ id: "turn-1", turnId: "turn-1", summary: "Tool call", kind: "tool.started" }),

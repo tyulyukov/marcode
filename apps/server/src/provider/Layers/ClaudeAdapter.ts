@@ -2050,7 +2050,17 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
               },
             });
             return;
-          case "task_started":
+          case "task_started": {
+            let agentType: string | undefined;
+            if (message.tool_use_id) {
+              for (const tool of context.inFlightTools.values()) {
+                if (tool.itemId === message.tool_use_id) {
+                  const raw = tool.input.subagent_type;
+                  if (typeof raw === "string" && raw.length > 0) agentType = raw;
+                  break;
+                }
+              }
+            }
             yield* offerRuntimeEvent({
               ...base,
               type: "task.started",
@@ -2058,9 +2068,11 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
                 taskId: RuntimeTaskId.makeUnsafe(message.task_id),
                 description: message.description,
                 ...(message.task_type ? { taskType: message.task_type } : {}),
+                ...(agentType ? { agentType } : {}),
               },
             });
             return;
+          }
           case "task_progress":
             if (message.usage) {
               const normalizedUsage = normalizeClaudeTokenUsage(

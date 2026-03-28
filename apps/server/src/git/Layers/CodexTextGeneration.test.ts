@@ -336,6 +336,28 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGenerationLive", (it) => {
     ),
   );
 
+  it.effect("generates thread name from user message", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          title: "Fix login timeout handling",
+        }),
+        stdinMustContain: "thread titles",
+      },
+      Effect.gen(function* () {
+        const textGeneration = yield* TextGeneration;
+
+        const generated = yield* textGeneration.generateThreadName({
+          cwd: process.cwd(),
+          message: "The login page times out after 30 seconds, can you fix the timeout handling?",
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+
+        expect(generated.title).toBe("Fix login timeout handling");
+      }),
+    ),
+  );
+
   it.effect("generates branch names and normalizes branch fragments", () =>
     withFakeCodexEnv(
       {

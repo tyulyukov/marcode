@@ -459,6 +459,59 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const maybeGenerateThreadNameForFirstTurn = Effect.fnUntraced(function* (input: {
+    readonly threadId: ThreadId;
+    readonly messageId: string;
+    readonly messageText: string;
+    readonly attachments?: ReadonlyArray<ChatAttachment>;
+  }) {
+    const readModel = yield* orchestrationEngine.getReadModel();
+    const thread = readModel.threads.find((entry) => entry.id === input.threadId);
+    if (!thread) {
+      return;
+    }
+
+    if (thread.modelSelection.provider === "codex") {
+      return;
+    }
+
+    const userMessages = thread.messages.filter((message) => message.role === "user");
+    if (userMessages.length !== 1 || userMessages[0]?.id !== input.messageId) {
+      return;
+    }
+
+    const cwd =
+      resolveThreadWorkspaceCwd({ thread, projects: readModel.projects }) ?? process.cwd();
+    const attachments = input.attachments ?? [];
+
+    yield* Effect.gen(function* () {
+      const { textGenerationModelSelection: modelSelection } =
+        yield* serverSettingsService.getSettings;
+
+      const generated = yield* textGeneration.generateThreadName({
+        cwd,
+        message: input.messageText,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        modelSelection,
+      });
+      if (!generated?.title) return;
+
+      yield* orchestrationEngine.dispatch({
+        type: "thread.meta.update",
+        commandId: serverCommandId("thread-name-generation"),
+        threadId: input.threadId,
+        title: generated.title,
+      });
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("provider command reactor failed to generate thread name", {
+          threadId: input.threadId,
+          cause: Cause.pretty(cause),
+        }),
+      ),
+    );
+  });
+
   const processTurnStartRequested = Effect.fnUntraced(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.turn-start-requested" }>,
   ) {
@@ -489,6 +542,13 @@ const make = Effect.gen(function* () {
       threadId: event.payload.threadId,
       branch: thread.branch,
       worktreePath: thread.worktreePath,
+      messageId: message.id,
+      messageText: message.text,
+      ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+    }).pipe(Effect.forkScoped);
+
+    yield* maybeGenerateThreadNameForFirstTurn({
+      threadId: event.payload.threadId,
       messageId: message.id,
       messageText: message.text,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),

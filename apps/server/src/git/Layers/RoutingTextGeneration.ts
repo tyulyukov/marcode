@@ -76,6 +76,7 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
     generateCommitMessage: (input) => withFallback((impl) => impl.generateCommitMessage, input),
     generatePrContent: (input) => withFallback((impl) => impl.generatePrContent, input),
     generateBranchName: (input) => withFallback((impl) => impl.generateBranchName, input),
+    generateThreadName: (input) => withFallback((impl) => impl.generateThreadName, input),
   } satisfies TextGenerationShape;
 });
 

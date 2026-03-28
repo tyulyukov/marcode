@@ -36,10 +36,13 @@ export const PROVIDER_OPTIONS: Array<{
 
 export interface AgentTaskSummary {
   taskId: string;
+  agentType: string | null;
   description: string;
   status: "running" | "completed" | "failed" | "stopped";
   toolUses: number | null;
   totalTokens: number | null;
+  lastToolName: string | null;
+  progressSummary: string | null;
   createdAt: string;
 }
 
@@ -481,7 +484,8 @@ export function deriveWorkLogEntries(
     .filter((activity) => activity.kind !== "tool.started")
     .filter((activity) => activity.kind !== "context-window.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
-    .filter((activity) => !isPlanBoundaryToolActivity(activity));
+    .filter((activity) => !isPlanBoundaryToolActivity(activity))
+    .filter((activity) => !isSubagentToolActivity(activity));
 
   const taskLaunchGroup = new Map<string, number>();
   let groupIndex = -1;
@@ -554,6 +558,14 @@ function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): bool
   return typeof payload?.detail === "string" && payload.detail.startsWith("ExitPlanMode:");
 }
 
+function isSubagentToolActivity(activity: OrchestrationThreadActivity): boolean {
+  if (activity.kind !== "tool.completed" && activity.kind !== "tool.updated") {
+    return false;
+  }
+  const payload = asRecord(activity.payload);
+  return payload?.itemType === "collab_agent_tool_call";
+}
+
 interface TaskActivityGroup {
   started: OrchestrationThreadActivity | null;
   progressEntries: OrchestrationThreadActivity[];
@@ -621,6 +633,8 @@ function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentT
     asTrimmedString(latestProgressPayload?.summary) ??
     "Agent";
 
+  const agentType = asTrimmedString(startedPayload?.agentType) ?? null;
+
   let status: AgentTaskSummary["status"] = "running";
   if (completedPayload) {
     const rawStatus = completedPayload.status;
@@ -632,10 +646,26 @@ function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentT
   const usageSource = completedPayload ?? latestProgressPayload;
   const { totalTokens, toolUses } = extractTaskUsage(usageSource);
 
+  const lastToolName = asTrimmedString(latestProgressPayload?.lastToolName) ?? null;
+  const progressSummary =
+    asTrimmedString(latestProgressPayload?.summary) ??
+    asTrimmedString(latestProgressPayload?.detail) ??
+    null;
+
   const createdAt =
     group.started?.createdAt ?? latestProgress?.createdAt ?? group.completed?.createdAt ?? "";
 
-  return { taskId, description, status, toolUses, totalTokens, createdAt };
+  return {
+    taskId,
+    agentType,
+    description,
+    status,
+    toolUses,
+    totalTokens,
+    lastToolName,
+    progressSummary,
+    createdAt,
+  };
 }
 
 export function formatTokenCount(tokens: number): string {

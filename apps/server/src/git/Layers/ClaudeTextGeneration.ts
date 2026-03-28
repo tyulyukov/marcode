@@ -20,6 +20,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildThreadNamePrompt,
 } from "../Prompts.ts";
 import {
   normalizeCliError,
@@ -70,7 +71,11 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     outputSchemaJson,
     modelSelection,
   }: {
-    operation: "generateCommitMessage" | "generatePrContent" | "generateBranchName";
+    operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadName";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -299,10 +304,39 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     };
   });
 
+  const generateThreadName: TextGenerationShape["generateThreadName"] = Effect.fn(
+    "ClaudeTextGeneration.generateThreadName",
+  )(function* (input) {
+    const { prompt, outputSchema } = buildThreadNamePrompt({
+      message: input.message,
+      attachments: input.attachments,
+    });
+
+    if (input.modelSelection.provider !== "claudeAgent") {
+      return yield* new TextGenerationError({
+        operation: "generateThreadName",
+        detail: "Invalid model selection.",
+      });
+    }
+
+    const generated = yield* runClaudeJson({
+      operation: "generateThreadName",
+      cwd: input.cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      modelSelection: input.modelSelection,
+    });
+
+    return {
+      title: generated.title.trim().slice(0, 80),
+    };
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
+    generateThreadName,
   } satisfies TextGenerationShape;
 });
 

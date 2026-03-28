@@ -11,6 +11,7 @@ import { ServerConfig } from "../../config.ts";
 import { TextGenerationError } from "../Errors.ts";
 import {
   type BranchNameGenerationInput,
+  type ThreadNameGenerationInput,
   type TextGenerationShape,
   TextGeneration,
 } from "../Services/TextGeneration.ts";
@@ -18,6 +19,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildThreadNamePrompt,
 } from "../Prompts.ts";
 import {
   normalizeCliError,
@@ -83,7 +85,11 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     fileSystem.remove(filePath).pipe(Effect.catch(() => Effect.void));
 
   const materializeImageAttachments = (
-    _operation: "generateCommitMessage" | "generatePrContent" | "generateBranchName",
+    _operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadName",
     attachments: BranchNameGenerationInput["attachments"],
   ): Effect.Effect<MaterializedImageAttachments, TextGenerationError> =>
     Effect.gen(function* () {
@@ -124,7 +130,11 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     cleanupPaths = [],
     modelSelection,
   }: {
-    operation: "generateCommitMessage" | "generatePrContent" | "generateBranchName";
+    operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadName";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -363,10 +373,44 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     };
   });
 
+  const generateThreadName: TextGenerationShape["generateThreadName"] = Effect.fn(
+    "CodexTextGeneration.generateThreadName",
+  )(function* (input: ThreadNameGenerationInput) {
+    const { imagePaths } = yield* materializeImageAttachments(
+      "generateThreadName",
+      input.attachments,
+    );
+    const { prompt, outputSchema } = buildThreadNamePrompt({
+      message: input.message,
+      attachments: input.attachments,
+    });
+
+    if (input.modelSelection.provider !== "codex") {
+      return yield* new TextGenerationError({
+        operation: "generateThreadName",
+        detail: "Invalid model selection.",
+      });
+    }
+
+    const generated = yield* runCodexJson({
+      operation: "generateThreadName",
+      cwd: input.cwd,
+      prompt,
+      outputSchemaJson: outputSchema,
+      imagePaths,
+      modelSelection: input.modelSelection,
+    });
+
+    return {
+      title: generated.title.trim().slice(0, 80),
+    };
+  });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
+    generateThreadName,
   } satisfies TextGenerationShape;
 });
 

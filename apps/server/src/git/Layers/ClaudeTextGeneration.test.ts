@@ -213,6 +213,33 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGenerationLive", (it) => {
     ),
   );
 
+  it.effect("generates thread name from user message", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            title: "Fix login timeout handling",
+          },
+        }),
+        stdinMustContain: "thread titles",
+      },
+      Effect.gen(function* () {
+        const textGeneration = yield* TextGeneration;
+
+        const generated = yield* textGeneration.generateThreadName({
+          cwd: process.cwd(),
+          message: "The login page times out after 30 seconds, can you fix the timeout handling?",
+          modelSelection: {
+            provider: "claudeAgent",
+            model: "claude-haiku-4-5",
+          },
+        });
+
+        expect(generated.title).toBe("Fix login timeout handling");
+      }),
+    ),
+  );
+
   it.effect("forwards Claude fast mode and supported effort", () =>
     withFakeClaudeEnv(
       {

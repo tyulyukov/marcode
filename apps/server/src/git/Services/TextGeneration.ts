@@ -12,7 +12,7 @@ import type { ChatAttachment, ModelSelection } from "@marcode/contracts";
 
 import type { TextGenerationError } from "../Errors.ts";
 
-/** Providers that support git text generation (commit messages, PR content, branch names). */
+/** Providers that support text generation (commit messages, PR content, branch names, thread names). */
 export type TextGenerationProvider = "codex" | "claudeAgent";
 
 export interface CommitMessageGenerationInput {
@@ -61,12 +61,25 @@ export interface BranchNameGenerationResult {
   branch: string;
 }
 
+export interface ThreadNameGenerationInput {
+  cwd: string;
+  message: string;
+  attachments?: ReadonlyArray<ChatAttachment> | undefined;
+  /** What model and provider to use for generation. */
+  modelSelection: ModelSelection;
+}
+
+export interface ThreadNameGenerationResult {
+  title: string;
+}
+
 export interface TextGenerationService {
   generateCommitMessage(
     input: CommitMessageGenerationInput,
   ): Promise<CommitMessageGenerationResult>;
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
+  generateThreadName(input: ThreadNameGenerationInput): Promise<ThreadNameGenerationResult>;
 }
 
 /**
@@ -93,6 +106,13 @@ export interface TextGenerationShape {
   readonly generateBranchName: (
     input: BranchNameGenerationInput,
   ) => Effect.Effect<BranchNameGenerationResult, TextGenerationError>;
+
+  /**
+   * Generate a concise thread title from a user message.
+   */
+  readonly generateThreadName: (
+    input: ThreadNameGenerationInput,
+  ) => Effect.Effect<ThreadNameGenerationResult, TextGenerationError>;
 }
 
 /**

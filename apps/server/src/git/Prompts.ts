@@ -159,3 +159,46 @@ export function buildBranchNamePrompt(input: BranchNamePromptInput) {
 
   return { prompt, outputSchema };
 }
+
+// ---------------------------------------------------------------------------
+// Thread name
+// ---------------------------------------------------------------------------
+
+export interface ThreadNamePromptInput {
+  message: string;
+  attachments?: ReadonlyArray<ChatAttachment> | undefined;
+}
+
+export function buildThreadNamePrompt(input: ThreadNamePromptInput) {
+  const attachmentLines = (input.attachments ?? []).map(
+    (attachment) => `- ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`,
+  );
+
+  const promptSections = [
+    "You generate concise thread titles for coding assistant conversations.",
+    "Return a JSON object with key: title.",
+    "Rules:",
+    "- Title should summarize the user's coding intent or task.",
+    "- Keep it short and specific (3-8 words).",
+    "- Use sentence case (capitalize first word only, unless proper nouns).",
+    "- Do not include quotation marks or trailing punctuation.",
+    "- If images are attached, use them as primary context for visual/UI issues.",
+    "",
+    "User message:",
+    limitSection(input.message, 8_000),
+  ];
+  if (attachmentLines.length > 0) {
+    promptSections.push(
+      "",
+      "Attachment metadata:",
+      limitSection(attachmentLines.join("\n"), 4_000),
+    );
+  }
+
+  const prompt = promptSections.join("\n");
+  const outputSchema = Schema.Struct({
+    title: Schema.String,
+  });
+
+  return { prompt, outputSchema };
+}
