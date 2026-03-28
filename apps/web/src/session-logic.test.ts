@@ -17,6 +17,8 @@ import {
   deriveWorkLogEntries,
   findLatestProposedPlan,
   findSidebarProposedPlan,
+  formatTokenCount,
+  formatToolUseCount,
   hasActionableProposedPlan,
   hasToolActivityForTurn,
   isLatestTurnSettled,
@@ -563,7 +565,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
   });
 
-  it("omits task start and completion lifecycle entries", () => {
+  it("groups task lifecycle entries into a single agent group entry", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "task-start",
@@ -571,6 +573,7 @@ describe("deriveWorkLogEntries", () => {
         kind: "task.started",
         summary: "default task started",
         tone: "info",
+        payload: { taskId: "t1", detail: "Explore codebase" },
       }),
       makeActivity({
         id: "task-progress",
@@ -578,6 +581,11 @@ describe("deriveWorkLogEntries", () => {
         kind: "task.progress",
         summary: "Updating files",
         tone: "info",
+        payload: {
+          taskId: "t1",
+          detail: "Exploring",
+          usage: { total_tokens: 12000, tool_uses: 5 },
+        },
       }),
       makeActivity({
         id: "task-complete",
@@ -585,11 +593,262 @@ describe("deriveWorkLogEntries", () => {
         kind: "task.completed",
         summary: "Task completed",
         tone: "info",
+        payload: {
+          taskId: "t1",
+          status: "completed",
+          usage: { total_tokens: 15000, tool_uses: 8 },
+        },
       }),
     ];
 
     const entries = deriveWorkLogEntries(activities, undefined);
-    expect(entries.map((entry) => entry.id)).toEqual(["task-progress"]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.agentGroup).toBeDefined();
+    expect(entries[0]!.agentGroup!.tasks).toHaveLength(1);
+    expect(entries[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
+    expect(entries[0]!.agentGroup!.tasks[0]!.description).toBe("Explore codebase");
+    expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
+    expect(entries[0]!.agentGroup!.tasks[0]!.toolUses).toBe(8);
+    expect(entries[0]!.agentGroup!.tasks[0]!.totalTokens).toBe(15000);
+    expect(entries[0]!.label).toBe("1 agent finished");
+  });
+
+  it("groups multiple tasks into a single agent group entry", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Explore CSS" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:01.500Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Explore sidebar" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: {
+          taskId: "t1",
+          status: "completed",
+          usage: { total_tokens: 77900, tool_uses: 35 },
+        },
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:06.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: {
+          taskId: "t2",
+          status: "completed",
+          usage: { total_tokens: 54700, tool_uses: 19 },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.agentGroup!.tasks).toHaveLength(2);
+    expect(entries[0]!.label).toBe("2 agents finished");
+    expect(entries[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
+    expect(entries[0]!.agentGroup!.tasks[1]!.taskId).toBe("t2");
+  });
+
+  it("shows running status when task has no completed event", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Running analysis" },
+      }),
+      makeActivity({
+        id: "t1-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Analyzing", usage: { total_tokens: 3000, tool_uses: 2 } },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("running");
+    expect(entries[0]!.label).toBe("1 agent running");
+  });
+
+  it("shows failed status and error tone in agent group", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Run tests" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "error",
+        payload: { taskId: "t1", status: "failed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.tone).toBe("error");
+    expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("failed");
+    expect(entries[0]!.label).toBe("1 agent finished (1 failed)");
+  });
+
+  it("handles missing usage data gracefully", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Quick check" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]!.agentGroup!.tasks[0]!.toolUses).toBeNull();
+    expect(entries[0]!.agentGroup!.tasks[0]!.totalTokens).toBeNull();
+  });
+
+  it("preserves non-task work entries alongside agent group", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "tool-1",
+        createdAt: "2026-02-23T00:00:00.500Z",
+        kind: "tool.completed",
+        summary: "File edit",
+        tone: "tool",
+      }),
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Explore" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "tool-2",
+        createdAt: "2026-02-23T00:00:04.000Z",
+        kind: "tool.completed",
+        summary: "Command run",
+        tone: "tool",
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const ids = entries.map((e) => e.id);
+    expect(ids[0]).toBe("tool-1");
+    expect(entries[1]!.agentGroup).toBeDefined();
+    expect(ids[2]).toBe("tool-2");
+  });
+
+  it("shows mixed label when some tasks are running and some completed", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "First task" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:01.500Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Second task" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]!.label).toBe("2 agents (1 running)");
+  });
+
+  it("handles task.progress without preceding task.started", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: {
+          taskId: "t1",
+          detail: "Checking files",
+          usage: { total_tokens: 5000, tool_uses: 3 },
+        },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.agentGroup!.tasks[0]!.description).toBe("Checking files");
+    expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
+  });
+
+  it("handles stopped task status", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Long task" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "stopped" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("stopped");
   });
 
   it("filters by turn id when provided", () => {
@@ -1125,6 +1384,32 @@ describe("deriveActiveWorkStartedAt", () => {
         "2026-02-27T21:11:00.000Z",
       ),
     ).toBe("2026-02-27T21:11:00.000Z");
+  });
+});
+
+describe("formatTokenCount", () => {
+  it("formats small counts without abbreviation", () => {
+    expect(formatTokenCount(500)).toBe("500 tokens");
+  });
+
+  it("formats thousands with one decimal", () => {
+    expect(formatTokenCount(12000)).toBe("12.0k tokens");
+    expect(formatTokenCount(77900)).toBe("77.9k tokens");
+  });
+
+  it("formats large counts rounded", () => {
+    expect(formatTokenCount(150000)).toBe("150k tokens");
+  });
+});
+
+describe("formatToolUseCount", () => {
+  it("uses singular for count of 1", () => {
+    expect(formatToolUseCount(1)).toBe("1 tool use");
+  });
+
+  it("uses plural for other counts", () => {
+    expect(formatToolUseCount(0)).toBe("0 tool uses");
+    expect(formatToolUseCount(35)).toBe("35 tool uses");
   });
 });
 

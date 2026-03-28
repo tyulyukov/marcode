@@ -14,7 +14,14 @@ import {
   type VirtualItem,
   useVirtualizer,
 } from "@tanstack/react-virtual";
-import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
+import {
+  deriveTimelineEntries,
+  formatElapsed,
+  formatTokenCount,
+  formatToolUseCount,
+  type AgentGroup,
+  type AgentTaskSummary,
+} from "../../session-logic";
 import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../../chat-scroll";
 import { type TurnDiffSummary } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
@@ -22,6 +29,8 @@ import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
@@ -64,6 +73,7 @@ const WORK_ROW_BASE_HEIGHT = 112;
 const DIFF_PREVIEW_HEADER_HEIGHT = 32;
 const DIFF_PREVIEW_LINE_HEIGHT = 18;
 const DIFF_PREVIEW_MAX_HEIGHT = 260;
+const AGENT_GROUP_HEADER_HEIGHT = 32;
 
 function estimateWorkRowHeight(
   groupedEntries: ReadonlyArray<TimelineWorkEntry>,
@@ -71,13 +81,17 @@ function estimateWorkRowHeight(
 ): number {
   if (!showInlineDiffs) return WORK_ROW_BASE_HEIGHT;
 
-  let diffHeight = 0;
+  let extraHeight = 0;
   const visibleEntries =
     groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES
       ? groupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES)
       : groupedEntries;
 
   for (const entry of visibleEntries) {
+    if (entry.agentGroup) {
+      extraHeight += AGENT_GROUP_HEADER_HEIGHT;
+      continue;
+    }
     const previews = entry.diffPreviews;
     if (!previews || previews.length === 0) continue;
     for (const hunk of previews) {
@@ -85,11 +99,11 @@ function estimateWorkRowHeight(
         hunk.lines.length * DIFF_PREVIEW_LINE_HEIGHT,
         DIFF_PREVIEW_MAX_HEIGHT,
       );
-      diffHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + 8;
+      extraHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + 8;
     }
   }
 
-  return WORK_ROW_BASE_HEIGHT + diffHeight;
+  return WORK_ROW_BASE_HEIGHT + extraHeight;
 }
 
 interface MessagesTimelineProps {
@@ -381,13 +395,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 </div>
               )}
               <div className="space-y-0.5">
-                {visibleEntries.map((workEntry) => (
-                  <SimpleWorkEntryRow
-                    key={`work-row:${workEntry.id}`}
-                    workEntry={workEntry}
-                    showInlineDiffs={showInlineDiffs}
-                  />
-                ))}
+                {visibleEntries.map((workEntry) =>
+                  workEntry.agentGroup ? (
+                    <AgentGroupRow
+                      key={workEntry.id}
+                      agentGroup={workEntry.agentGroup}
+                      label={workEntry.label}
+                    />
+                  ) : (
+                    <SimpleWorkEntryRow
+                      key={`work-row:${workEntry.id}`}
+                      workEntry={workEntry}
+                      showInlineDiffs={showInlineDiffs}
+                    />
+                  ),
+                )}
               </div>
             </div>
           );
@@ -895,6 +917,106 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   }
   return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
+
+function agentTaskStatusLabel(status: AgentTaskSummary["status"]): string {
+  switch (status) {
+    case "completed":
+      return "Done";
+    case "failed":
+      return "Failed";
+    case "stopped":
+      return "Stopped";
+    case "running":
+      return "Running...";
+  }
+}
+
+function agentTaskStatusClass(status: AgentTaskSummary["status"]): string {
+  switch (status) {
+    case "failed":
+      return "text-rose-400/70";
+    case "running":
+      return "text-amber-400/70";
+    default:
+      return "text-muted-foreground/50";
+  }
+}
+
+const AgentTaskRow = memo(function AgentTaskRow(props: {
+  task: AgentTaskSummary;
+  isLast: boolean;
+}) {
+  const { task, isLast } = props;
+  const connector = isLast ? "└─" : "├─";
+  const statusConnectorPrefix = isLast ? "\u00A0\u00A0 " : "│\u00A0 ";
+
+  const metaParts: string[] = [];
+  if (task.toolUses !== null) metaParts.push(formatToolUseCount(task.toolUses));
+  if (task.totalTokens !== null) metaParts.push(formatTokenCount(task.totalTokens));
+  const metaString = metaParts.length > 0 ? ` · ${metaParts.join(" · ")}` : "";
+
+  return (
+    <div className="py-0.5">
+      <p className="truncate font-mono text-[11px] leading-5 text-muted-foreground/70">
+        <span className="text-border/60" aria-hidden="true">
+          {connector}
+        </span>{" "}
+        <span className="text-foreground/75">{task.description}</span>
+        {metaString && <span className="text-muted-foreground/45">{metaString}</span>}
+      </p>
+      <p className={cn("font-mono text-[10px] leading-4", agentTaskStatusClass(task.status))}>
+        <span className="text-border/60" aria-hidden="true">
+          {statusConnectorPrefix}└
+        </span>{" "}
+        {agentTaskStatusLabel(task.status)}
+      </p>
+    </div>
+  );
+});
+
+const AgentGroupRow = memo(function AgentGroupRow(props: {
+  agentGroup: AgentGroup;
+  label: string;
+}) {
+  const { agentGroup, label } = props;
+  const [expanded, setExpanded] = useState(false);
+  const tasks = agentGroup.tasks;
+  const allSettled = tasks.every(
+    (t) => t.status === "completed" || t.status === "failed" || t.status === "stopped",
+  );
+
+  const ExpandIcon = expanded ? ChevronDownIcon : ChevronRightIcon;
+
+  return (
+    <div className="rounded-lg px-1 py-1">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 text-left transition-colors duration-150 hover:bg-muted/20"
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        <span className="flex size-5 shrink-0 items-center justify-center">
+          {allSettled ? (
+            <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
+          ) : (
+            <span className="size-2 animate-pulse rounded-full bg-amber-400" aria-hidden="true" />
+          )}
+          <span className="sr-only">{allSettled ? "Finished" : "In progress"}</span>
+        </span>
+        <span className="flex-1 truncate text-[11px] leading-5 text-foreground/80">{label}</span>
+        <ExpandIcon className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+      </button>
+
+      {expanded && (
+        <div className="ml-2.5 mt-1 border-l border-border/40 pl-3">
+          {tasks.map((task, index) => (
+            <AgentTaskRow key={task.taskId} task={task} isLast={index === tasks.length - 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;

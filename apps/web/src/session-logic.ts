@@ -34,6 +34,19 @@ export const PROVIDER_OPTIONS: Array<{
   { value: "cursor", label: "Cursor", available: false },
 ];
 
+export interface AgentTaskSummary {
+  taskId: string;
+  description: string;
+  status: "running" | "completed" | "failed" | "stopped";
+  toolUses: number | null;
+  totalTokens: number | null;
+  createdAt: string;
+}
+
+export interface AgentGroup {
+  tasks: ReadonlyArray<AgentTaskSummary>;
+}
+
 export interface WorkLogEntry {
   id: string;
   createdAt: string;
@@ -46,6 +59,7 @@ export interface WorkLogEntry {
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   diffPreviews?: ReadonlyArray<InlineDiffHunk>;
+  agentGroup?: AgentGroup;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -462,14 +476,33 @@ export function deriveWorkLogEntries(
   latestTurnId: TurnId | undefined,
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
-  const entries = ordered
+  const filtered = ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter((activity) => activity.kind !== "tool.started")
-    .filter((activity) => activity.kind !== "task.started" && activity.kind !== "task.completed")
     .filter((activity) => activity.kind !== "context-window.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
-    .filter((activity) => !isPlanBoundaryToolActivity(activity))
-    .map(toDerivedWorkLogEntry);
+    .filter((activity) => !isPlanBoundaryToolActivity(activity));
+
+  const taskGroups = buildTaskGroups(filtered);
+  const taskActivityIds = new Set([...taskGroups.values()].flatMap((group) => group.activityIds));
+
+  let agentGroupEmitted = false;
+  const entries: DerivedWorkLogEntry[] = [];
+
+  for (const activity of filtered) {
+    if (taskActivityIds.has(activity.id)) {
+      if (!agentGroupEmitted) {
+        agentGroupEmitted = true;
+        const groupEntry = buildAgentGroupEntry(activity, taskGroups);
+        if (groupEntry) {
+          entries.push(groupEntry);
+        }
+      }
+      continue;
+    }
+    entries.push(toDerivedWorkLogEntry(activity));
+  }
+
   return collapseDerivedWorkLogEntries(entries).map(
     ({ activityKind: _activityKind, collapseKey: _collapseKey, ...entry }) => entry,
   );
@@ -485,6 +518,137 @@ function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): bool
       ? (activity.payload as Record<string, unknown>)
       : null;
   return typeof payload?.detail === "string" && payload.detail.startsWith("ExitPlanMode:");
+}
+
+interface TaskActivityGroup {
+  started: OrchestrationThreadActivity | null;
+  progressEntries: OrchestrationThreadActivity[];
+  completed: OrchestrationThreadActivity | null;
+  activityIds: string[];
+}
+
+const TASK_ACTIVITY_KINDS = new Set(["task.started", "task.progress", "task.completed"]);
+
+function isTaskActivity(activity: OrchestrationThreadActivity): boolean {
+  return TASK_ACTIVITY_KINDS.has(activity.kind);
+}
+
+function extractTaskId(activity: OrchestrationThreadActivity): string | null {
+  const payload = asRecord(activity.payload);
+  const taskId = payload?.taskId;
+  return typeof taskId === "string" && taskId.length > 0 ? taskId : null;
+}
+
+function buildTaskGroups(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): Map<string, TaskActivityGroup> {
+  const groups = new Map<string, TaskActivityGroup>();
+  for (const activity of activities) {
+    if (!isTaskActivity(activity)) continue;
+    const taskId = extractTaskId(activity);
+    if (!taskId) continue;
+
+    let group = groups.get(taskId);
+    if (!group) {
+      group = { started: null, progressEntries: [], completed: null, activityIds: [] };
+      groups.set(taskId, group);
+    }
+    group.activityIds.push(activity.id);
+
+    if (activity.kind === "task.started") group.started = activity;
+    else if (activity.kind === "task.progress") group.progressEntries.push(activity);
+    else if (activity.kind === "task.completed") group.completed = activity;
+  }
+  return groups;
+}
+
+function extractTaskUsage(payload: Record<string, unknown> | null): {
+  totalTokens: number | null;
+  toolUses: number | null;
+} {
+  const usage = asRecord(payload?.usage);
+  if (!usage) return { totalTokens: null, toolUses: null };
+  return {
+    totalTokens: typeof usage.total_tokens === "number" ? usage.total_tokens : null,
+    toolUses: typeof usage.tool_uses === "number" ? usage.tool_uses : null,
+  };
+}
+
+function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentTaskSummary {
+  const completedPayload = asRecord(group.completed?.payload);
+  const latestProgress = group.progressEntries.at(-1);
+  const latestProgressPayload = asRecord(latestProgress?.payload);
+  const startedPayload = asRecord(group.started?.payload);
+
+  const description =
+    asTrimmedString(startedPayload?.detail) ??
+    asTrimmedString(startedPayload?.description) ??
+    asTrimmedString(latestProgressPayload?.detail) ??
+    asTrimmedString(latestProgressPayload?.summary) ??
+    "Agent";
+
+  let status: AgentTaskSummary["status"] = "running";
+  if (completedPayload) {
+    const rawStatus = completedPayload.status;
+    if (rawStatus === "failed") status = "failed";
+    else if (rawStatus === "stopped") status = "stopped";
+    else status = "completed";
+  }
+
+  const usageSource = completedPayload ?? latestProgressPayload;
+  const { totalTokens, toolUses } = extractTaskUsage(usageSource);
+
+  const createdAt =
+    group.started?.createdAt ?? latestProgress?.createdAt ?? group.completed?.createdAt ?? "";
+
+  return { taskId, description, status, toolUses, totalTokens, createdAt };
+}
+
+export function formatTokenCount(tokens: number): string {
+  if (tokens < 1_000) return `${tokens} tokens`;
+  if (tokens < 100_000) return `${(tokens / 1_000).toFixed(1)}k tokens`;
+  return `${Math.round(tokens / 1_000)}k tokens`;
+}
+
+export function formatToolUseCount(count: number): string {
+  return `${count} tool use${count !== 1 ? "s" : ""}`;
+}
+
+function buildAgentGroupLabel(tasks: ReadonlyArray<AgentTaskSummary>): string {
+  const total = tasks.length;
+  const runningCount = tasks.filter((t) => t.status === "running").length;
+  const failedCount = tasks.filter((t) => t.status === "failed").length;
+  const noun = total === 1 ? "agent" : "agents";
+
+  if (runningCount > 0) {
+    if (runningCount === total) return `${total} ${noun} running`;
+    return `${total} ${noun} (${runningCount} running)`;
+  }
+  if (failedCount > 0) {
+    return `${total} ${noun} finished (${failedCount} failed)`;
+  }
+  return `${total} ${noun} finished`;
+}
+
+function buildAgentGroupEntry(
+  firstActivity: OrchestrationThreadActivity,
+  taskGroups: Map<string, TaskActivityGroup>,
+): DerivedWorkLogEntry | null {
+  if (taskGroups.size === 0) return null;
+
+  const tasks = [...taskGroups.entries()].map(([taskId, group]) =>
+    buildAgentTaskSummary(taskId, group),
+  );
+  const hasFailed = tasks.some((t) => t.status === "failed");
+
+  return {
+    id: `agent-group:${firstActivity.id}`,
+    createdAt: firstActivity.createdAt,
+    label: buildAgentGroupLabel(tasks),
+    tone: hasFailed ? "error" : "info",
+    activityKind: "task.started",
+    agentGroup: { tasks },
+  };
 }
 
 function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
