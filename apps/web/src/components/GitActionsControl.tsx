@@ -1,5 +1,6 @@
 import type {
   GitActionProgressEvent,
+  GitHostProvider,
   GitStackedAction,
   GitStatusResult,
   ThreadId,
@@ -7,7 +8,7 @@ import type {
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { ChevronDownIcon, CloudUploadIcon, GitCommitIcon, InfoIcon } from "lucide-react";
-import { GitHubIcon } from "./Icons";
+import { GitHubIcon, GitLabIcon } from "./Icons";
 import {
   buildGitActionProgressStages,
   buildMenuItems,
@@ -184,20 +185,44 @@ const COMMIT_DIALOG_TITLE = "Commit changes";
 const COMMIT_DIALOG_DESCRIPTION =
   "Review and confirm your commit. Leave the message blank to auto-generate one.";
 
-function GitActionItemIcon({ icon }: { icon: GitActionIconName }) {
-  if (icon === "commit") return <GitCommitIcon />;
-  if (icon === "push") return <CloudUploadIcon />;
-  return <GitHubIcon />;
+function GitHostIcon({
+  provider,
+  className,
+}: {
+  provider: GitHostProvider | undefined;
+  className?: string;
+}) {
+  if (provider === "gitlab") return <GitLabIcon className={className} />;
+  return <GitHubIcon className={className} />;
 }
 
-function GitQuickActionIcon({ quickAction }: { quickAction: GitQuickAction }) {
+function GitActionItemIcon({
+  icon,
+  gitHostProvider,
+}: {
+  icon: GitActionIconName;
+  gitHostProvider: GitHostProvider | undefined;
+}) {
+  if (icon === "commit") return <GitCommitIcon />;
+  if (icon === "push") return <CloudUploadIcon />;
+  return <GitHostIcon provider={gitHostProvider} />;
+}
+
+function GitQuickActionIcon({
+  quickAction,
+  gitHostProvider,
+}: {
+  quickAction: GitQuickAction;
+  gitHostProvider: GitHostProvider | undefined;
+}) {
   const iconClassName = "size-3.5";
-  if (quickAction.kind === "open_pr") return <GitHubIcon className={iconClassName} />;
+  if (quickAction.kind === "open_pr")
+    return <GitHostIcon provider={gitHostProvider} className={iconClassName} />;
   if (quickAction.kind === "run_pull") return <InfoIcon className={iconClassName} />;
   if (quickAction.kind === "run_action") {
     if (quickAction.action === "commit") return <GitCommitIcon className={iconClassName} />;
     if (quickAction.action === "commit_push") return <CloudUploadIcon className={iconClassName} />;
-    return <GitHubIcon className={iconClassName} />;
+    return <GitHostIcon provider={gitHostProvider} className={iconClassName} />;
   }
   if (quickAction.label === "Commit") return <GitCommitIcon className={iconClassName} />;
   return <InfoIcon className={iconClassName} />;
@@ -291,6 +316,9 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
         action: pendingDefaultBranchAction.action,
         branchName: pendingDefaultBranchAction.branchName,
         includesCommit: pendingDefaultBranchAction.includesCommit,
+        ...(gitStatusForActions?.gitHostProvider
+          ? { gitHostProvider: gitStatusForActions.gitHostProvider }
+          : {}),
       })
     : null;
 
@@ -450,6 +478,9 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
         hasWorkingTreeChanges: !!actionStatus?.hasWorkingTreeChanges,
         forcePushOnly: forcePushOnlyProgress,
         featureBranch,
+        ...(gitStatusForActions?.gitHostProvider
+          ? { gitHostProvider: gitStatusForActions.gitHostProvider }
+          : {}),
       });
       const actionId = randomUUID();
       const resolvedProgressToastId =
@@ -494,7 +525,7 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
       try {
         const result = await promise;
         activeGitActionProgressRef.current = null;
-        const resultToast = summarizeGitResult(result);
+        const resultToast = summarizeGitResult(result, gitStatusForActions?.gitHostProvider);
 
         const existingOpenPrUrl =
           actionStatus?.pr?.state === "open" ? actionStatus.pr.url : undefined;
@@ -542,7 +573,8 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
             : shouldOfferOpenPrCta
               ? {
                   actionProps: {
-                    children: "View PR",
+                    children:
+                      gitStatusForActions?.gitHostProvider === "gitlab" ? "View MR" : "View PR",
                     onClick: () => {
                       const api = readNativeApi();
                       if (!api) return;
@@ -554,7 +586,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
               : shouldOfferCreatePrCta
                 ? {
                     actionProps: {
-                      children: "Create PR",
+                      children:
+                        gitStatusForActions?.gitHostProvider === "gitlab"
+                          ? "Create MR"
+                          : "Create PR",
                       onClick: () => {
                         closeResultToast();
                         void runGitActionWithToast({
@@ -764,7 +799,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                   />
                 }
               >
-                <GitQuickActionIcon quickAction={quickAction} />
+                <GitQuickActionIcon
+                  quickAction={quickAction}
+                  gitHostProvider={gitStatusForActions?.gitHostProvider}
+                />
                 <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
                   {quickAction.label}
                 </span>
@@ -780,7 +818,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
               disabled={isGitActionRunning || quickAction.disabled}
               onClick={runQuickAction}
             >
-              <GitQuickActionIcon quickAction={quickAction} />
+              <GitQuickActionIcon
+                quickAction={quickAction}
+                gitHostProvider={gitStatusForActions?.gitHostProvider}
+              />
               <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
                 {quickAction.label}
               </span>
@@ -815,7 +856,10 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                         render={<span className="block w-max cursor-not-allowed" />}
                       >
                         <MenuItem className="w-full" disabled>
-                          <GitActionItemIcon icon={item.icon} />
+                          <GitActionItemIcon
+                            icon={item.icon}
+                            gitHostProvider={gitStatusForActions?.gitHostProvider}
+                          />
                           {item.label}
                         </MenuItem>
                       </PopoverTrigger>
@@ -834,14 +878,18 @@ export default function GitActionsControl({ gitCwd, activeThreadId }: GitActions
                       openDialogForMenuItem(item);
                     }}
                   >
-                    <GitActionItemIcon icon={item.icon} />
+                    <GitActionItemIcon
+                      icon={item.icon}
+                      gitHostProvider={gitStatusForActions?.gitHostProvider}
+                    />
                     {item.label}
                   </MenuItem>
                 );
               })}
               {gitStatusForActions?.branch === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
-                  Detached HEAD: create and checkout a branch to enable push and PR actions.
+                  Detached HEAD: create and checkout a branch to enable push and{" "}
+                  {gitStatusForActions?.gitHostProvider === "gitlab" ? "MR" : "PR"} actions.
                 </p>
               )}
               {gitStatusForActions &&

@@ -45,6 +45,19 @@ Docs:
 
 - Codex App Server docs: https://developers.openai.com/codex/sdk/#app-server
 
+## Git Host Provider Abstraction (GitHub + GitLab)
+
+MarCode supports both GitHub and GitLab (including self-hosted instances) for PR/MR operations. The integration is provider-agnostic:
+
+- `GitHostCli` (service contract in `apps/server/src/git/Services/GitHostCli.ts`) defines the abstract interface.
+- `GitHubCli` layer wraps `gh` CLI, `GitLabCli` layer wraps `glab` CLI.
+- `RoutingGitHostCli` auto-detects the provider from `remote.origin.url` hostname, with fallback to `git config marcode.gitHostProvider github|gitlab` and CLI auth probing.
+- `GitManager` depends only on `GitHostCli` — never on a specific provider.
+- The web UI dynamically shows "PR" or "MR" labels based on `gitHostProvider` from `GitStatusResult`.
+- Fork-based MR workflows for GitLab are deferred (graceful error).
+
+When adding new git-host-specific functionality, implement it in both `GitHubCli.ts` and `GitLabCli.ts` layers behind the `GitHostCliShape` interface.
+
 ## Tailwind v4 Pitfall: `px-*` vs `pl-*`/`pr-*`
 
 This project uses Tailwind CSS v4. In v4, `px-*` generates `padding-inline` (a logical CSS property) while `pl-*`/`pr-*` generate `padding-left`/`padding-right` (physical properties). Responsive variants (e.g. `sm:px-5`) are placed later in the generated stylesheet than non-responsive physical utilities (e.g. `pl-[90px]`), so the responsive `padding-inline` silently wins the cascade and overrides the physical `padding-left`.

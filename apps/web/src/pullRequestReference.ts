@@ -1,7 +1,10 @@
 const GITHUB_PULL_REQUEST_URL_PATTERN =
   /^https:\/\/github\.com\/[^/\s]+\/[^/\s]+\/pull\/(\d+)(?:[/?#].*)?$/i;
+const GITLAB_MERGE_REQUEST_URL_PATTERN =
+  /^https:\/\/[^/\s]+\/[^/\s]+\/[^/\s]+\/-\/merge_requests\/(\d+)(?:[/?#].*)?$/i;
 const PULL_REQUEST_NUMBER_PATTERN = /^#?(\d+)$/;
 const GITHUB_CLI_PR_CHECKOUT_PATTERN = /^gh\s+pr\s+checkout\s+(.+)$/i;
+const GITLAB_CLI_MR_CHECKOUT_PATTERN = /^glab\s+mr\s+checkout\s+(.+)$/i;
 
 export function parsePullRequestReference(input: string): string | null {
   const trimmed = input.trim();
@@ -10,13 +13,20 @@ export function parsePullRequestReference(input: string): string | null {
   }
 
   const ghCliCheckoutMatch = GITHUB_CLI_PR_CHECKOUT_PATTERN.exec(trimmed);
-  const normalizedInput = ghCliCheckoutMatch?.[1]?.trim() ?? trimmed;
+  const glabCliCheckoutMatch = GITLAB_CLI_MR_CHECKOUT_PATTERN.exec(trimmed);
+  const normalizedInput =
+    ghCliCheckoutMatch?.[1]?.trim() ?? glabCliCheckoutMatch?.[1]?.trim() ?? trimmed;
   if (normalizedInput.length === 0) {
     return null;
   }
 
-  const urlMatch = GITHUB_PULL_REQUEST_URL_PATTERN.exec(normalizedInput);
-  if (urlMatch?.[1]) {
+  const ghUrlMatch = GITHUB_PULL_REQUEST_URL_PATTERN.exec(normalizedInput);
+  if (ghUrlMatch?.[1]) {
+    return normalizedInput;
+  }
+
+  const glUrlMatch = GITLAB_MERGE_REQUEST_URL_PATTERN.exec(normalizedInput);
+  if (glUrlMatch?.[1]) {
     return normalizedInput;
   }
 
