@@ -16,7 +16,6 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
-  SlashCommandDescriptor,
   ThreadId,
   ProviderTurnStartResult,
   TurnId,
@@ -119,13 +118,6 @@ export interface ProviderAdapterShape<TError> {
    * Stop all sessions owned by this adapter.
    */
   readonly stopAll: () => Effect.Effect<void, TError>;
-
-  /**
-   * List available slash commands for an active session.
-   */
-  readonly listCommands: (
-    threadId: ThreadId,
-  ) => Effect.Effect<ReadonlyArray<SlashCommandDescriptor>, TError>;
 
   /**
    * Canonical runtime event stream emitted by this adapter.

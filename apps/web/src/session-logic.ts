@@ -539,19 +539,30 @@ export function deriveWorkLogEntries(
 
   const taskLaunchGroup = new Map<string, number>();
   let groupIndex = -1;
-  let sawNonTaskSinceLastLaunch = true;
+  let needsNewGroup = true;
+  const pendingTaskIds = new Set<string>();
 
   for (const activity of filtered) {
     if (!isTaskActivity(activity)) {
-      sawNonTaskSinceLastLaunch = true;
+      needsNewGroup = true;
       continue;
     }
     const taskId = extractTaskId(activity);
-    if (taskId && !taskLaunchGroup.has(taskId)) {
-      if (sawNonTaskSinceLastLaunch) groupIndex++;
-      taskLaunchGroup.set(taskId, groupIndex);
-      sawNonTaskSinceLastLaunch = false;
+    if (!taskId) continue;
+
+    if (activity.kind === "task.completed" && pendingTaskIds.has(taskId)) {
+      pendingTaskIds.delete(taskId);
+      needsNewGroup = true;
     }
+
+    if (taskLaunchGroup.has(taskId)) continue;
+
+    if (needsNewGroup) {
+      groupIndex++;
+      needsNewGroup = false;
+    }
+    taskLaunchGroup.set(taskId, groupIndex);
+    pendingTaskIds.add(taskId);
   }
 
   const groupActivities = new Map<number, OrchestrationThreadActivity[]>();
@@ -691,12 +702,14 @@ function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentT
   const latestProgressPayload = asRecord(latestProgress?.payload);
   const startedPayload = asRecord(group.started?.payload);
 
-  const description =
-    asTrimmedString(startedPayload?.detail) ??
-    asTrimmedString(startedPayload?.description) ??
-    asTrimmedString(latestProgressPayload?.detail) ??
-    asTrimmedString(latestProgressPayload?.summary) ??
-    "Agent";
+  const description = group.started
+    ? (asTrimmedString(startedPayload?.detail) ??
+      asTrimmedString(startedPayload?.description) ??
+      asTrimmedString(startedPayload?.summary) ??
+      "Agent")
+    : (asTrimmedString(latestProgressPayload?.detail) ??
+      asTrimmedString(latestProgressPayload?.summary) ??
+      "Agent");
 
   const agentType = asTrimmedString(startedPayload?.agentType) ?? null;
 
@@ -713,8 +726,8 @@ function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentT
 
   const lastToolName = asTrimmedString(latestProgressPayload?.lastToolName) ?? null;
   const progressSummary =
-    asTrimmedString(latestProgressPayload?.summary) ??
     asTrimmedString(latestProgressPayload?.detail) ??
+    asTrimmedString(latestProgressPayload?.summary) ??
     null;
 
   const createdAt =

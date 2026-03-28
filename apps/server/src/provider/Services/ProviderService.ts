@@ -21,7 +21,6 @@ import type {
   ProviderSession,
   ProviderSessionStartInput,
   ProviderStopSessionInput,
-  SlashCommandDescriptor,
   ThreadId,
   ProviderTurnStartResult,
 } from "@marcode/contracts";
@@ -99,13 +98,6 @@ export interface ProviderServiceShape {
     readonly threadId: ThreadId;
     readonly numTurns: number;
   }) => Effect.Effect<void, ProviderServiceError>;
-
-  /**
-   * List available slash commands for a provider session.
-   */
-  readonly listCommands: (
-    threadId: ThreadId,
-  ) => Effect.Effect<ReadonlyArray<SlashCommandDescriptor>, ProviderServiceError>;
 
   /**
    * Canonical provider runtime event stream.

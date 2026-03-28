@@ -1,8 +1,10 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "slash-add-dir";
+export const SLASH_COMMANDS = ["model", "plan", "default", "add-dir", "compact"] as const;
+
+export type ComposerSlashCommand = (typeof SLASH_COMMANDS)[number];
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -200,12 +202,15 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
           rangeEnd: cursor,
         };
       }
-      return {
-        kind: "slash-command",
-        query: commandQuery,
-        rangeStart: lineStart,
-        rangeEnd: cursor,
-      };
+      const lowerQuery = commandQuery.toLowerCase();
+      if (lowerQuery === "" || SLASH_COMMANDS.some((cmd) => cmd.startsWith(lowerQuery))) {
+        return {
+          kind: "slash-command",
+          query: commandQuery,
+          rangeStart: lineStart,
+          rangeEnd: cursor,
+        };
+      }
     }
 
     const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
@@ -213,6 +218,16 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
       return {
         kind: "slash-model",
         query: (modelMatch[1] ?? "").trim(),
+        rangeStart: lineStart,
+        rangeEnd: cursor,
+      };
+    }
+
+    const addDirMatch = /^\/add-dir\s+(.*)$/.exec(linePrefix);
+    if (addDirMatch) {
+      return {
+        kind: "slash-add-dir",
+        query: (addDirMatch[1] ?? "").trim(),
         rangeStart: lineStart,
         rangeEnd: cursor,
       };
@@ -233,9 +248,7 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   };
 }
 
-export function parseStandaloneComposerSlashCommand(
-  text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
+export function parseStandaloneComposerSlashCommand(text: string): "plan" | "default" | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;

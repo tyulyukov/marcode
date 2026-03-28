@@ -13,7 +13,6 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   type ResolvedKeybindingsConfig,
   type ServerProvider,
-  type SlashCommandDescriptor,
   type ThreadId,
   type TurnId,
   type EditorId,
@@ -373,8 +372,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [composerTrigger, setComposerTrigger] = useState<ComposerTrigger | null>(() =>
     detectComposerTrigger(prompt, prompt.length),
   );
-  const [sdkCommands, setSdkCommands] = useState<ReadonlyArray<SlashCommandDescriptor>>([]);
-  const sdkCommandsFetchedForRef = useRef<string | null>(null);
   const [lastInvokedScriptByProjectId, setLastInvokedScriptByProjectId] = useLocalStorage(
     LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
     {},
@@ -619,37 +616,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
   ]);
 
   const sessionProvider = activeThread?.session?.provider ?? null;
-  const sessionStatus = activeThread?.session?.status ?? null;
-  const isSessionActive = sessionStatus === "ready" || sessionStatus === "running";
-  const sdkCommandsFetchKey =
-    activeThreadId && sessionProvider && isSessionActive
-      ? `${activeThreadId}:${sessionProvider}`
-      : null;
-  useEffect(() => {
-    if (!sdkCommandsFetchKey || !activeThreadId) {
-      return;
-    }
-    if (sdkCommandsFetchedForRef.current === sdkCommandsFetchKey) {
-      return;
-    }
-    const api = readNativeApi();
-    if (!api) return;
-    sdkCommandsFetchedForRef.current = sdkCommandsFetchKey;
-    let cancelled = false;
-    api.session
-      .listCommands({ threadId: activeThreadId })
-      .then((result) => {
-        if (!cancelled) {
-          setSdkCommands(result.commands);
-        }
-      })
-      .catch(() => {
-        // silently ignore - commands are a non-critical enhancement
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sdkCommandsFetchKey, activeThreadId]);
   const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
   const threadProvider =
     activeThread?.modelSelection.provider ?? activeProject?.defaultModelSelection?.provider ?? null;
@@ -1063,8 +1029,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
       })
     : null;
   const composerTriggerKind = composerTrigger?.kind ?? null;
-  const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
-  const isPathTrigger = composerTriggerKind === "path";
+  const pathTriggerQuery =
+    composerTrigger?.kind === "path" || composerTrigger?.kind === "slash-add-dir"
+      ? composerTrigger.query
+      : "";
+  const isPathTrigger = composerTriggerKind === "path" || composerTriggerKind === "slash-add-dir";
   const [debouncedPathQuery, composerPathQueryDebouncer] = useDebouncedValue(
     pathTriggerQuery,
     { wait: COMPOSER_PATH_QUERY_DEBOUNCE_MS },
@@ -1116,7 +1085,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
-    if (composerTrigger.kind === "path") {
+    if (composerTrigger.kind === "path" || composerTrigger.kind === "slash-add-dir") {
       return workspaceEntries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
         type: "path",
@@ -1128,7 +1097,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     if (composerTrigger.kind === "slash-command") {
-      const clientLocalItems: ComposerCommandItem[] = [
+      const allItems: ComposerCommandItem[] = [
         {
           id: "slash:model",
           type: "slash-command",
@@ -1150,32 +1119,30 @@ export default function ChatView({ threadId }: ChatViewProps) {
           label: "/default",
           description: "Switch this thread back to normal chat mode",
         },
+        {
+          id: "slash:add-dir",
+          type: "slash-command",
+          command: "add-dir",
+          label: "/add-dir",
+          description: "Add a directory to context",
+        },
+        {
+          id: "slash:compact",
+          type: "slash-command",
+          command: "compact",
+          label: "/compact",
+          description: "Compact conversation context",
+        },
       ];
-      const sdkCommandItems: ComposerCommandItem[] = sdkCommands
-        .filter((cmd) => cmd.category !== "client-local")
-        .map((cmd) => ({
-          id: `sdk:${cmd.name}`,
-          type: "sdk-command",
-          name: cmd.name,
-          label: `/${cmd.name}`,
-          description: cmd.description,
-          argumentHint: cmd.argumentHint,
-          category: cmd.category,
-        }));
-      const allItems = [...clientLocalItems, ...sdkCommandItems];
       const query = composerTrigger.query.trim().toLowerCase();
       if (!query) {
         return allItems;
       }
-      return allItems.filter((item) => {
-        const name =
-          item.type === "slash-command"
-            ? item.command
-            : item.type === "sdk-command"
-              ? item.name
-              : "";
-        return name.toLowerCase().includes(query) || item.description.toLowerCase().includes(query);
-      });
+      return allItems.filter(
+        (item) =>
+          item.label.toLowerCase().includes(query) ||
+          item.description.toLowerCase().includes(query),
+      );
     }
 
     return searchableModelOptions
@@ -1194,7 +1161,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, searchableModelOptions, workspaceEntries, sdkCommands]);
+  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -3378,7 +3345,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
       if (item.type === "path") {
-        const replacement = `@${item.path} `;
+        const replacement =
+          trigger.kind === "slash-add-dir" ? `/add-dir ${item.path} ` : `@${item.path} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
@@ -3396,8 +3364,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
         return;
       }
       if (item.type === "slash-command") {
-        if (item.command === "model") {
-          const replacement = "/model ";
+        if (item.command === "model" || item.command === "add-dir" || item.command === "compact") {
+          const replacement = `/${item.command} `;
           const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
             snapshot.value,
             trigger.rangeEnd,
@@ -3418,24 +3386,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
         });
-        if (applied) {
-          setComposerHighlightedItemId(null);
-        }
-        return;
-      }
-      if (item.type === "sdk-command") {
-        const replacement = `/${item.name} `;
-        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
-          snapshot.value,
-          trigger.rangeEnd,
-          replacement,
-        );
-        const applied = applyPromptReplacement(
-          trigger.rangeStart,
-          replacementRangeEnd,
-          replacement,
-          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
-        );
         if (applied) {
           setComposerHighlightedItemId(null);
         }
@@ -3478,7 +3428,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [composerHighlightedItemId, composerMenuItems],
   );
   const isComposerMenuLoading =
-    composerTriggerKind === "path" &&
+    isPathTrigger &&
     ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
       workspaceEntriesQuery.isLoading ||
       workspaceEntriesQuery.isFetching);

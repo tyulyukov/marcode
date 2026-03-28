@@ -39,7 +39,6 @@ import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
 import { ServerConfigUpdatedPayload, ServerProviderUpdatedPayload } from "./server";
 import { ServerSettingsPatch } from "./settings";
-import { SessionListCommandsInput } from "./slashCommand";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -81,9 +80,6 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
-
-  // Session methods
-  sessionListCommands: "session.listCommands",
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -153,9 +149,6 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
   tagRequestBody(WS_METHODS.serverGetSettings, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpdateSettings, Schema.Struct({ patch: ServerSettingsPatch })),
-
-  // Session methods
-  tagRequestBody(WS_METHODS.sessionListCommands, SessionListCommandsInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({

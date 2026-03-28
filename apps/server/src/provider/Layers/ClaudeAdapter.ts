@@ -46,7 +46,6 @@ import {
   resolveEffort,
   trimOrNull,
 } from "@marcode/shared/model";
-import { classifyCommand } from "../claudeCommandClassification.ts";
 import {
   Cause,
   DateTime,
@@ -165,19 +164,12 @@ interface ClaudeSessionContext {
   stopped: boolean;
 }
 
-interface ClaudeSlashCommand {
-  readonly name: string;
-  readonly description: string;
-  readonly argumentHint: string;
-}
-
 interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly interrupt: () => Promise<void>;
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
   readonly close: () => void;
-  readonly supportedCommands: () => Promise<ClaudeSlashCommand[]>;
 }
 
 export interface ClaudeAdapterLiveOptions {
@@ -3083,30 +3075,6 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
         { discard: true },
       );
 
-    const listCommands: ClaudeAdapterShape["listCommands"] = (threadId) =>
-      Effect.gen(function* () {
-        const context = yield* requireSession(threadId);
-        const sdkCommands = yield* Effect.tryPromise({
-          try: () => context.query.supportedCommands(),
-          catch: (cause) =>
-            new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "supportedCommands",
-              detail: "Failed to retrieve supported commands from Claude runtime.",
-              cause,
-            }),
-        });
-        return sdkCommands.map((cmd) => {
-          const name = cmd.name.trim();
-          return {
-            name,
-            description: cmd.description,
-            argumentHint: cmd.argumentHint,
-            category: classifyCommand(name),
-          };
-        });
-      });
-
     yield* Effect.addFinalizer(() =>
       Effect.forEach(
         sessions,
@@ -3134,7 +3102,6 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
       listSessions,
       hasSession,
       stopAll,
-      listCommands,
       streamEvents: Stream.fromQueue(runtimeEventQueue),
     } satisfies ClaudeAdapterShape;
   });

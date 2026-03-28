@@ -1,11 +1,7 @@
-import {
-  type ProjectEntry,
-  type ProviderKind,
-  type SlashCommandCategory,
-} from "@marcode/contracts";
+import { type ProjectEntry, type ProviderKind } from "@marcode/contracts";
 import { memo } from "react";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
-import { BotIcon, SparklesIcon, TerminalIcon } from "lucide-react";
+import { BotIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Command, CommandItem, CommandList } from "../ui/command";
@@ -26,15 +22,6 @@ export type ComposerCommandItem =
       command: ComposerSlashCommand;
       label: string;
       description: string;
-    }
-  | {
-      id: string;
-      type: "sdk-command";
-      name: string;
-      label: string;
-      description: string;
-      argumentHint: string;
-      category: SlashCommandCategory;
     }
   | {
       id: string;
@@ -79,7 +66,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
           <p className="px-3 py-2 text-muted-foreground/70 text-xs">
             {props.isLoading
               ? "Searching workspace files..."
-              : props.triggerKind === "path"
+              : props.triggerKind === "path" || props.triggerKind === "slash-add-dir"
                 ? "No matching files or folders."
                 : "No matching command."}
           </p>
@@ -119,38 +106,13 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       {props.item.type === "slash-command" ? (
         <BotIcon className="size-4 text-muted-foreground/80" />
       ) : null}
-      {props.item.type === "sdk-command" ? (
-        props.item.category === "skill" ? (
-          <SparklesIcon className="size-4 text-purple-400/80" />
-        ) : (
-          <TerminalIcon className="size-4 text-muted-foreground/80" />
-        )
-      ) : null}
       {props.item.type === "model" ? (
         <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
           model
         </Badge>
       ) : null}
-      <span className="flex min-w-0 items-center gap-1.5 truncate">
-        <span className="truncate">{props.item.label}</span>
-        {props.item.type === "sdk-command" && props.item.argumentHint ? (
-          <span className="truncate text-muted-foreground/50 text-xs">
-            {props.item.argumentHint}
-          </span>
-        ) : null}
-      </span>
-      {props.item.type === "sdk-command" ? (
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          <Badge variant="outline" className="px-1 py-0 text-[9px] text-muted-foreground/60">
-            {props.item.category === "skill" ? "skill" : "built-in"}
-          </Badge>
-          <span className="truncate text-muted-foreground/70 text-xs">
-            {props.item.description}
-          </span>
-        </span>
-      ) : (
-        <span className="truncate text-muted-foreground/70 text-xs">{props.item.description}</span>
-      )}
+      <span className="truncate">{props.item.label}</span>
+      <span className="truncate text-muted-foreground/70 text-xs">{props.item.description}</span>
     </CommandItem>
   );
 });

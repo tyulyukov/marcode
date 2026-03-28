@@ -1370,6 +1370,118 @@ describe("deriveWorkLogEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]?.id).toBe("a-complete-same-timestamp");
   });
+
+  it("splits a later task into a new group when earlier parallel tasks have completed", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Explore A" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:01.500Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Explore B" },
+      }),
+      makeActivity({
+        id: "t3-start",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t3", detail: "Explore C" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:06.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t2", status: "completed" },
+      }),
+      makeActivity({
+        id: "t3-complete",
+        createdAt: "2026-02-23T00:00:07.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t3", status: "completed" },
+      }),
+      makeActivity({
+        id: "t4-start",
+        createdAt: "2026-02-23T00:00:10.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t4", detail: "Plan implementation" },
+      }),
+      makeActivity({
+        id: "t4-complete",
+        createdAt: "2026-02-23T00:00:15.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t4", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(2);
+
+    expect(entries[0]!.agentGroup!.tasks).toHaveLength(3);
+    expect(entries[0]!.agentGroup!.tasks.map((t) => t.taskId)).toEqual(["t1", "t2", "t3"]);
+
+    expect(entries[1]!.agentGroup!.tasks).toHaveLength(1);
+    expect(entries[1]!.agentGroup!.tasks[0]!.taskId).toBe("t4");
+  });
+
+  it("splits sequential single-task launches into separate groups", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "First agent" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:05.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Second agent" },
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:07.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t2", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(2);
+
+    expect(entries[0]!.agentGroup!.tasks).toHaveLength(1);
+    expect(entries[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
+
+    expect(entries[1]!.agentGroup!.tasks).toHaveLength(1);
+    expect(entries[1]!.agentGroup!.tasks[0]!.taskId).toBe("t2");
+  });
 });
 
 describe("deriveTimelineEntries", () => {
