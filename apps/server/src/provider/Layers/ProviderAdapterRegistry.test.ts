@@ -25,6 +25,7 @@ const fakeCodexAdapter: CodexAdapterShape = {
   readThread: vi.fn(),
   rollbackThread: vi.fn(),
   stopAll: vi.fn(),
+  listCommands: vi.fn(() => Effect.succeed([])),
   streamEvents: Stream.empty,
 };
 
@@ -42,6 +43,7 @@ const fakeClaudeAdapter: ClaudeAdapterShape = {
   readThread: vi.fn(),
   rollbackThread: vi.fn(),
   stopAll: vi.fn(),
+  listCommands: vi.fn(() => Effect.succeed([])),
   streamEvents: Stream.empty,
 };
 

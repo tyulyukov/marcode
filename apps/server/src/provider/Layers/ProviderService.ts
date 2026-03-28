@@ -526,6 +526,19 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         ).pipe(Effect.asVoid);
       });
 
+    const listCommands: ProviderServiceShape["listCommands"] = (threadId) =>
+      Effect.gen(function* () {
+        const routed = yield* resolveRoutableSession({
+          threadId,
+          operation: "ProviderService.listCommands",
+          allowRecovery: false,
+        });
+        if (!routed.isActive) {
+          return [];
+        }
+        return yield* routed.adapter.listCommands(routed.threadId);
+      });
+
     yield* Effect.addFinalizer(() =>
       Effect.catch(runStopAll(), (cause) =>
         Effect.logWarning("failed to stop provider service", { cause }),
@@ -542,6 +555,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
       listSessions,
       getCapabilities,
       rollbackConversation,
+      listCommands,
       // Each access creates a fresh PubSub subscription so that multiple
       // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each
       // independently receive all runtime events.
