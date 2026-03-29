@@ -26,20 +26,11 @@ function todoStatusIcon(status: TodoItem["status"]) {
   }
 }
 
-function todoPriorityBadge(priority: TodoItem["priority"]) {
-  if (priority === "high") {
-    return (
-      <span className="shrink-0 rounded bg-rose-500/15 px-1 py-px text-[9px] font-medium text-rose-400">
-        high
-      </span>
-    );
-  }
-  return null;
-}
-
 const TodoItemRow = memo(function TodoItemRow(props: { item: TodoItem }) {
   const { item } = props;
   const isCompleted = item.status === "completed";
+  const isInProgress = item.status === "in_progress";
+  const label = isInProgress ? item.activeForm : item.content;
 
   return (
     <div className="flex items-start gap-2 py-0.5">
@@ -52,9 +43,8 @@ const TodoItemRow = memo(function TodoItemRow(props: { item: TodoItem }) {
           isCompleted ? "text-muted-foreground/50 line-through" : "text-foreground/80",
         )}
       >
-        {item.content}
+        {label}
       </span>
-      {todoPriorityBadge(item.priority)}
     </div>
   );
 });
@@ -77,9 +67,9 @@ export const ComposerTodoListPanel = memo(function ComposerTodoListPanel(props: 
       >
         <span className="flex size-5 shrink-0 items-center justify-center">
           {allCompleted ? (
-            <CheckCircle2Icon className="size-3.5 text-emerald-500" aria-hidden="true" />
+            <CheckCircle2Icon className="size-3.5 text-success" aria-hidden="true" />
           ) : (
-            <ListTodoIcon className="size-3.5 text-amber-400/80" aria-hidden="true" />
+            <ListTodoIcon className="size-3.5 text-primary/80" aria-hidden="true" />
           )}
         </span>
         <span className="flex-1 text-[11px] leading-5 text-foreground/80">
@@ -91,7 +81,7 @@ export const ComposerTodoListPanel = memo(function ComposerTodoListPanel(props: 
       {expanded && (
         <div className="mt-1 space-y-0.5 pl-5">
           {items.map((item) => (
-            <TodoItemRow key={item.id} item={item} />
+            <TodoItemRow key={item.content} item={item} />
           ))}
         </div>
       )}

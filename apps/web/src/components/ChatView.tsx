@@ -27,7 +27,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { gitBranchesQueryOptions, gitCreateWorktreeMutationOptions } from "~/lib/gitReactQuery";
-import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
+import {
+  projectBrowseDirectoriesQueryOptions,
+  projectSearchEntriesQueryOptions,
+} from "~/lib/projectReactQuery";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
 import { isElectron } from "../env";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
@@ -632,7 +635,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const providerStatuses = serverConfigQuery.data?.providers ?? EMPTY_PROVIDERS;
   const unlockedSelectedProvider = resolveSelectableProvider(
     providerStatuses,
-    selectedProviderByThreadId ?? threadProvider ?? "codex",
+    selectedProviderByThreadId ?? threadProvider ?? "claudeAgent",
   );
   const selectedProvider: ProviderKind = lockedProvider ?? unlockedSelectedProvider;
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
@@ -1033,7 +1036,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     composerTrigger?.kind === "path" || composerTrigger?.kind === "slash-add-dir"
       ? composerTrigger.query
       : "";
-  const isPathTrigger = composerTriggerKind === "path" || composerTriggerKind === "slash-add-dir";
+  const isWorkspacePathTrigger = composerTriggerKind === "path";
+  const isAddDirTrigger = composerTriggerKind === "slash-add-dir";
+  const isPathTrigger = isWorkspacePathTrigger || isAddDirTrigger;
   const [debouncedPathQuery, composerPathQueryDebouncer] = useDebouncedValue(
     pathTriggerQuery,
     { wait: COMPOSER_PATH_QUERY_DEBOUNCE_MS },
@@ -1078,14 +1083,33 @@ export default function ChatView({ threadId }: ChatViewProps) {
     projectSearchEntriesQueryOptions({
       cwd: gitCwd,
       query: effectivePathQuery,
-      enabled: isPathTrigger,
+      enabled: isWorkspacePathTrigger,
+      limit: 80,
+    }),
+  );
+  const directoryBrowseQuery = useQuery(
+    projectBrowseDirectoriesQueryOptions({
+      cwd: gitCwd,
+      pathQuery: effectivePathQuery,
+      enabled: isAddDirTrigger,
       limit: 80,
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const browsedDirectories = directoryBrowseQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
-    if (composerTrigger.kind === "path" || composerTrigger.kind === "slash-add-dir") {
+    if (composerTrigger.kind === "slash-add-dir") {
+      return browsedDirectories.map((entry) => ({
+        id: `path:${entry.kind}:${entry.path}`,
+        type: "path",
+        path: entry.path,
+        pathKind: entry.kind,
+        label: basenameOfPath(entry.path),
+        description: entry.parentPath ?? "",
+      }));
+    }
+    if (composerTrigger.kind === "path") {
       return workspaceEntries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
         type: "path",
@@ -1161,7 +1185,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
+  }, [browsedDirectories, composerTrigger, searchableModelOptions, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -3430,8 +3454,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const isComposerMenuLoading =
     isPathTrigger &&
     ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-      workspaceEntriesQuery.isLoading ||
-      workspaceEntriesQuery.isFetching);
+      (isWorkspacePathTrigger &&
+        (workspaceEntriesQuery.isLoading || workspaceEntriesQuery.isFetching)) ||
+      (isAddDirTrigger && (directoryBrowseQuery.isLoading || directoryBrowseQuery.isFetching)));
 
   const onPromptChange = useCallback(
     (

@@ -3,6 +3,7 @@
 ## Task Completion Requirements
 
 - All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
+- Do NOT run `bun run build` — typecheck is sufficient for validation.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 
 ## Project Snapshot
@@ -32,7 +33,7 @@ Long term maintainability is a core priority. If you add new functionality, firs
 
 ## Codex App Server (Important)
 
-MarCode is currently Codex-first. The server starts `codex app-server` (JSON-RPC over stdio) per provider session, then streams structured events to the browser through WebSocket push messages.
+MarCode is currently Claude-first (Claude is the default provider). The server starts `codex app-server` (JSON-RPC over stdio) per provider session, then streams structured events to the browser through WebSocket push messages.
 
 How we use it in this codebase:
 

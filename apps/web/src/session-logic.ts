@@ -29,8 +29,8 @@ export const PROVIDER_OPTIONS: Array<{
   label: string;
   available: boolean;
 }> = [
-  { value: "codex", label: "Codex", available: true },
   { value: "claudeAgent", label: "Claude", available: true },
+  { value: "codex", label: "Codex", available: true },
   { value: "cursor", label: "Cursor", available: false },
 ];
 
@@ -475,10 +475,9 @@ export function hasActionableProposedPlan(
 }
 
 export interface TodoItem {
-  id: string;
   content: string;
+  activeForm: string;
   status: "in_progress" | "completed" | "pending";
-  priority: "high" | "medium" | "low";
 }
 
 export function deriveTodoItems(
@@ -503,20 +502,16 @@ export function deriveTodoItems(
     .map((entry): TodoItem | null => {
       const record = asRecord(entry);
       if (!record) return null;
-      const id = asTrimmedString(record.id);
       const content = asTrimmedString(record.content);
-      if (!id || !content) return null;
+      if (!content) return null;
+      const activeForm = asTrimmedString(record.activeForm) ?? content;
       const status =
         record.status === "in_progress" ||
         record.status === "completed" ||
         record.status === "pending"
           ? record.status
           : "pending";
-      const priority =
-        record.priority === "high" || record.priority === "medium" || record.priority === "low"
-          ? record.priority
-          : "medium";
-      return { id, content, status, priority };
+      return { content, activeForm, status };
     })
     .filter((item): item is TodoItem => item !== null);
 }

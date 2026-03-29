@@ -4,6 +4,8 @@ import path from "node:path";
 import { runProcess } from "./processRunner";
 
 import {
+  type ProjectBrowseDirectoriesInput,
+  type ProjectBrowseDirectoriesResult,
   ProjectEntry,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
@@ -562,4 +564,68 @@ export async function searchWorkspaceEntries(
     entries: rankedEntries.map((candidate) => candidate.entry),
     truncated: index.truncated || matchedEntryCount > limit,
   };
+}
+
+function parsePathQueryComponents(pathQuery: string): { parentDir: string; namePrefix: string } {
+  if (pathQuery.length === 0) {
+    return { parentDir: ".", namePrefix: "" };
+  }
+  const lastSlash = pathQuery.lastIndexOf("/");
+  if (lastSlash === -1) {
+    return { parentDir: ".", namePrefix: pathQuery };
+  }
+  return {
+    parentDir: pathQuery.slice(0, lastSlash + 1),
+    namePrefix: pathQuery.slice(lastSlash + 1),
+  };
+}
+
+export async function browseDirectories(
+  input: ProjectBrowseDirectoriesInput,
+): Promise<ProjectBrowseDirectoriesResult> {
+  const { parentDir, namePrefix } = parsePathQueryComponents(input.pathQuery);
+  const resolvedParent = path.resolve(input.cwd, parentDir);
+  const limit = Math.max(0, Math.floor(input.limit));
+  const lowerPrefix = namePrefix.toLowerCase();
+
+  let dirents: Dirent[];
+  try {
+    dirents = await fs.readdir(resolvedParent, { withFileTypes: true });
+  } catch {
+    return { entries: [], truncated: false };
+  }
+
+  dirents.sort((a, b) => a.name.localeCompare(b.name));
+
+  const entries: ProjectEntry[] = [];
+  let truncated = false;
+
+  for (const dirent of dirents) {
+    if (!dirent.name || dirent.name === "." || dirent.name === "..") {
+      continue;
+    }
+    if (!dirent.isDirectory()) {
+      continue;
+    }
+    if (IGNORED_DIRECTORY_NAMES.has(dirent.name)) {
+      continue;
+    }
+    if (lowerPrefix.length > 0 && !dirent.name.toLowerCase().startsWith(lowerPrefix)) {
+      continue;
+    }
+
+    if (entries.length >= limit) {
+      truncated = true;
+      break;
+    }
+
+    const entryPath = parentDir === "." ? dirent.name : `${parentDir}${dirent.name}`;
+    entries.push({
+      path: entryPath,
+      kind: "directory",
+      parentPath: parentDir === "." ? undefined : parentDir.replace(/\/$/, ""),
+    });
+  }
+
+  return { entries, truncated };
 }

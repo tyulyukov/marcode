@@ -280,7 +280,7 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         const input = {
           ...parsed,
           threadId,
-          provider: parsed.provider ?? "codex",
+          provider: parsed.provider ?? "claudeAgent",
         };
         const settings = yield* serverSettings.getSettings.pipe(
           Effect.mapError((error) =>

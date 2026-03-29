@@ -2776,7 +2776,13 @@ function makeClaudeAdapter(options?: ClaudeAdapterLiveOptions) {
           includePartialMessages: true,
           canUseTool,
           env: process.env,
-          ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
+          ...(() => {
+            const dirs: string[] = [];
+            if (input.cwd) dirs.push(input.cwd);
+            if (input.additionalDirectories) dirs.push(...input.additionalDirectories);
+            const uniqueDirs = [...new Set(dirs)];
+            return uniqueDirs.length > 0 ? { additionalDirectories: uniqueDirs } : {};
+          })(),
         };
 
         const queryRuntime = yield* Effect.try({

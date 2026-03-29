@@ -42,7 +42,7 @@ export function resolveSelectableProvider(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind | null | undefined,
 ): ProviderKind {
-  const requested = provider ?? "codex";
+  const requested = provider ?? "claudeAgent";
   if (isProviderEnabled(providers, requested)) {
     return requested;
   }
