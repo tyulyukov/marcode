@@ -50,6 +50,7 @@ import {
   type ParsedTerminalContextEntry,
 } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
 import {
@@ -898,23 +899,47 @@ const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary 
             {typeLabel}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
-          {task.description}
-        </span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
+                {task.description}
+              </span>
+            }
+          />
+          <TooltipPopup
+            side="top"
+            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
+          >
+            {task.description}
+          </TooltipPopup>
+        </Tooltip>
         {meta && <span className="shrink-0 text-[10px] text-muted-foreground/40">{meta}</span>}
       </div>
       {activityLine && (
-        <p
-          className={cn(
-            "truncate text-[10px] leading-4",
-            isRunning ? "text-amber-400/70" : "text-muted-foreground/50",
-          )}
-        >
-          {isRunning && (
-            <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-amber-400/80 align-middle" />
-          )}
-          {activityLine}
-        </p>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <p
+                className={cn(
+                  "truncate text-[10px] leading-4",
+                  isRunning ? "text-amber-400/70" : "text-muted-foreground/50",
+                )}
+              >
+                {isRunning && (
+                  <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-amber-400/80 align-middle" />
+                )}
+                {activityLine}
+              </p>
+            }
+          />
+          <TooltipPopup
+            side="top"
+            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
+          >
+            {activityLine}
+          </TooltipPopup>
+        </Tooltip>
       )}
     </div>
   );
@@ -949,7 +974,21 @@ const AgentGroupRow = memo(function AgentGroupRow(props: {
           )}
           <span className="sr-only">{allSettled ? "Finished" : "In progress"}</span>
         </span>
-        <span className="flex-1 truncate text-[11px] leading-5 text-foreground/80">{label}</span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="flex-1 truncate text-[11px] leading-5 text-foreground/80">
+                {label}
+              </span>
+            }
+          />
+          <TooltipPopup
+            side="top"
+            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
+          >
+            {label}
+          </TooltipPopup>
+        </Tooltip>
         <ExpandIcon className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
       </button>
 
@@ -989,19 +1028,30 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           <EntryIcon className="size-3" />
         </span>
         <div className="min-w-0 flex-1 overflow-hidden">
-          <p
-            className={cn(
-              "truncate text-[11px] leading-5",
-              workToneClass(workEntry.tone),
-              preview ? "text-muted-foreground/70" : "",
-            )}
-            title={displayText}
-          >
-            <span className={cn("text-foreground/80", workToneClass(workEntry.tone))}>
-              {heading}
-            </span>
-            {preview && <span className="text-muted-foreground/55"> - {preview}</span>}
-          </p>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <p
+                  className={cn(
+                    "truncate text-[11px] leading-5",
+                    workToneClass(workEntry.tone),
+                    preview ? "text-muted-foreground/70" : "",
+                  )}
+                >
+                  <span className={cn("text-foreground/80", workToneClass(workEntry.tone))}>
+                    {heading}
+                  </span>
+                  {preview && <span className="text-muted-foreground/55"> - {preview}</span>}
+                </p>
+              }
+            />
+            <TooltipPopup
+              side="top"
+              className="max-w-lg break-words whitespace-pre-wrap leading-tight"
+            >
+              {displayText}
+            </TooltipPopup>
+          </Tooltip>
         </div>
       </div>
       {shouldShowDiffs ? (
@@ -1015,13 +1065,18 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
         !previewIsChangedFiles && (
           <div className="mt-1 flex flex-wrap gap-1 pl-6">
             {workEntry.changedFiles?.slice(0, 4).map((filePath) => (
-              <span
-                key={`${workEntry.id}:${filePath}`}
-                className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
-                title={filePath}
-              >
-                {filePath}
-              </span>
+              <Tooltip key={`${workEntry.id}:${filePath}`}>
+                <TooltipTrigger
+                  render={
+                    <span className="max-w-48 truncate rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75">
+                      {filePath}
+                    </span>
+                  }
+                />
+                <TooltipPopup side="top" className="max-w-lg break-all leading-tight">
+                  {filePath}
+                </TooltipPopup>
+              </Tooltip>
             ))}
             {(workEntry.changedFiles?.length ?? 0) > 4 && (
               <span className="px-1 text-[10px] text-muted-foreground/55">
