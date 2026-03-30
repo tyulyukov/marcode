@@ -11,7 +11,7 @@ import { ServerConfig } from "../../config.ts";
 import { TextGenerationError } from "../Errors.ts";
 import {
   type BranchNameGenerationInput,
-  type ThreadNameGenerationInput,
+  type ThreadTitleGenerationResult,
   type TextGenerationShape,
   TextGeneration,
 } from "../Services/TextGeneration.ts";
@@ -19,12 +19,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildThreadNamePrompt,
+  buildThreadTitlePrompt,
 } from "../Prompts.ts";
 import {
   normalizeCliError,
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "../Utils.ts";
 import { normalizeCodexModelOptions } from "../../provider/Layers/CodexProvider.ts";
@@ -32,7 +33,6 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 
 const CODEX_GIT_TEXT_GENERATION_REASONING_EFFORT = "low";
 const CODEX_TIMEOUT_MS = 180_000;
-
 const makeCodexTextGeneration = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -89,7 +89,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadName",
+      | "generateThreadTitle",
     attachments: BranchNameGenerationInput["attachments"],
   ): Effect.Effect<MaterializedImageAttachments, TextGenerationError> =>
     Effect.gen(function* () {
@@ -134,7 +134,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadName";
+      | "generateThreadTitle";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -373,27 +373,27 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     };
   });
 
-  const generateThreadName: TextGenerationShape["generateThreadName"] = Effect.fn(
-    "CodexTextGeneration.generateThreadName",
-  )(function* (input: ThreadNameGenerationInput) {
+  const generateThreadTitle: TextGenerationShape["generateThreadTitle"] = Effect.fn(
+    "CodexTextGeneration.generateThreadTitle",
+  )(function* (input) {
     const { imagePaths } = yield* materializeImageAttachments(
-      "generateThreadName",
+      "generateThreadTitle",
       input.attachments,
     );
-    const { prompt, outputSchema } = buildThreadNamePrompt({
+    const { prompt, outputSchema } = buildThreadTitlePrompt({
       message: input.message,
       attachments: input.attachments,
     });
 
     if (input.modelSelection.provider !== "codex") {
       return yield* new TextGenerationError({
-        operation: "generateThreadName",
+        operation: "generateThreadTitle",
         detail: "Invalid model selection.",
       });
     }
 
     const generated = yield* runCodexJson({
-      operation: "generateThreadName",
+      operation: "generateThreadTitle",
       cwd: input.cwd,
       prompt,
       outputSchemaJson: outputSchema,
@@ -402,15 +402,15 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     });
 
     return {
-      title: generated.title.trim().slice(0, 80),
-    };
+      title: sanitizeThreadTitle(generated.title),
+    } satisfies ThreadTitleGenerationResult;
   });
 
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
-    generateThreadName,
+    generateThreadTitle,
   } satisfies TextGenerationShape;
 });
 

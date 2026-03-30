@@ -61,7 +61,7 @@ export interface BranchNameGenerationResult {
   branch: string;
 }
 
-export interface ThreadNameGenerationInput {
+export interface ThreadTitleGenerationInput {
   cwd: string;
   message: string;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
@@ -69,7 +69,7 @@ export interface ThreadNameGenerationInput {
   modelSelection: ModelSelection;
 }
 
-export interface ThreadNameGenerationResult {
+export interface ThreadTitleGenerationResult {
   title: string;
 }
 
@@ -79,7 +79,7 @@ export interface TextGenerationService {
   ): Promise<CommitMessageGenerationResult>;
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
-  generateThreadName(input: ThreadNameGenerationInput): Promise<ThreadNameGenerationResult>;
+  generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
 }
 
 /**
@@ -108,11 +108,11 @@ export interface TextGenerationShape {
   ) => Effect.Effect<BranchNameGenerationResult, TextGenerationError>;
 
   /**
-   * Generate a concise thread title from a user message.
+   * Generate a concise thread title from a user's first message.
    */
-  readonly generateThreadName: (
-    input: ThreadNameGenerationInput,
-  ) => Effect.Effect<ThreadNameGenerationResult, TextGenerationError>;
+  readonly generateThreadTitle: (
+    input: ThreadTitleGenerationInput,
+  ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
 }
 
 /**

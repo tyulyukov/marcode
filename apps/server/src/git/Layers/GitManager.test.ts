@@ -6,7 +6,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { Effect, FileSystem, Layer, PlatformError, Scope } from "effect";
 import { expect } from "vitest";
-import type { GitActionProgressEvent } from "@marcode/contracts";
+import type { GitActionProgressEvent, ModelSelection } from "@marcode/contracts";
 
 import { GitCommandError, GitHostCliError, TextGenerationError } from "../Errors.ts";
 import { type GitManagerShape } from "../Services/GitManager.ts";
@@ -49,6 +49,7 @@ interface FakeGitTextGeneration {
     stagedSummary: string;
     stagedPatch: string;
     includeBranch?: boolean;
+    modelSelection: ModelSelection;
   }) => Effect.Effect<
     { subject: string; body: string; branch?: string | undefined },
     TextGenerationError
@@ -60,14 +61,17 @@ interface FakeGitTextGeneration {
     commitSummary: string;
     diffSummary: string;
     diffPatch: string;
+    modelSelection: ModelSelection;
   }) => Effect.Effect<{ title: string; body: string }, TextGenerationError>;
   generateBranchName: (input: {
     cwd: string;
     message: string;
+    modelSelection: ModelSelection;
   }) => Effect.Effect<{ branch: string }, TextGenerationError>;
-  generateThreadName: (input: {
+  generateThreadTitle: (input: {
     cwd: string;
     message: string;
+    modelSelection: ModelSelection;
   }) => Effect.Effect<{ title: string }, TextGenerationError>;
 }
 
@@ -172,7 +176,7 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
       Effect.succeed({
         branch: "update-workflow",
       }),
-    generateThreadName: () =>
+    generateThreadTitle: () =>
       Effect.succeed({
         title: "Implement stacked git actions",
       }),
@@ -213,12 +217,12 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
             }),
         ),
       ),
-    generateThreadName: (input) =>
-      implementation.generateThreadName(input).pipe(
+    generateThreadTitle: (input) =>
+      implementation.generateThreadTitle(input).pipe(
         Effect.mapError(
           (cause) =>
             new TextGenerationError({
-              operation: "generateThreadName",
+              operation: "generateThreadTitle",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),
@@ -565,7 +569,7 @@ function makeManager(input?: {
     serverSettingsLayer,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 
-  return makeGitManager.pipe(
+  return makeGitManager().pipe(
     Effect.provide(managerLayer),
     Effect.map((manager) => ({ manager, ghCalls })),
   );

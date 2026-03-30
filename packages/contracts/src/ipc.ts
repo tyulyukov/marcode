@@ -59,6 +59,7 @@ export interface ContextMenuItem<T extends string = string> {
   id: T;
   label: string;
   destructive?: boolean;
+  disabled?: boolean;
 }
 
 export type DesktopUpdateStatus =
@@ -102,6 +103,11 @@ export interface DesktopUpdateActionResult {
   state: DesktopUpdateState;
 }
 
+export interface DesktopUpdateCheckResult {
+  checked: boolean;
+  state: DesktopUpdateState;
+}
+
 export interface DesktopBridge {
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
@@ -114,6 +120,7 @@ export interface DesktopBridge {
   openExternal: (url: string) => Promise<boolean>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   getUpdateState: () => Promise<DesktopUpdateState>;
+  checkForUpdate: () => Promise<DesktopUpdateCheckResult>;
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
