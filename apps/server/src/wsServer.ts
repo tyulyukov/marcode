@@ -62,6 +62,9 @@ import { Open, resolveAvailableEditors } from "./open";
 import { ServerConfig } from "./config";
 import { GitCore } from "./git/Services/GitCore.ts";
 import { tryHandleProjectFaviconRequest } from "./projectFaviconRoute";
+import { JiraApiClient } from "./jira/Services/JiraApiClient";
+import { JiraTokenService } from "./jira/Services/JiraTokenService";
+import { tryHandleJiraAuthRequest, tryHandleJiraCallbackRequest } from "./jira/oauthRoutes";
 import {
   ATTACHMENTS_ROUTE_PREFIX,
   normalizeAttachmentRelativePath,
@@ -217,6 +220,8 @@ export type ServerRuntimeServices =
   | TerminalManager
   | Keybindings
   | ServerSettingsService
+  | JiraApiClient
+  | JiraTokenService
   | Open;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
@@ -439,6 +444,22 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           return;
         }
 
+        if (tryHandleJiraAuthRequest(url, req, res, serverConfig)) {
+          return;
+        }
+
+        {
+          const jiraTokenService = yield* JiraTokenService;
+          const handled = yield* tryHandleJiraCallbackRequest(
+            url,
+            req,
+            res,
+            serverConfig,
+            jiraTokenService,
+          );
+          if (handled) return;
+        }
+
         if (url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX)) {
           const rawRelativePath = url.pathname.slice(ATTACHMENTS_ROUTE_PREFIX.length);
           const normalizedRelativePath = normalizeAttachmentRelativePath(rawRelativePath);
@@ -642,6 +663,15 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         providers,
       });
     }),
+  ).pipe(Effect.forkIn(subscriptionsScope));
+
+  const jiraTokenService = yield* JiraTokenService;
+  yield* Stream.runForEach(jiraTokenService.streamChanges, () =>
+    Effect.gen(function* () {
+      const jiraClient = yield* JiraApiClient;
+      const status = yield* jiraClient.getConnectionStatus;
+      yield* pushBus.publishAll(WS_CHANNELS.jiraConnectionStatusChanged, status);
+    }).pipe(Effect.catch(() => Effect.void)),
   ).pipe(Effect.forkIn(subscriptionsScope));
 
   yield* Scope.provide(orchestrationReactor.start(), subscriptionsScope);
@@ -944,6 +974,52 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.serverUpdateSettings: {
         const body = stripRequestTag(request.body);
         return yield* serverSettingsManager.updateSettings(body.patch);
+      }
+
+      case WS_METHODS.jiraGetConnectionStatus: {
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.getConnectionStatus;
+      }
+
+      case WS_METHODS.jiraDisconnect: {
+        const jiraClient = yield* JiraApiClient;
+        yield* jiraClient.disconnect;
+        return {};
+      }
+
+      case WS_METHODS.jiraListSites: {
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.getAccessibleResources;
+      }
+
+      case WS_METHODS.jiraListBoards: {
+        const body = stripRequestTag(request.body);
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.listBoards(body);
+      }
+
+      case WS_METHODS.jiraListSprints: {
+        const body = stripRequestTag(request.body);
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.listSprints(body);
+      }
+
+      case WS_METHODS.jiraListIssues: {
+        const body = stripRequestTag(request.body);
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.listIssues(body);
+      }
+
+      case WS_METHODS.jiraGetIssue: {
+        const body = stripRequestTag(request.body);
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.getIssue(body);
+      }
+
+      case WS_METHODS.jiraGetAttachment: {
+        const body = stripRequestTag(request.body);
+        const jiraClient = yield* JiraApiClient;
+        return yield* jiraClient.getAttachment(body);
       }
 
       default: {

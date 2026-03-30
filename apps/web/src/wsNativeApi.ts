@@ -1,5 +1,6 @@
 import {
   type GitActionProgressEvent,
+  type JiraConnectionStatus,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
   type ContextMenuItem,
@@ -19,6 +20,7 @@ const welcomeListeners = new Set<(payload: WsWelcomePayload) => void>();
 const serverConfigUpdatedListeners = new Set<(payload: ServerConfigUpdatedPayload) => void>();
 const providersUpdatedListeners = new Set<(payload: ServerProviderUpdatedPayload) => void>();
 const gitActionProgressListeners = new Set<(payload: GitActionProgressEvent) => void>();
+const jiraConnectionStatusListeners = new Set<(payload: JiraConnectionStatus) => void>();
 
 /**
  * Subscribe to the server welcome message. If a welcome was already received
@@ -131,6 +133,16 @@ export function createWsNativeApi(): NativeApi {
       }
     }
   });
+  transport.subscribe(WS_CHANNELS.jiraConnectionStatusChanged, (message) => {
+    const payload = message.data;
+    for (const listener of jiraConnectionStatusListeners) {
+      try {
+        listener(payload);
+      } catch {
+        // Swallow listener errors
+      }
+    }
+  });
 
   const api: NativeApi = {
     dialogs: {
@@ -229,6 +241,22 @@ export function createWsNativeApi(): NativeApi {
         transport.subscribe(ORCHESTRATION_WS_CHANNELS.domainEvent, (message) =>
           callback(message.data),
         ),
+    },
+    jira: {
+      getConnectionStatus: () => transport.request(WS_METHODS.jiraGetConnectionStatus),
+      disconnect: () => transport.request(WS_METHODS.jiraDisconnect),
+      listSites: () => transport.request(WS_METHODS.jiraListSites),
+      listBoards: (input) => transport.request(WS_METHODS.jiraListBoards, input),
+      listSprints: (input) => transport.request(WS_METHODS.jiraListSprints, input),
+      listIssues: (input) => transport.request(WS_METHODS.jiraListIssues, input),
+      getIssue: (input) => transport.request(WS_METHODS.jiraGetIssue, input),
+      getAttachment: (input) => transport.request(WS_METHODS.jiraGetAttachment, input),
+      onConnectionStatusChanged: (callback) => {
+        jiraConnectionStatusListeners.add(callback);
+        return () => {
+          jiraConnectionStatusListeners.delete(callback);
+        };
+      },
     },
   };
 

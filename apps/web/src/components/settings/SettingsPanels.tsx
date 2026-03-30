@@ -17,9 +17,9 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   ThreadId,
-} from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
-import { normalizeModelSlug } from "@t3tools/shared/model";
+} from "@marcode/contracts";
+import { DEFAULT_UNIFIED_SETTINGS } from "@marcode/contracts/settings";
+import { normalizeModelSlug } from "@marcode/shared/model";
 import { Equal } from "effect";
 import { APP_VERSION } from "../../branding";
 import {
@@ -59,6 +59,7 @@ import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { JiraSettingsSection } from "./JiraSettingsSection";
 
 const THEME_OPTIONS = [
   {
@@ -137,7 +138,7 @@ function getProviderSummary(provider: ServerProvider | undefined) {
     return {
       headline: "Disabled",
       detail:
-        provider.message ?? "This provider is installed but disabled for new sessions in T3 Code.",
+        provider.message ?? "This provider is installed but disabled for new sessions in MarCode.",
     };
   }
   if (!provider.installed) {
@@ -740,7 +741,7 @@ export function GeneralSettingsPanel() {
       <SettingsSection title="General">
         <SettingsRow
           title="Theme"
-          description="Choose how T3 Code looks across the app."
+          description="Choose how MarCode looks across the app."
           resetAction={
             theme !== "system" ? (
               <SettingResetButton label="theme" onClick={() => setTheme("system")} />
@@ -958,6 +959,56 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          title="Inline diff previews"
+          description="Show inline diff previews for file changes in the chat timeline."
+          resetAction={
+            settings.showInlineDiffs !== DEFAULT_UNIFIED_SETTINGS.showInlineDiffs ? (
+              <SettingResetButton
+                label="inline diff previews"
+                onClick={() =>
+                  updateSettings({
+                    showInlineDiffs: DEFAULT_UNIFIED_SETTINGS.showInlineDiffs,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showInlineDiffs}
+              onCheckedChange={(checked) => updateSettings({ showInlineDiffs: Boolean(checked) })}
+              aria-label="Show inline diff previews"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Todo checklist in composer"
+          description="Show agent task checklists in the composer area."
+          resetAction={
+            settings.showTodosInComposer !== DEFAULT_UNIFIED_SETTINGS.showTodosInComposer ? (
+              <SettingResetButton
+                label="todo checklist"
+                onClick={() =>
+                  updateSettings({
+                    showTodosInComposer: DEFAULT_UNIFIED_SETTINGS.showTodosInComposer,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.showTodosInComposer}
+              onCheckedChange={(checked) =>
+                updateSettings({ showTodosInComposer: Boolean(checked) })
+              }
+              aria-label="Show todo checklist in composer"
+            />
+          }
+        />
+
+        <SettingsRow
           title="Text generation model"
           description="Configure the model used for generated commit messages, PR titles, and similar Git text."
           resetAction={
@@ -1027,6 +1078,12 @@ export function GeneralSettingsPanel() {
             </div>
           }
         />
+      </SettingsSection>
+
+      <SettingsSection title="Integrations">
+        <div className="border-t border-border px-4 py-4 first:border-t-0 sm:px-5">
+          <JiraSettingsSection />
+        </div>
       </SettingsSection>
 
       <SettingsSection

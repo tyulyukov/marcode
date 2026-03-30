@@ -1,5 +1,6 @@
 import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
+import { INLINE_JIRA_CONTEXT_PLACEHOLDER } from "./lib/jiraContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "slash-add-dir";
 export const SLASH_COMMANDS = ["model", "plan", "default", "add-dir", "compact"] as const;
@@ -14,7 +15,11 @@ export interface ComposerTrigger {
 }
 
 const isInlineTokenSegment = (
-  segment: { type: "text"; text: string } | { type: "mention" } | { type: "terminal-context" },
+  segment:
+    | { type: "text"; text: string }
+    | { type: "mention" }
+    | { type: "terminal-context" }
+    | { type: "jira-context" },
 ): boolean => segment.type !== "text";
 
 function clampCursor(text: string, cursor: number): number {
@@ -28,7 +33,8 @@ function isWhitespace(char: string): boolean {
     char === "\n" ||
     char === "\t" ||
     char === "\r" ||
-    char === INLINE_TERMINAL_CONTEXT_PLACEHOLDER
+    char === INLINE_TERMINAL_CONTEXT_PLACEHOLDER ||
+    char === INLINE_JIRA_CONTEXT_PLACEHOLDER
   );
 }
 
@@ -60,7 +66,7 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
       expandedCursor += expandedLength;
       continue;
     }
-    if (segment.type === "terminal-context") {
+    if (segment.type === "terminal-context" || segment.type === "jira-context") {
       if (remaining <= 1) {
         return expandedCursor + remaining;
       }
@@ -81,7 +87,11 @@ export function expandCollapsedComposerCursor(text: string, cursorInput: number)
 }
 
 function collapsedSegmentLength(
-  segment: { type: "text"; text: string } | { type: "mention" } | { type: "terminal-context" },
+  segment:
+    | { type: "text"; text: string }
+    | { type: "mention" }
+    | { type: "terminal-context" }
+    | { type: "jira-context" },
 ): number {
   if (segment.type === "text") {
     return segment.text.length;
@@ -91,7 +101,10 @@ function collapsedSegmentLength(
 
 function clampCollapsedComposerCursorForSegments(
   segments: ReadonlyArray<
-    { type: "text"; text: string } | { type: "mention" } | { type: "terminal-context" }
+    | { type: "text"; text: string }
+    | { type: "mention" }
+    | { type: "terminal-context" }
+    | { type: "jira-context" }
   >,
   cursorInput: number,
 ): number {
@@ -135,7 +148,7 @@ export function collapseExpandedComposerCursor(text: string, cursorInput: number
       collapsedCursor += 1;
       continue;
     }
-    if (segment.type === "terminal-context") {
+    if (segment.type === "terminal-context" || segment.type === "jira-context") {
       if (remaining <= 1) {
         return collapsedCursor + remaining;
       }
@@ -240,9 +253,10 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
     return null;
   }
 
+  const query = token.slice(1);
   return {
     kind: "path",
-    query: token.slice(1),
+    query,
     rangeStart: tokenStart,
     rangeEnd: cursor,
   };

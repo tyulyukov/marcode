@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 
-import { Effect, Layer, Option, Ref } from "effect";
+import { Duration, Effect, Layer, Option, Ref, Schedule, Schema } from "effect";
 import {
   GitActionProgressEvent,
   GitActionProgressPhase,
@@ -15,7 +15,7 @@ import {
   sanitizeFeatureBranchName,
 } from "@marcode/shared/git";
 
-import { GitManagerError } from "../Errors.ts";
+import { GitHostCliError, GitManagerError } from "../Errors.ts";
 import {
   GitManager,
   type GitActionProgressReporter,
@@ -30,6 +30,24 @@ import type { GitManagerServiceError } from "../Errors.ts";
 
 const COMMIT_TIMEOUT_MS = 10 * 60_000;
 const MAX_PROGRESS_TEXT_LENGTH = 500;
+
+const PR_CREATE_RETRY_ATTEMPTS = 3;
+const PR_CREATE_RETRY_DELAY = Duration.seconds(3);
+
+const BRANCH_NOT_READY_PATTERNS = [
+  "head sha can't be blank",
+  "base sha can't be blank",
+  "head ref must be a branch",
+  "no commits between",
+] as const;
+
+const isGitHostCliError = Schema.is(GitHostCliError);
+
+function isBranchNotReadyError(error: unknown): boolean {
+  if (!isGitHostCliError(error)) return false;
+  const lower = error.detail.toLowerCase();
+  return BRANCH_NOT_READY_PATTERNS.some((pattern) => lower.includes(pattern));
+}
 type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "action"> : never;
 type GitActionProgressPayload = StripProgressContext<GitActionProgressEvent>;
 
@@ -867,13 +885,21 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       modelSelection,
     });
 
-    yield* gitHostCli.createPullRequest({
-      cwd,
-      baseBranch,
-      headSelector: headContext.preferredHeadSelector,
-      title: generated.title,
-      body: generated.body,
-    });
+    yield* gitHostCli
+      .createPullRequest({
+        cwd,
+        baseBranch,
+        headSelector: headContext.preferredHeadSelector,
+        title: generated.title,
+        body: generated.body,
+      })
+      .pipe(
+        Effect.retry({
+          times: PR_CREATE_RETRY_ATTEMPTS,
+          schedule: Schedule.spaced(PR_CREATE_RETRY_DELAY),
+          while: isBranchNotReadyError,
+        }),
+      );
 
     const created = yield* findOpenPr(cwd, headContext.headSelectors);
     if (!created) {
@@ -899,7 +925,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     if (gitHostCli.detectedProvider) {
       return gitHostCli
         .detectedProvider({ cwd })
-        .pipe(Effect.catch(() => Effect.succeed(undefined as GitHostProvider | undefined)));
+        .pipe(
+          Effect.catch((): Effect.Effect<GitHostProvider | undefined> => Effect.succeed(undefined)),
+        );
     }
     return Effect.succeed(gitHostCli.provider as GitHostProvider | undefined);
   };

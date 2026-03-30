@@ -52,6 +52,20 @@ import type {
   OrchestrationEvent,
   OrchestrationReadModel,
 } from "./orchestration";
+import type {
+  JiraConnectionStatus,
+  JiraGetAttachmentInput,
+  JiraGetAttachmentResult,
+  JiraGetIssueInput,
+  JiraIssue,
+  JiraListBoardsInput,
+  JiraListBoardsResult,
+  JiraListIssuesInput,
+  JiraListIssuesResult,
+  JiraListSprintsInput,
+  JiraListSprintsResult,
+  JiraSite,
+} from "./jira";
 import { EditorId } from "./editor";
 import { ServerSettings, ServerSettingsPatch } from "./settings";
 
@@ -192,5 +206,16 @@ export interface NativeApi {
     ) => Promise<OrchestrationGetFullThreadDiffResult>;
     replayEvents: (fromSequenceExclusive: number) => Promise<OrchestrationEvent[]>;
     onDomainEvent: (callback: (event: OrchestrationEvent) => void) => () => void;
+  };
+  jira: {
+    getConnectionStatus: () => Promise<JiraConnectionStatus>;
+    disconnect: () => Promise<void>;
+    listSites: () => Promise<ReadonlyArray<JiraSite>>;
+    listBoards: (input: JiraListBoardsInput) => Promise<JiraListBoardsResult>;
+    listSprints: (input: JiraListSprintsInput) => Promise<JiraListSprintsResult>;
+    listIssues: (input: JiraListIssuesInput) => Promise<JiraListIssuesResult>;
+    getIssue: (input: JiraGetIssueInput) => Promise<JiraIssue>;
+    getAttachment: (input: JiraGetAttachmentInput) => Promise<JiraGetAttachmentResult>;
+    onConnectionStatusChanged: (callback: (status: JiraConnectionStatus) => void) => () => void;
   };
 }

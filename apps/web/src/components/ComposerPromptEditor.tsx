@@ -24,6 +24,8 @@ import {
   KEY_ENTER_COMMAND,
   KEY_TAB_COMMAND,
   COMMAND_PRIORITY_HIGH,
+  COMMAND_PRIORITY_CRITICAL,
+  PASTE_COMMAND,
   KEY_BACKSPACE_COMMAND,
   $getRoot,
   DecoratorNode,
@@ -64,6 +66,7 @@ import {
   INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
   type TerminalContextDraft,
 } from "~/lib/terminalContext";
+import { INLINE_JIRA_CONTEXT_PLACEHOLDER, type JiraTaskDraft } from "~/lib/jiraContext";
 import { cn } from "~/lib/utils";
 import { basenameOfPath, getVscodeIconUrlForEntry, inferEntryKindFromPath } from "~/vscode-icons";
 import {
@@ -72,8 +75,10 @@ import {
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
 } from "./composerInlineChip";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
+import { JiraTaskInlineChip } from "./chat/JiraTaskInlineChip";
 
 const COMPOSER_EDITOR_HMR_KEY = `composer-editor-${Math.random().toString(36).slice(2)}`;
+const EMPTY_JIRA_TASK_CONTEXTS: ReadonlyArray<JiraTaskDraft> = [];
 
 type SerializedComposerMentionNode = Spread<
   {
@@ -93,10 +98,21 @@ type SerializedComposerTerminalContextNode = Spread<
   SerializedLexicalNode
 >;
 
+type SerializedComposerJiraTaskNode = Spread<
+  {
+    task: JiraTaskDraft;
+    type: "composer-jira-task";
+    version: 1;
+  },
+  SerializedLexicalNode
+>;
+
 const ComposerTerminalContextActionsContext = createContext<{
   onRemoveTerminalContext: (contextId: string) => void;
+  onRemoveJiraTask: ((taskId: string) => void) | undefined;
 }>({
   onRemoveTerminalContext: () => {},
+  onRemoveJiraTask: undefined,
 });
 
 class ComposerMentionNode extends TextNode {
@@ -235,11 +251,81 @@ function $createComposerTerminalContextNode(
   return $applyNodeReplacement(new ComposerTerminalContextNode(context));
 }
 
-type ComposerInlineTokenNode = ComposerMentionNode | ComposerTerminalContextNode;
+function ComposerJiraTaskDecorator(props: { task: JiraTaskDraft }) {
+  return (
+    <JiraTaskInlineChip
+      label={props.task.issueKey}
+      tooltipText={`${props.task.issueKey}: ${props.task.summary} [${props.task.status}]`}
+    />
+  );
+}
+
+class ComposerJiraTaskNode extends DecoratorNode<ReactElement> {
+  __task: JiraTaskDraft;
+
+  static override getType(): string {
+    return "composer-jira-task";
+  }
+
+  static override clone(node: ComposerJiraTaskNode): ComposerJiraTaskNode {
+    return new ComposerJiraTaskNode(node.__task, node.__key);
+  }
+
+  static override importJSON(serializedNode: SerializedComposerJiraTaskNode): ComposerJiraTaskNode {
+    return $createComposerJiraTaskNode(serializedNode.task);
+  }
+
+  constructor(task: JiraTaskDraft, key?: NodeKey) {
+    super(key);
+    this.__task = task;
+  }
+
+  override exportJSON(): SerializedComposerJiraTaskNode {
+    return {
+      ...super.exportJSON(),
+      task: this.__task,
+      type: "composer-jira-task",
+      version: 1,
+    };
+  }
+
+  override createDOM(): HTMLElement {
+    const dom = document.createElement("span");
+    dom.className = "inline-flex align-middle leading-none";
+    return dom;
+  }
+
+  override updateDOM(): false {
+    return false;
+  }
+
+  override getTextContent(): string {
+    return INLINE_JIRA_CONTEXT_PLACEHOLDER;
+  }
+
+  override isInline(): true {
+    return true;
+  }
+
+  override decorate(): ReactElement {
+    return <ComposerJiraTaskDecorator task={this.__task} />;
+  }
+}
+
+function $createComposerJiraTaskNode(task: JiraTaskDraft): ComposerJiraTaskNode {
+  return $applyNodeReplacement(new ComposerJiraTaskNode(task));
+}
+
+type ComposerInlineTokenNode =
+  | ComposerMentionNode
+  | ComposerTerminalContextNode
+  | ComposerJiraTaskNode;
 
 function isComposerInlineTokenNode(candidate: unknown): candidate is ComposerInlineTokenNode {
   return (
-    candidate instanceof ComposerMentionNode || candidate instanceof ComposerTerminalContextNode
+    candidate instanceof ComposerMentionNode ||
+    candidate instanceof ComposerTerminalContextNode ||
+    candidate instanceof ComposerJiraTaskNode
   );
 }
 
@@ -400,6 +486,9 @@ function getAbsoluteOffsetForPoint(node: LexicalNode, pointOffset: number): numb
   if (node instanceof ComposerTerminalContextNode) {
     return getAbsoluteOffsetForInlineTokenPoint(node, offset, pointOffset);
   }
+  if (node instanceof ComposerJiraTaskNode) {
+    return getAbsoluteOffsetForInlineTokenPoint(node, offset, pointOffset);
+  }
 
   if ($isLineBreakNode(node)) {
     return offset + Math.min(pointOffset, 1);
@@ -447,6 +536,9 @@ function getExpandedAbsoluteOffsetForPoint(node: LexicalNode, pointOffset: numbe
   if (node instanceof ComposerTerminalContextNode) {
     return getExpandedAbsoluteOffsetForInlineTokenPoint(node, offset, pointOffset);
   }
+  if (node instanceof ComposerJiraTaskNode) {
+    return getExpandedAbsoluteOffsetForInlineTokenPoint(node, offset, pointOffset);
+  }
 
   if ($isLineBreakNode(node)) {
     return offset + Math.min(pointOffset, 1);
@@ -474,6 +566,9 @@ function findSelectionPointAtOffset(
     return findSelectionPointForInlineToken(node, remainingRef);
   }
   if (node instanceof ComposerTerminalContextNode) {
+    return findSelectionPointForInlineToken(node, remainingRef);
+  }
+  if (node instanceof ComposerJiraTaskNode) {
     return findSelectionPointForInlineToken(node, remainingRef);
   }
 
@@ -592,13 +687,14 @@ function $appendTextWithLineBreaks(parent: ElementNode, text: string): void {
 function $setComposerEditorPrompt(
   prompt: string,
   terminalContexts: ReadonlyArray<TerminalContextDraft>,
+  jiraTaskContexts?: ReadonlyArray<JiraTaskDraft>,
 ): void {
   const root = $getRoot();
   root.clear();
   const paragraph = $createParagraphNode();
   root.append(paragraph);
 
-  const segments = splitPromptIntoComposerSegments(prompt, terminalContexts);
+  const segments = splitPromptIntoComposerSegments(prompt, terminalContexts, jiraTaskContexts);
   for (const segment of segments) {
     if (segment.type === "mention") {
       paragraph.append($createComposerMentionNode(segment.path));
@@ -607,6 +703,12 @@ function $setComposerEditorPrompt(
     if (segment.type === "terminal-context") {
       if (segment.context) {
         paragraph.append($createComposerTerminalContextNode(segment.context));
+      }
+      continue;
+    }
+    if (segment.type === "jira-context") {
+      if (segment.task) {
+        paragraph.append($createComposerJiraTaskNode(segment.task));
       }
       continue;
     }
@@ -624,6 +726,16 @@ function collectTerminalContextIds(node: LexicalNode): string[] {
   return [];
 }
 
+function collectJiraTaskIds(node: LexicalNode): string[] {
+  if (node instanceof ComposerJiraTaskNode) {
+    return [node.__task.id];
+  }
+  if ($isElementNode(node)) {
+    return node.getChildren().flatMap((child) => collectJiraTaskIds(child));
+  }
+  return [];
+}
+
 export interface ComposerPromptEditorHandle {
   focus: () => void;
   focusAt: (cursor: number) => void;
@@ -633,6 +745,7 @@ export interface ComposerPromptEditorHandle {
     cursor: number;
     expandedCursor: number;
     terminalContextIds: string[];
+    jiraTaskIds: string[];
   };
 }
 
@@ -640,22 +753,26 @@ interface ComposerPromptEditorProps {
   value: string;
   cursor: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
+  jiraTaskContexts?: ReadonlyArray<JiraTaskDraft>;
   disabled: boolean;
   placeholder: string;
   className?: string;
   onRemoveTerminalContext: (contextId: string) => void;
+  onRemoveJiraTask: ((taskId: string) => void) | undefined;
   onChange: (
     nextValue: string,
     nextCursor: number,
     expandedCursor: number,
     cursorAdjacentToMention: boolean,
     terminalContextIds: string[],
+    jiraTaskIds: string[],
   ) => void;
   onCommandKeyDown?: (
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
   ) => boolean;
   onPaste: ClipboardEventHandler<HTMLElement>;
+  onJiraPaste: ((url: string) => boolean) | undefined;
 }
 
 interface ComposerPromptEditorInnerProps extends ComposerPromptEditorProps {
@@ -814,7 +931,9 @@ function ComposerInlineTokenSelectionNormalizePlugin() {
 
 function ComposerInlineTokenBackspacePlugin() {
   const [editor] = useLexicalComposerContext();
-  const { onRemoveTerminalContext } = useContext(ComposerTerminalContextActionsContext);
+  const { onRemoveTerminalContext, onRemoveJiraTask } = useContext(
+    ComposerTerminalContextActionsContext,
+  );
 
   useEffect(() => {
     return editor.registerCommand(
@@ -835,6 +954,9 @@ function ComposerInlineTokenBackspacePlugin() {
           candidate.remove();
           if (candidate instanceof ComposerTerminalContextNode) {
             onRemoveTerminalContext(candidate.__context.id);
+            $setSelectionAtComposerOffset(selectionOffset);
+          } else if (candidate instanceof ComposerJiraTaskNode) {
+            onRemoveJiraTask?.(candidate.__task.id);
             $setSelectionAtComposerOffset(selectionOffset);
           } else {
             $setSelectionAtComposerOffset(tokenStart);
@@ -874,7 +996,32 @@ function ComposerInlineTokenBackspacePlugin() {
       },
       COMMAND_PRIORITY_HIGH,
     );
-  }, [editor, onRemoveTerminalContext]);
+  }, [editor, onRemoveTerminalContext, onRemoveJiraTask]);
+
+  return null;
+}
+
+function ComposerJiraPastePlugin(props: { onJiraPaste: ((url: string) => boolean) | undefined }) {
+  const [editor] = useLexicalComposerContext();
+  const onJiraPasteRef = useRef(props.onJiraPaste);
+  onJiraPasteRef.current = props.onJiraPaste;
+
+  useEffect(() => {
+    return editor.registerCommand(
+      PASTE_COMMAND,
+      (event: ClipboardEvent) => {
+        if (!onJiraPasteRef.current) return false;
+        const text = event.clipboardData?.getData("text/plain") ?? "";
+        if (!text) return false;
+        const handled = onJiraPasteRef.current(text);
+        if (handled) {
+          event.preventDefault();
+        }
+        return handled;
+      },
+      COMMAND_PRIORITY_CRITICAL,
+    );
+  }, [editor]);
 
   return null;
 }
@@ -883,13 +1030,16 @@ function ComposerPromptEditorInner({
   value,
   cursor,
   terminalContexts,
+  jiraTaskContexts,
   disabled,
   placeholder,
   className,
   onRemoveTerminalContext,
+  onRemoveJiraTask,
   onChange,
   onCommandKeyDown,
   onPaste,
+  onJiraPaste,
   editorRef,
 }: ComposerPromptEditorInnerProps) {
   const [editor] = useLexicalComposerContext();
@@ -902,11 +1052,12 @@ function ComposerPromptEditorInner({
     cursor: initialCursor,
     expandedCursor: expandCollapsedComposerCursor(value, initialCursor),
     terminalContextIds: terminalContexts.map((context) => context.id),
+    jiraTaskIds: (jiraTaskContexts ?? []).map((task) => task.id),
   });
   const isApplyingControlledUpdateRef = useRef(false);
   const terminalContextActions = useMemo(
-    () => ({ onRemoveTerminalContext }),
-    [onRemoveTerminalContext],
+    () => ({ onRemoveTerminalContext, onRemoveJiraTask }),
+    [onRemoveTerminalContext, onRemoveJiraTask],
   );
 
   useEffect(() => {
@@ -934,6 +1085,7 @@ function ComposerPromptEditorInner({
       cursor: normalizedCursor,
       expandedCursor: expandCollapsedComposerCursor(value, normalizedCursor),
       terminalContextIds: terminalContexts.map((context) => context.id),
+      jiraTaskIds: (jiraTaskContexts ?? []).map((task) => task.id),
     };
     terminalContextsSignatureRef.current = terminalContextsSignature;
 
@@ -947,7 +1099,7 @@ function ComposerPromptEditorInner({
     editor.update(() => {
       const shouldRewriteEditorState = previousSnapshot.value !== value || contextsChanged;
       if (shouldRewriteEditorState) {
-        $setComposerEditorPrompt(value, terminalContexts);
+        $setComposerEditorPrompt(value, terminalContexts, jiraTaskContexts);
       }
       if (shouldRewriteEditorState || isFocused) {
         $setSelectionAtComposerOffset(normalizedCursor);
@@ -956,7 +1108,7 @@ function ComposerPromptEditorInner({
     queueMicrotask(() => {
       isApplyingControlledUpdateRef.current = false;
     });
-  }, [cursor, editor, terminalContexts, terminalContextsSignature, value]);
+  }, [cursor, editor, terminalContexts, terminalContextsSignature, value, jiraTaskContexts]);
 
   const focusAt = useCallback(
     (nextCursor: number) => {
@@ -972,6 +1124,7 @@ function ComposerPromptEditorInner({
         cursor: boundedCursor,
         expandedCursor: expandCollapsedComposerCursor(snapshotRef.current.value, boundedCursor),
         terminalContextIds: snapshotRef.current.terminalContextIds,
+        jiraTaskIds: snapshotRef.current.jiraTaskIds,
       };
       onChangeRef.current(
         snapshotRef.current.value,
@@ -979,6 +1132,7 @@ function ComposerPromptEditorInner({
         snapshotRef.current.expandedCursor,
         false,
         snapshotRef.current.terminalContextIds,
+        snapshotRef.current.jiraTaskIds,
       );
     },
     [editor],
@@ -989,6 +1143,7 @@ function ComposerPromptEditorInner({
     cursor: number;
     expandedCursor: number;
     terminalContextIds: string[];
+    jiraTaskIds: string[];
   } => {
     let snapshot = snapshotRef.current;
     editor.getEditorState().read(() => {
@@ -1007,11 +1162,13 @@ function ComposerPromptEditorInner({
         $readExpandedSelectionOffsetFromEditorState(fallbackExpandedCursor),
       );
       const terminalContextIds = collectTerminalContextIds($getRoot());
+      const jiraTaskIds = collectJiraTaskIds($getRoot());
       snapshot = {
         value: nextValue,
         cursor: nextCursor,
         expandedCursor: nextExpandedCursor,
         terminalContextIds,
+        jiraTaskIds,
       };
     });
     snapshotRef.current = snapshot;
@@ -1055,13 +1212,18 @@ function ComposerPromptEditorInner({
         $readExpandedSelectionOffsetFromEditorState(fallbackExpandedCursor),
       );
       const terminalContextIds = collectTerminalContextIds($getRoot());
+      const jiraTaskIds = collectJiraTaskIds($getRoot());
       const previousSnapshot = snapshotRef.current;
       if (
         previousSnapshot.value === nextValue &&
         previousSnapshot.cursor === nextCursor &&
         previousSnapshot.expandedCursor === nextExpandedCursor &&
         previousSnapshot.terminalContextIds.length === terminalContextIds.length &&
-        previousSnapshot.terminalContextIds.every((id, index) => id === terminalContextIds[index])
+        previousSnapshot.terminalContextIds.every(
+          (id, index) => id === terminalContextIds[index],
+        ) &&
+        previousSnapshot.jiraTaskIds.length === jiraTaskIds.length &&
+        previousSnapshot.jiraTaskIds.every((id, index) => id === jiraTaskIds[index])
       ) {
         return;
       }
@@ -1073,6 +1235,7 @@ function ComposerPromptEditorInner({
         cursor: nextCursor,
         expandedCursor: nextExpandedCursor,
         terminalContextIds,
+        jiraTaskIds,
       };
       const cursorAdjacentToMention =
         isCollapsedCursorAdjacentToInlineToken(nextValue, nextCursor, "left") ||
@@ -1083,6 +1246,7 @@ function ComposerPromptEditorInner({
         nextExpandedCursor,
         cursorAdjacentToMention,
         terminalContextIds,
+        jiraTaskIds,
       );
     });
   }, []);
@@ -1117,6 +1281,7 @@ function ComposerPromptEditorInner({
         <ComposerInlineTokenArrowPlugin />
         <ComposerInlineTokenSelectionNormalizePlugin />
         <ComposerInlineTokenBackspacePlugin />
+        <ComposerJiraPastePlugin onJiraPaste={onJiraPaste} />
         <HistoryPlugin />
       </div>
     </ComposerTerminalContextActionsContext.Provider>
@@ -1129,25 +1294,33 @@ const ComposerPromptEditorImpl = forwardRef<ComposerPromptEditorHandle, Composer
       value,
       cursor,
       terminalContexts,
+      jiraTaskContexts,
       disabled,
       placeholder,
       className,
       onRemoveTerminalContext,
+      onRemoveJiraTask,
       onChange,
       onCommandKeyDown,
       onPaste,
+      onJiraPaste,
     },
     ref,
   ) {
     const initialValueRef = useRef(value);
     const initialTerminalContextsRef = useRef(terminalContexts);
+    const initialJiraTaskContextsRef = useRef(jiraTaskContexts);
     const initialConfig = useMemo<InitialConfigType>(
       () => ({
         namespace: "marcode-composer-editor",
         editable: true,
-        nodes: [ComposerMentionNode, ComposerTerminalContextNode],
+        nodes: [ComposerMentionNode, ComposerTerminalContextNode, ComposerJiraTaskNode],
         editorState: () => {
-          $setComposerEditorPrompt(initialValueRef.current, initialTerminalContextsRef.current);
+          $setComposerEditorPrompt(
+            initialValueRef.current,
+            initialTerminalContextsRef.current,
+            initialJiraTaskContextsRef.current,
+          );
         },
         onError: (error) => {
           throw error;
@@ -1162,11 +1335,14 @@ const ComposerPromptEditorImpl = forwardRef<ComposerPromptEditorHandle, Composer
           value={value}
           cursor={cursor}
           terminalContexts={terminalContexts}
+          jiraTaskContexts={jiraTaskContexts ?? EMPTY_JIRA_TASK_CONTEXTS}
           disabled={disabled}
           placeholder={placeholder}
           onRemoveTerminalContext={onRemoveTerminalContext}
+          onRemoveJiraTask={onRemoveJiraTask ?? undefined}
           onChange={onChange}
           onPaste={onPaste}
+          onJiraPaste={onJiraPaste}
           editorRef={ref}
           {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
           {...(className ? { className } : {})}

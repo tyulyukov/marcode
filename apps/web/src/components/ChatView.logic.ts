@@ -8,6 +8,7 @@ import {
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
 } from "../lib/terminalContext";
+import { INLINE_JIRA_CONTEXT_PLACEHOLDER, type JiraTaskDraft } from "../lib/jiraContext";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "marcode:last-invoked-script-by-project";
 const WORKTREE_BRANCH_PREFIX = "marcode";
@@ -121,26 +122,37 @@ export function cloneComposerImageForRetry(
   }
 }
 
+function stripInlineJiraContextPlaceholders(prompt: string): string {
+  return prompt.replaceAll(INLINE_JIRA_CONTEXT_PLACEHOLDER, "");
+}
+
 export function deriveComposerSendState(options: {
   prompt: string;
   imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
+  jiraTaskContexts?: ReadonlyArray<JiraTaskDraft>;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
   expiredTerminalContextCount: number;
   hasSendableContent: boolean;
 } {
-  const trimmedPrompt = stripInlineTerminalContextPlaceholders(options.prompt).trim();
+  const trimmedPrompt = stripInlineJiraContextPlaceholders(
+    stripInlineTerminalContextPlaceholders(options.prompt),
+  ).trim();
   const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
+  const jiraTaskContexts = options.jiraTaskContexts ?? [];
   return {
     trimmedPrompt,
     sendableTerminalContexts,
     expiredTerminalContextCount,
     hasSendableContent:
-      trimmedPrompt.length > 0 || options.imageCount > 0 || sendableTerminalContexts.length > 0,
+      trimmedPrompt.length > 0 ||
+      options.imageCount > 0 ||
+      sendableTerminalContexts.length > 0 ||
+      jiraTaskContexts.length > 0,
   };
 }
 

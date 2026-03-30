@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2Icon,
   ChevronDownIcon,
@@ -33,7 +33,7 @@ const TodoItemRow = memo(function TodoItemRow(props: { item: TodoItem }) {
   const label = isInProgress ? item.activeForm : item.content;
 
   return (
-    <div className="flex items-start gap-2 py-0.5">
+    <div className="flex items-start gap-2 py-0.5" data-in-progress={isInProgress || undefined}>
       <span className="mt-px flex shrink-0 items-center justify-center">
         {todoStatusIcon(item.status)}
       </span>
@@ -54,8 +54,17 @@ export const ComposerTodoListPanel = memo(function ComposerTodoListPanel(props: 
 }) {
   const { items } = props;
   const [expanded, setExpanded] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const allCompleted = items.every((t) => t.status === "completed");
   const ExpandIcon = expanded ? ChevronDownIcon : ChevronRightIcon;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const inProgressEl = container.querySelector<HTMLElement>("[data-in-progress]");
+    inProgressEl?.scrollIntoView({ block: "nearest" });
+  }, [expanded]);
 
   return (
     <div className="px-4 py-3 sm:px-5">
@@ -79,7 +88,7 @@ export const ComposerTodoListPanel = memo(function ComposerTodoListPanel(props: 
       </button>
 
       {expanded && (
-        <div className="mt-1 space-y-0.5 pl-5">
+        <div ref={scrollContainerRef} className="mt-1 max-h-40 space-y-0.5 overflow-y-auto pl-5">
           {items.map((item) => (
             <TodoItemRow key={item.content} item={item} />
           ))}

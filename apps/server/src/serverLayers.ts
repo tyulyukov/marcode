@@ -34,6 +34,8 @@ import { GitHubCliLive } from "./git/Layers/GitHubCli";
 import { RoutingGitHostCliLive } from "./git/Layers/RoutingGitHostCli";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
+import { JiraTokenServiceLive } from "./jira/Layers/JiraTokenService";
+import { JiraApiClientLive } from "./jira/Layers/JiraApiClient";
 
 type RuntimePtyAdapterLoader = {
   layer: Layer.Layer<PtyAdapter, never, FileSystem.FileSystem | Path.Path>;
@@ -137,11 +139,14 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(textGenerationLayer),
   );
 
+  const jiraLayer = JiraApiClientLive.pipe(Layer.provideMerge(JiraTokenServiceLive));
+
   return Layer.mergeAll(
     orchestrationReactorLayer,
     GitCoreLive,
     gitManagerLayer,
     terminalLayer,
     KeybindingsLive,
+    jiraLayer,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 }

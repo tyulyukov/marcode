@@ -5,6 +5,7 @@ import type {
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
   ProjectScript as ContractProjectScript,
+  JiraBoardReference,
   ThreadId,
   ProjectId,
   TurnId,
@@ -86,6 +87,7 @@ export interface Project {
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
   scripts: ProjectScript[];
+  jiraBoard: JiraBoardReference | null;
 }
 
 export interface Thread {

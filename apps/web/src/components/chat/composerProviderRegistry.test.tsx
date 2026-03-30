@@ -29,8 +29,8 @@ const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
-        { value: "medium", label: "Medium" },
-        { value: "high", label: "High", isDefault: true },
+        { value: "medium", label: "Medium", isDefault: true },
+        { value: "high", label: "High" },
         { value: "max", label: "Max" },
         { value: "ultrathink", label: "Ultrathink" },
       ],
@@ -47,8 +47,8 @@ const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
     capabilities: {
       reasoningEffortLevels: [
         { value: "low", label: "Low" },
-        { value: "medium", label: "Medium" },
-        { value: "high", label: "High", isDefault: true },
+        { value: "medium", label: "Medium", isDefault: true },
+        { value: "high", label: "High" },
         { value: "ultrathink", label: "Ultrathink" },
       ],
       supportsFastMode: false,
@@ -171,9 +171,9 @@ describe("getComposerProviderState", () => {
 
     expect(state).toEqual({
       provider: "claudeAgent",
-      promptEffort: "high",
+      promptEffort: "medium",
       modelOptionsForDispatch: {
-        effort: "high",
+        effort: "medium",
       },
     });
   });
@@ -241,9 +241,9 @@ describe("getComposerProviderState", () => {
 
     expect(state).toEqual({
       provider: "claudeAgent",
-      promptEffort: "high",
+      promptEffort: "medium",
       modelOptionsForDispatch: {
-        effort: "high",
+        effort: "medium",
         fastMode: true,
       },
     });

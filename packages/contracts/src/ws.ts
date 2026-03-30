@@ -43,6 +43,16 @@ import {
 import { OpenInEditorInput } from "./editor";
 import { ServerConfigUpdatedPayload, ServerProviderUpdatedPayload } from "./server";
 import { ServerSettingsPatch } from "./settings";
+import {
+  JiraConnectionStatus,
+  JiraGetAttachmentInput,
+  JiraGetIssueInput,
+  JiraListBoardsInput,
+  JiraListIssuesInput,
+  JiraListSprintsInput,
+  JIRA_WS_CHANNELS,
+  JIRA_WS_METHODS,
+} from "./jira";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -85,6 +95,16 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+
+  // Jira methods
+  jiraGetConnectionStatus: JIRA_WS_METHODS.getConnectionStatus,
+  jiraDisconnect: JIRA_WS_METHODS.disconnect,
+  jiraListSites: JIRA_WS_METHODS.listSites,
+  jiraListBoards: JIRA_WS_METHODS.listBoards,
+  jiraListSprints: JIRA_WS_METHODS.listSprints,
+  jiraListIssues: JIRA_WS_METHODS.listIssues,
+  jiraGetIssue: JIRA_WS_METHODS.getIssue,
+  jiraGetAttachment: JIRA_WS_METHODS.getAttachment,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -95,6 +115,7 @@ export const WS_CHANNELS = {
   serverWelcome: "server.welcome",
   serverConfigUpdated: "server.configUpdated",
   serverProvidersUpdated: "server.providersUpdated",
+  jiraConnectionStatusChanged: JIRA_WS_CHANNELS.connectionStatusChanged,
 } as const;
 
 // -- Tagged Union of all request body schemas ─────────────────────────
@@ -155,6 +176,16 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
   tagRequestBody(WS_METHODS.serverGetSettings, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpdateSettings, Schema.Struct({ patch: ServerSettingsPatch })),
+
+  // Jira methods
+  tagRequestBody(WS_METHODS.jiraGetConnectionStatus, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.jiraDisconnect, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.jiraListSites, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.jiraListBoards, JiraListBoardsInput),
+  tagRequestBody(WS_METHODS.jiraListSprints, JiraListSprintsInput),
+  tagRequestBody(WS_METHODS.jiraListIssues, JiraListIssuesInput),
+  tagRequestBody(WS_METHODS.jiraGetIssue, JiraGetIssueInput),
+  tagRequestBody(WS_METHODS.jiraGetAttachment, JiraGetAttachmentInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({
@@ -192,6 +223,7 @@ export interface WsPushPayloadByChannel {
   readonly [WS_CHANNELS.gitActionProgress]: typeof GitActionProgressEvent.Type;
   readonly [WS_CHANNELS.terminalEvent]: typeof TerminalEvent.Type;
   readonly [ORCHESTRATION_WS_CHANNELS.domainEvent]: OrchestrationEvent;
+  readonly [WS_CHANNELS.jiraConnectionStatusChanged]: typeof JiraConnectionStatus.Type;
 }
 
 export type WsPushChannel = keyof WsPushPayloadByChannel;
@@ -226,6 +258,10 @@ export const WsPushOrchestrationDomainEvent = makeWsPushSchema(
   ORCHESTRATION_WS_CHANNELS.domainEvent,
   OrchestrationEvent,
 );
+export const WsPushJiraConnectionStatusChanged = makeWsPushSchema(
+  WS_CHANNELS.jiraConnectionStatusChanged,
+  JiraConnectionStatus,
+);
 
 export const WsPushChannelSchema = Schema.Literals([
   WS_CHANNELS.gitActionProgress,
@@ -234,6 +270,7 @@ export const WsPushChannelSchema = Schema.Literals([
   WS_CHANNELS.serverProvidersUpdated,
   WS_CHANNELS.terminalEvent,
   ORCHESTRATION_WS_CHANNELS.domainEvent,
+  WS_CHANNELS.jiraConnectionStatusChanged,
 ]);
 export type WsPushChannelSchema = typeof WsPushChannelSchema.Type;
 
@@ -244,6 +281,7 @@ export const WsPush = Schema.Union([
   WsPushGitActionProgress,
   WsPushTerminalEvent,
   WsPushOrchestrationDomainEvent,
+  WsPushJiraConnectionStatusChanged,
 ]);
 export type WsPush = typeof WsPush.Type;
 

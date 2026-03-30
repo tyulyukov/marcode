@@ -20,6 +20,8 @@ import {
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   RuntimeMode,
+  type JiraCloudId,
+  type JiraIssueKey,
 } from "@marcode/contracts";
 import { applyClaudePromptEffortPrefix, normalizeModelSlug } from "@marcode/shared/model";
 import { truncate } from "@marcode/shared/String";
@@ -152,6 +154,21 @@ import {
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
+import {
+  appendJiraContextsToPrompt,
+  formatJiraTaskLabel,
+  INLINE_JIRA_CONTEXT_PLACEHOLDER,
+  isJiraIssueKeyPattern,
+  jiraIssueToTaskDraft,
+  type JiraTaskDraft,
+  parseJiraUrl,
+  removeInlineJiraContextPlaceholder,
+} from "../lib/jiraContext";
+import {
+  jiraConnectionStatusQueryOptions,
+  jiraIssueSearchQueryOptions,
+  jiraIssueQueryOptions,
+} from "../lib/jiraReactQuery";
 import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
@@ -251,6 +268,22 @@ const terminalContextIdListsEqual = (
 ): boolean =>
   contexts.length === ids.length && contexts.every((context, index) => context.id === ids[index]);
 
+const syncJiraTasksByIds = (
+  tasks: ReadonlyArray<JiraTaskDraft>,
+  ids: ReadonlyArray<string>,
+): JiraTaskDraft[] => {
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  return ids.flatMap((id) => {
+    const task = tasksById.get(id);
+    return task ? [task] : [];
+  });
+};
+
+const jiraTaskIdListsEqual = (
+  tasks: ReadonlyArray<JiraTaskDraft>,
+  ids: ReadonlyArray<string>,
+): boolean => tasks.length === ids.length && tasks.every((task, index) => task.id === ids[index]);
+
 interface ChatViewProps {
   threadId: ThreadId;
 }
@@ -289,14 +322,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
+  const composerJiraTaskContexts = composerDraft.jiraTaskContexts;
   const composerSendState = useMemo(
     () =>
       deriveComposerSendState({
         prompt,
         imageCount: composerImages.length,
         terminalContexts: composerTerminalContexts,
+        jiraTaskContexts: composerJiraTaskContexts,
       }),
-    [composerImages.length, composerTerminalContexts, prompt],
+    [composerImages.length, composerTerminalContexts, composerJiraTaskContexts, prompt],
   );
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -319,6 +354,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const setComposerDraftTerminalContexts = useComposerDraftStore(
     (store) => store.setTerminalContexts,
+  );
+  const addComposerDraftJiraTaskContext = useComposerDraftStore(
+    (store) => store.addJiraTaskContext,
+  );
+  const removeComposerDraftJiraTaskContext = useComposerDraftStore(
+    (store) => store.removeJiraTaskContext,
   );
   const clearComposerDraftPersistedAttachments = useComposerDraftStore(
     (store) => store.clearPersistedAttachments,
@@ -347,6 +388,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
   optimisticUserMessagesRef.current = optimisticUserMessages;
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>(composerTerminalContexts);
+  const composerJiraTaskContextsRef = useRef<JiraTaskDraft[]>(composerJiraTaskContexts);
   const [localDraftErrorsByThreadId, setLocalDraftErrorsByThreadId] = useState<
     Record<ThreadId, string | null>
   >({});
@@ -482,6 +524,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
       );
     },
     [composerTerminalContexts, removeComposerDraftTerminalContext, setPrompt, threadId],
+  );
+  const removeComposerJiraTaskFromDraft = useCallback(
+    (taskId: string) => {
+      const taskIndex = composerJiraTaskContexts.findIndex((task) => task.id === taskId);
+      if (taskIndex < 0) {
+        return;
+      }
+      const nextPrompt = removeInlineJiraContextPlaceholder(promptRef.current, taskIndex);
+      promptRef.current = nextPrompt.prompt;
+      setPrompt(nextPrompt.prompt);
+      removeComposerDraftJiraTaskContext(threadId, taskId);
+      setComposerCursor(nextPrompt.cursor);
+      setComposerTrigger(
+        detectComposerTrigger(
+          nextPrompt.prompt,
+          expandCollapsedComposerCursor(nextPrompt.prompt, nextPrompt.cursor),
+        ),
+      );
+    },
+    [composerJiraTaskContexts, removeComposerDraftJiraTaskContext, setPrompt, threadId],
   );
 
   const serverThread = threads.find((t) => t.id === threadId);
@@ -1122,6 +1184,25 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
   const browsedDirectories = directoryBrowseQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const jiraConnectionQuery = useQuery(jiraConnectionStatusQueryOptions());
+  const jiraConnected = jiraConnectionQuery.data?.connected ?? false;
+  const jiraCloudId = jiraConnectionQuery.data?.sites?.[0]?.cloudId ?? ("" as JiraCloudId);
+  const jiraAtQuery = isWorkspacePathTrigger && jiraConnected ? (composerTrigger?.query ?? "") : "";
+  const isJiraAtQueryActive = jiraAtQuery.length > 0 && isJiraIssueKeyPattern(jiraAtQuery);
+  const jiraIssuesQuery = useQuery(
+    jiraIssueSearchQueryOptions(jiraCloudId, isJiraAtQueryActive ? jiraAtQuery : ""),
+  );
+  const jiraIssuesData = jiraIssuesQuery.data?.issues;
+  const jiraIssuesError = jiraIssuesQuery.error;
+  const jiraIssues = useMemo(
+    () => (isJiraAtQueryActive ? (jiraIssuesData ?? []) : []),
+    [isJiraAtQueryActive, jiraIssuesData],
+  );
+  useEffect(() => {
+    if (jiraIssuesError && isJiraAtQueryActive) {
+      console.error("[jira autocomplete]", jiraIssuesError);
+    }
+  }, [jiraIssuesError, isJiraAtQueryActive]);
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "slash-add-dir") {
@@ -1135,16 +1216,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }));
     }
     if (composerTrigger.kind === "path") {
-      return workspaceEntries.map((entry) => ({
+      const fileItems: ComposerCommandItem[] = workspaceEntries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
+        type: "path" as const,
         path: entry.path,
         pathKind: entry.kind,
         label: basenameOfPath(entry.path),
         description: entry.parentPath ?? "",
       }));
+      const jiraItems: ComposerCommandItem[] = jiraIssues.map((issue) => ({
+        id: `jira:${issue.key}`,
+        type: "jira-task" as const,
+        issueKey: issue.key,
+        summary: issue.summary,
+        status: issue.status,
+        label: issue.summary,
+        description: `${issue.key} · ${issue.status}`,
+      }));
+      if (jiraItems.length === 0) return fileItems;
+      if (fileItems.length === 0) return jiraItems;
+      return [...jiraItems, ...fileItems];
     }
-
     if (composerTrigger.kind === "slash-command") {
       const allItems: ComposerCommandItem[] = [
         {
@@ -1210,7 +1302,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [browsedDirectories, composerTrigger, searchableModelOptions, workspaceEntries]);
+  }, [browsedDirectories, composerTrigger, jiraIssues, searchableModelOptions, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -2062,6 +2154,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [composerTerminalContexts]);
 
   useEffect(() => {
+    composerJiraTaskContextsRef.current = composerJiraTaskContexts;
+  }, [composerJiraTaskContexts]);
+
+  useEffect(() => {
     if (!activeThread?.id) return;
     if (activeThread.messages.length === 0) {
       return;
@@ -2427,18 +2523,53 @@ export default function ChatView({ threadId }: ChatViewProps) {
     removeComposerImageFromDraft(imageId);
   };
 
+  const onComposerJiraPaste = useCallback(
+    (pastedText: string): boolean => {
+      const jiraKey = parseJiraUrl(pastedText);
+      if (!jiraKey) return false;
+      if (!jiraConnected || !jiraCloudId) {
+        toastManager.add({
+          type: "info",
+          title: "Jira not connected",
+          description:
+            "Connect your Jira account in Settings \u2192 Integrations to auto-resolve issue links.",
+        });
+        return false;
+      }
+      void (async () => {
+        try {
+          const issue = await queryClient.fetchQuery(
+            jiraIssueQueryOptions(jiraCloudId, jiraKey as JiraIssueKey),
+          );
+          if (!issue) return;
+          const task = jiraIssueToTaskDraft(issue);
+          addComposerDraftJiraTaskContext(threadId, task);
+          const placeholder = INLINE_JIRA_CONTEXT_PLACEHOLDER;
+          const currentPrompt = promptRef.current;
+          const nextPrompt = `${currentPrompt}${placeholder}`;
+          promptRef.current = nextPrompt;
+          setPrompt(nextPrompt);
+          const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
+          setComposerCursor(nextCursor);
+        } catch {
+          // Silently ignore — issue may not exist
+        }
+      })();
+      return true;
+    },
+    [addComposerDraftJiraTaskContext, jiraCloudId, jiraConnected, queryClient, setPrompt, threadId],
+  );
+
   const onComposerPaste = useCallback(
     (event: React.ClipboardEvent<HTMLElement>) => {
       const files = Array.from(event.clipboardData.files);
-      if (files.length === 0) {
-        return;
+      if (files.length > 0) {
+        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+        if (imageFiles.length > 0) {
+          event.preventDefault();
+          addComposerImages(imageFiles);
+        }
       }
-      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-      if (imageFiles.length === 0) {
-        return;
-      }
-      event.preventDefault();
-      addComposerImages(imageFiles);
     },
     [addComposerImages],
   );
@@ -2547,6 +2678,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       prompt: promptForSend,
       imageCount: composerImages.length,
       terminalContexts: composerTerminalContexts,
+      jiraTaskContexts: composerJiraTaskContexts,
     });
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -2565,7 +2697,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
     const standaloneSlashCommand =
-      composerImages.length === 0 && sendableComposerTerminalContexts.length === 0
+      composerImages.length === 0 &&
+      sendableComposerTerminalContexts.length === 0 &&
+      composerJiraTaskContexts.length === 0
         ? parseStandaloneComposerSlashCommand(trimmed)
         : null;
     if (standaloneSlashCommand) {
@@ -2616,9 +2750,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const messageTextForSend = appendTerminalContextsToPrompt(
-      promptForSend,
-      composerTerminalContextsSnapshot,
+    const composerJiraTaskContextsSnapshot = [...composerJiraTaskContexts];
+    const messageTextForSend = appendJiraContextsToPrompt(
+      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
+      composerJiraTaskContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
@@ -2722,6 +2857,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
           titleSeed = `Image: ${firstComposerImageName}`;
         } else if (composerTerminalContextsSnapshot.length > 0) {
           titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
+        } else if (composerJiraTaskContextsSnapshot.length > 0) {
+          titleSeed = formatJiraTaskLabel(composerJiraTaskContextsSnapshot[0]!);
         } else {
           titleSeed = "New thread";
         }
@@ -2831,7 +2968,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
         !turnStartSucceeded &&
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0
+        composerTerminalContextsRef.current.length === 0 &&
+        composerJiraTaskContextsRef.current.length === 0
       ) {
         setOptimisticUserMessages((existing) => {
           const removed = existing.filter((message) => message.id === messageIdForSend);
@@ -2846,6 +2984,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
         addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
         addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
+        for (const task of composerJiraTaskContextsSnapshot) {
+          addComposerDraftJiraTaskContext(threadId, task);
+        }
         setComposerTrigger(detectComposerTrigger(promptForSend, promptForSend.length));
       }
       setThreadError(
@@ -3446,6 +3587,29 @@ export default function ChatView({ threadId }: ChatViewProps) {
         }
         return;
       }
+      if (item.type === "jira-task") {
+        const task: JiraTaskDraft = {
+          id: `jira-${item.issueKey}`,
+          issueKey: item.issueKey,
+          summary: item.summary,
+          status: item.status,
+          issueType: "Task",
+          priority: undefined,
+          assignee: undefined,
+          description: undefined,
+          url: "",
+          attachments: [],
+        };
+        addComposerDraftJiraTaskContext(threadId, task);
+        const replacement = INLINE_JIRA_CONTEXT_PLACEHOLDER;
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, replacement, {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
       if (item.type === "slash-command") {
         if (item.command === "model" || item.command === "add-dir" || item.command === "compact") {
           const replacement = `/${item.command} `;
@@ -3483,10 +3647,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
     },
     [
+      addComposerDraftJiraTaskContext,
       applyPromptReplacement,
       handleInteractionModeChange,
       onProviderModelSelect,
       resolveActiveComposerTrigger,
+      threadId,
     ],
   );
   const onComposerMenuItemHighlighted = useCallback((itemId: string | null) => {
@@ -3511,12 +3677,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [composerHighlightedItemId, composerMenuItems],
   );
   const isComposerMenuLoading =
-    isPathTrigger &&
-    ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
-      (isWorkspacePathTrigger &&
-        (workspaceEntriesQuery.isLoading || workspaceEntriesQuery.isFetching)) ||
-      (isAddDirTrigger && (directoryBrowseQuery.isLoading || directoryBrowseQuery.isFetching)));
+    (isPathTrigger &&
+      ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
+        (isWorkspacePathTrigger &&
+          (workspaceEntriesQuery.isLoading || workspaceEntriesQuery.isFetching)) ||
+        (isAddDirTrigger &&
+          (directoryBrowseQuery.isLoading || directoryBrowseQuery.isFetching)))) ||
+    (isJiraAtQueryActive && (jiraIssuesQuery.isLoading || jiraIssuesQuery.isFetching));
 
+  const setComposerDraftJiraTaskContexts = useComposerDraftStore(
+    (store) => store.setJiraTaskContexts,
+  );
   const onPromptChange = useCallback(
     (
       nextPrompt: string,
@@ -3524,6 +3695,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       expandedCursor: number,
       cursorAdjacentToMention: boolean,
       terminalContextIds: string[],
+      jiraTaskIds: string[],
     ) => {
       if (activePendingProgress?.activeQuestion && activePendingUserInput) {
         onChangeActivePendingUserInputCustomAnswer(
@@ -3543,6 +3715,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
           syncTerminalContextsByIds(composerTerminalContexts, terminalContextIds),
         );
       }
+      if (!jiraTaskIdListsEqual(composerJiraTaskContexts, jiraTaskIds)) {
+        setComposerDraftJiraTaskContexts(
+          threadId,
+          syncJiraTasksByIds(composerJiraTaskContexts, jiraTaskIds),
+        );
+      }
       setComposerCursor(nextCursor);
       setComposerTrigger(
         cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
@@ -3551,8 +3729,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
+      composerJiraTaskContexts,
       composerTerminalContexts,
       onChangeActivePendingUserInputCustomAnswer,
+      setComposerDraftJiraTaskContexts,
       setPrompt,
       setComposerDraftTerminalContexts,
       threadId,
@@ -3926,10 +4106,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
                           ? composerTerminalContexts
                           : []
                       }
+                      jiraTaskContexts={
+                        !isComposerApprovalState && pendingUserInputs.length === 0
+                          ? composerJiraTaskContexts
+                          : []
+                      }
                       onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
+                      onRemoveJiraTask={removeComposerJiraTaskFromDraft}
                       onChange={onPromptChange}
                       onCommandKeyDown={onComposerCommandKey}
                       onPaste={onComposerPaste}
+                      onJiraPaste={onComposerJiraPaste}
                       placeholder={
                         isComposerApprovalState
                           ? (activePendingApproval?.detail ??

@@ -1,4 +1,15 @@
-# AGENTS.md
+# MarCode Project Guidelines
+
+## Rebrand Note
+
+This project was forked from T3 Code and fully rebranded to MarCode. When merging upstream changes, always check for and replace any remaining T3 references:
+
+- Package imports: `@marcode/contracts`, `@marcode/shared/*` (never `@t3tools`)
+- Env vars: `MARCODE_` prefix (never `T3CODE_`)
+- Branch prefixes in tests: `marcode/` (never `t3code/`)
+- Test file prefixes: `marcode-` (never `t3-`)
+- User-facing strings: "MarCode" (never "T3 Code")
+- Monorepo name in `bun.lock`/`package.json`: `@marcode/monorepo`
 
 ## Task Completion Requirements
 
@@ -81,3 +92,48 @@ The same applies to `py-*` vs `pt-*`/`pb-*`.
 - Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
+
+## Jira Integration
+
+MarCode supports read-only Jira Cloud integration via OAuth 2.0 (3LO) with PKCE.
+
+### Architecture
+
+- `apps/server/src/jira/` — Server-side Jira services following Effect Service/Layer pattern
+  - `Services/JiraTokenService.ts` — Token persistence, refresh, encryption (encrypted at rest in `{stateDir}/jira-tokens.json`)
+  - `Services/JiraApiClient.ts` — Atlassian REST API wrapper for boards, sprints, issues, attachments
+  - `Layers/` — Effect Layer implementations
+  - `oauthRoutes.ts` — HTTP GET `/api/jira/auth` + `/api/jira/callback` for OAuth flow
+  - `crypto.ts` — AES-256-GCM encryption for token storage
+- `packages/contracts/src/jira.ts` — Shared schemas (JiraIssue, JiraBoard, JiraSprint, etc.)
+- `apps/web/src/lib/jiraContext.ts` — Context formatting, URL parsing, `<jira_context>` XML blocks
+- `apps/web/src/lib/jiraReactQuery.ts` — React Query options for all Jira endpoints
+
+### Configuration
+
+- `MARCODE_JIRA_CLIENT_ID` env var — Atlassian OAuth app client ID (required to enable Jira)
+- Board selection stored per project via `jiraBoard` field on `OrchestrationProject`
+
+### Composer Integration
+
+- `@PROJ-123` mention autocomplete (triggers when `@` query matches `/^[A-Z]{2,}-\d*/i`)
+- `/jira` slash command for browsing sprint tasks
+- Pasted Jira URL auto-detection (`*.atlassian.net/browse/PROJ-123`)
+- Jira task context appended as `<jira_context>` XML blocks (same pattern as `<terminal_context>`)
+- Text attachments included inline, images as `ChatImageAttachment`, binaries as metadata
+
+### UI Components
+
+- `JiraTaskInlineChip` — Visual chip for Jira tasks in the composer (parallel to `TerminalContextInlineChip`)
+- `ComposerJiraTaskNode` — Lexical `DecoratorNode` for inline Jira task chips in the editor
+- `UserMessageJiraContextLabel` — Expandable Jira context label rendered in the message timeline
+- `JiraSettingsSection` — Settings panel component for Jira connection + board selection
+- Settings page includes "Integrations" section between "General" and "Providers"
+
+### Key Patterns
+
+- `JiraTaskDraft` in composer draft store follows the `TerminalContextDraft` pattern
+- `INLINE_JIRA_CONTEXT_PLACEHOLDER` (`\uFFFD`) for Lexical cursor math (like `\uFFFC` for terminal)
+- `ComposerPromptSegment` union includes `"jira-context"` type alongside `"terminal-context"`
+- `ComposerCommandItem` union includes `"jira-task"` type for menu autocomplete
+- `Project` type in `types.ts` includes `jiraBoard: JiraBoardReference | null`

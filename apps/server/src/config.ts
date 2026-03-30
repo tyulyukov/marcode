@@ -28,6 +28,7 @@ export interface ServerDerivedPaths {
   readonly providerEventLogPath: string;
   readonly terminalLogsDir: string;
   readonly anonymousIdPath: string;
+  readonly jiraTokensPath: string;
 }
 
 /**
@@ -45,6 +46,9 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly authToken: string | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
+  readonly jiraClientId: string | undefined;
+  readonly jiraClientSecret: string | undefined;
+  readonly jiraRedirectUri: string | undefined;
 }
 
 export const deriveServerPaths = Effect.fn(function* (
@@ -70,6 +74,7 @@ export const deriveServerPaths = Effect.fn(function* (
     providerEventLogPath: join(providerLogsDir, "events.log"),
     terminalLogsDir: join(logsDir, "terminals"),
     anonymousIdPath: join(stateDir, "anonymous-id"),
+    jiraTokensPath: join(stateDir, "jira-tokens.json"),
   };
 });
 
@@ -109,6 +114,9 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
           staticDir: undefined,
           devUrl,
           noBrowser: false,
+          jiraClientId: undefined,
+          jiraClientSecret: undefined,
+          jiraRedirectUri: undefined,
         } satisfies ServerConfigShape;
       }),
     );

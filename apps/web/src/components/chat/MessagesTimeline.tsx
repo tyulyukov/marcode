@@ -49,6 +49,8 @@ import {
   deriveDisplayedUserMessageState,
   type ParsedTerminalContextEntry,
 } from "~/lib/terminalContext";
+import { extractTrailingJiraContexts } from "~/lib/jiraContext";
+import { UserMessageJiraContextLabel } from "./UserMessageJiraContextLabel";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type TimestampFormat } from "@marcode/contracts/settings";
@@ -318,6 +320,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           const userImages = row.message.attachments ?? [];
           const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
           const terminalContexts = displayedUserMessage.contexts;
+          const jiraExtracted = extractTrailingJiraContexts(displayedUserMessage.visibleText);
+          const jiraContexts = jiraExtracted.contexts;
+          const visibleTextAfterJira =
+            jiraContexts.length > 0 ? jiraExtracted.promptText : displayedUserMessage.visibleText;
           const canRevertAgentWork = revertTurnCountByUserMessageId.has(row.message.id);
           return (
             <div className="flex justify-end">
@@ -357,13 +363,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                     )}
                   </div>
                 )}
-                {(displayedUserMessage.visibleText.trim().length > 0 ||
-                  terminalContexts.length > 0) && (
+                {(visibleTextAfterJira.trim().length > 0 || terminalContexts.length > 0) && (
                   <UserMessageBody
-                    text={displayedUserMessage.visibleText}
+                    text={visibleTextAfterJira}
                     terminalContexts={terminalContexts}
                   />
                 )}
+                {jiraContexts.length > 0 && <UserMessageJiraContextLabel contexts={jiraContexts} />}
                 <div className="mt-1.5 flex items-center justify-end gap-2">
                   <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
                     {displayedUserMessage.copyText && (

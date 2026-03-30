@@ -50,6 +50,7 @@ function makeState(thread: Thread): AppState {
         },
         expanded: true,
         scripts: [],
+        jiraBoard: null,
       },
     ],
     threads: [thread],
@@ -101,6 +102,7 @@ function makeReadModel(thread: OrchestrationReadModel["threads"][number]): Orche
         updatedAt: "2026-02-27T00:00:00.000Z",
         deletedAt: null,
         scripts: [],
+        jiraBoard: null,
       },
     ],
     threads: [thread],
@@ -122,6 +124,7 @@ function makeReadModelProject(
     updatedAt: "2026-02-27T00:00:00.000Z",
     deletedAt: null,
     scripts: [],
+    jiraBoard: null,
     ...overrides,
   };
 }
@@ -182,6 +185,7 @@ describe("store pure functions", () => {
           },
           expanded: true,
           scripts: [],
+          jiraBoard: null,
         },
         {
           id: project2,
@@ -193,6 +197,7 @@ describe("store pure functions", () => {
           },
           expanded: true,
           scripts: [],
+          jiraBoard: null,
         },
         {
           id: project3,
@@ -204,6 +209,7 @@ describe("store pure functions", () => {
           },
           expanded: true,
           scripts: [],
+          jiraBoard: null,
         },
       ],
       threads: [],
@@ -303,6 +309,7 @@ describe("store read model sync", () => {
           },
           expanded: true,
           scripts: [],
+          jiraBoard: null,
         },
         {
           id: project1,
@@ -314,6 +321,7 @@ describe("store read model sync", () => {
           },
           expanded: true,
           scripts: [],
+          jiraBoard: null,
         },
       ],
       threads: [],

@@ -151,6 +151,7 @@ function mapProjectsFromReadModel(
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
       scripts: project.scripts.map((script) => ({ ...script })),
+      jiraBoard: project.jiraBoard ?? null,
     } satisfies Project;
   });
 

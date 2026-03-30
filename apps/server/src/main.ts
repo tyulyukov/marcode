@@ -132,6 +132,18 @@ const CliEnvConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  jiraClientId: Config.string("MARCODE_JIRA_CLIENT_ID").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  jiraClientSecret: Config.string("MARCODE_JIRA_CLIENT_SECRET").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  jiraRedirectUri: Config.string("MARCODE_JIRA_REDIRECT_URI").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
 });
 
 const resolveBooleanFlag = (flag: Option.Option<boolean>, envValue: boolean) =>
@@ -281,6 +293,9 @@ const ServerConfigLive = (input: CliInput) =>
         authToken: Option.getOrUndefined(authToken),
         autoBootstrapProjectFromCwd,
         logWebSocketEvents,
+        jiraClientId: env.jiraClientId,
+        jiraClientSecret: env.jiraClientSecret,
+        jiraRedirectUri: env.jiraRedirectUri,
       } satisfies ServerConfigShape;
 
       return config;

@@ -2,6 +2,7 @@ import {
   INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
   type TerminalContextDraft,
 } from "./lib/terminalContext";
+import { INLINE_JIRA_CONTEXT_PLACEHOLDER, type JiraTaskDraft } from "./lib/jiraContext";
 
 export type ComposerPromptSegment =
   | {
@@ -15,6 +16,10 @@ export type ComposerPromptSegment =
   | {
       type: "terminal-context";
       context: TerminalContextDraft | null;
+    }
+  | {
+      type: "jira-context";
+      task: JiraTaskDraft | null;
     };
 
 const MENTION_TOKEN_REGEX = /(^|\s)@([^\s@]+)(?=\s)/g;
@@ -67,6 +72,7 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
 export function splitPromptIntoComposerSegments(
   prompt: string,
   terminalContexts: ReadonlyArray<TerminalContextDraft> = [],
+  jiraTaskContexts: ReadonlyArray<JiraTaskDraft> = [],
 ): ComposerPromptSegment[] {
   if (!prompt) {
     return [];
@@ -75,21 +81,31 @@ export function splitPromptIntoComposerSegments(
   const segments: ComposerPromptSegment[] = [];
   let textCursor = 0;
   let terminalContextIndex = 0;
+  let jiraContextIndex = 0;
 
   for (let index = 0; index < prompt.length; index += 1) {
-    if (prompt[index] !== INLINE_TERMINAL_CONTEXT_PLACEHOLDER) {
-      continue;
+    const char = prompt[index];
+    if (char === INLINE_TERMINAL_CONTEXT_PLACEHOLDER) {
+      if (index > textCursor) {
+        segments.push(...splitPromptTextIntoComposerSegments(prompt.slice(textCursor, index)));
+      }
+      segments.push({
+        type: "terminal-context",
+        context: terminalContexts[terminalContextIndex] ?? null,
+      });
+      terminalContextIndex += 1;
+      textCursor = index + 1;
+    } else if (char === INLINE_JIRA_CONTEXT_PLACEHOLDER) {
+      if (index > textCursor) {
+        segments.push(...splitPromptTextIntoComposerSegments(prompt.slice(textCursor, index)));
+      }
+      segments.push({
+        type: "jira-context",
+        task: jiraTaskContexts[jiraContextIndex] ?? null,
+      });
+      jiraContextIndex += 1;
+      textCursor = index + 1;
     }
-
-    if (index > textCursor) {
-      segments.push(...splitPromptTextIntoComposerSegments(prompt.slice(textCursor, index)));
-    }
-    segments.push({
-      type: "terminal-context",
-      context: terminalContexts[terminalContextIndex] ?? null,
-    });
-    terminalContextIndex += 1;
-    textCursor = index + 1;
   }
 
   if (textCursor < prompt.length) {
