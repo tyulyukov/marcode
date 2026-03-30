@@ -23,7 +23,15 @@ import {
 } from "@marcode/contracts";
 import { applyClaudePromptEffortPrefix, normalizeModelSlug } from "@marcode/shared/model";
 import { truncate } from "@marcode/shared/String";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -80,6 +88,7 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
+  type ProposedPlan,
   type TurnDiffSummary,
 } from "../types";
 import { basenameOfPath } from "../vscode-icons";
@@ -189,8 +198,10 @@ const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
 const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
+const EMPTY_MESSAGES: ChatMessage[] = [];
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const EMPTY_PROJECT_ENTRIES: ProjectEntry[] = [];
+const EMPTY_PROPOSED_PLANS: ProposedPlan[] = [];
 const EMPTY_AVAILABLE_EDITORS: EditorId[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
@@ -402,6 +413,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const activeComposerMenuItemRef = useRef<ComposerCommandItem | null>(null);
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewHandoffTimeoutByMessageIdRef = useRef<Record<string, number>>({});
+  const onSendRef = useRef<((e?: { preventDefault: () => void }) => Promise<void>) | null>(null);
   const sendInFlightRef = useRef(false);
   const dragDepthRef = useRef(0);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
@@ -491,6 +503,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [draftThread, fallbackDraftProject?.defaultModelSelection, localDraftError, threadId],
   );
   const activeThread = serverThread ?? localDraftThread;
+  // Keep stream-heavy timeline rendering at deferred priority so the composer
+  // stays responsive while provider events are arriving in bursts.
+  const deferredTimelineThread = useDeferredValue(activeThread);
+  const timelineThread =
+    deferredTimelineThread?.id === activeThread?.id ? deferredTimelineThread : activeThread;
   const runtimeMode =
     composerDraft.runtimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
   const interactionMode =
@@ -501,11 +518,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const diffOpen = rawSearch.diff === "1";
   const activeThreadId = activeThread?.id ?? null;
   const activeLatestTurn = activeThread?.latestTurn ?? null;
+  const timelineLatestTurn = timelineThread?.latestTurn ?? null;
   const activeContextWindow = useMemo(
     () => deriveLatestContextWindowSnapshot(activeThread?.activities ?? []),
     [activeThread?.activities],
   );
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
+  const timelineLatestTurnSettled = isLatestTurnSettled(
+    timelineLatestTurn,
+    timelineThread?.session ?? null,
+  );
   const activeProject = projects.find((p) => p.id === activeThread?.projectId);
 
   const openPullRequestDialog = useCallback(
@@ -679,6 +701,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     sendStartedAt,
   );
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const timelineThreadActivities = timelineThread?.activities ?? EMPTY_ACTIVITIES;
   const activeTodoItems = useMemo(
     () =>
       showTodosInComposer
@@ -688,14 +711,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const workLogEntries = useMemo(
     () =>
-      deriveWorkLogEntries(threadActivities, activeLatestTurn?.turnId ?? undefined, {
+      deriveWorkLogEntries(timelineThreadActivities, timelineLatestTurn?.turnId ?? undefined, {
         excludeTodoToolCalls: showTodosInComposer,
       }),
-    [activeLatestTurn?.turnId, threadActivities, showTodosInComposer],
+    [timelineLatestTurn?.turnId, timelineThreadActivities, showTodosInComposer],
   );
-  const latestTurnHasToolActivity = useMemo(
-    () => hasToolActivityForTurn(threadActivities, activeLatestTurn?.turnId),
-    [activeLatestTurn?.turnId, threadActivities],
+  const timelineLatestTurnHasToolActivity = useMemo(
+    () => hasToolActivityForTurn(timelineThreadActivities, timelineLatestTurn?.turnId),
+    [timelineLatestTurn?.turnId, timelineThreadActivities],
   );
   const pendingApprovals = useMemo(
     () => derivePendingApprovals(threadActivities),
@@ -878,17 +901,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       delete attachmentPreviewHandoffTimeoutByMessageIdRef.current[messageId];
     }, ATTACHMENT_PREVIEW_HANDOFF_TTL_MS);
   }, []);
-  const serverMessages = activeThread?.messages;
+  const serverMessages = timelineThread?.messages ?? EMPTY_MESSAGES;
   const timelineMessages = useMemo(() => {
-    const messages = serverMessages ?? [];
     const serverMessagesWithPreviewHandoff =
       Object.keys(attachmentPreviewHandoffByMessageId).length === 0
-        ? messages
+        ? serverMessages
         : // Spread only fires for the few messages that actually changed;
           // unchanged ones early-return their original reference.
           // In-place mutation would break React's immutable state contract.
-          // oxlint-disable-next-line no-map-spread
-          messages.map((message) => {
+          serverMessages.map((message) => {
             if (
               message.role !== "user" ||
               !message.attachments ||
@@ -934,11 +955,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [serverMessages, attachmentPreviewHandoffByMessageId, optimisticUserMessages]);
   const timelineEntries = useMemo(
     () =>
-      deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
-    [activeThread?.proposedPlans, timelineMessages, workLogEntries],
+      deriveTimelineEntries(
+        timelineMessages,
+        timelineThread?.proposedPlans ?? EMPTY_PROPOSED_PLANS,
+        workLogEntries,
+      ),
+    [timelineThread?.proposedPlans, timelineMessages, workLogEntries],
   );
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
-    useTurnDiffSummaries(activeThread);
+    useTurnDiffSummaries(timelineThread);
   const turnDiffSummaryByAssistantMessageId = useMemo(() => {
     const byMessageId = new Map<MessageId, TurnDiffSummary>();
     for (const summary of turnDiffSummaries) {
@@ -981,27 +1006,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
 
   const completionSummary = useMemo(() => {
-    if (!latestTurnSettled) return null;
-    if (!activeLatestTurn?.startedAt) return null;
-    if (!activeLatestTurn.completedAt) return null;
-    if (!latestTurnHasToolActivity) return null;
+    if (!timelineLatestTurnSettled) return null;
+    if (!timelineLatestTurn?.startedAt) return null;
+    if (!timelineLatestTurn.completedAt) return null;
+    if (!timelineLatestTurnHasToolActivity) return null;
 
-    const elapsed = formatElapsed(activeLatestTurn.startedAt, activeLatestTurn.completedAt);
+    const elapsed = formatElapsed(timelineLatestTurn.startedAt, timelineLatestTurn.completedAt);
     return elapsed ? `Worked for ${elapsed}` : null;
   }, [
-    activeLatestTurn?.completedAt,
-    activeLatestTurn?.startedAt,
-    latestTurnHasToolActivity,
-    latestTurnSettled,
+    timelineLatestTurn?.completedAt,
+    timelineLatestTurn?.startedAt,
+    timelineLatestTurnHasToolActivity,
+    timelineLatestTurnSettled,
   ]);
   const completionDividerBeforeEntryId = useMemo(() => {
-    if (!latestTurnSettled) return null;
-    if (!activeLatestTurn?.startedAt) return null;
-    if (!activeLatestTurn.completedAt) return null;
+    if (!timelineLatestTurnSettled) return null;
+    if (!timelineLatestTurn?.startedAt) return null;
+    if (!timelineLatestTurn.completedAt) return null;
     if (!completionSummary) return null;
 
-    const turnStartedAt = Date.parse(activeLatestTurn.startedAt);
-    const turnCompletedAt = Date.parse(activeLatestTurn.completedAt);
+    const turnStartedAt = Date.parse(timelineLatestTurn.startedAt);
+    const turnCompletedAt = Date.parse(timelineLatestTurn.completedAt);
     if (Number.isNaN(turnStartedAt)) return null;
     if (Number.isNaN(turnCompletedAt)) return null;
 
@@ -1019,10 +1044,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
     return inRangeMatch ?? fallbackMatch;
   }, [
-    activeLatestTurn?.completedAt,
-    activeLatestTurn?.startedAt,
+    timelineLatestTurn?.completedAt,
+    timelineLatestTurn?.startedAt,
     completionSummary,
-    latestTurnSettled,
+    timelineLatestTurnSettled,
     timelineEntries,
   ]);
   const gitCwd = activeProject
@@ -2340,71 +2365,83 @@ export default function ChatView({ threadId }: ChatViewProps) {
     toggleTerminalVisibility,
   ]);
 
-  const addComposerImages = (files: File[]) => {
-    if (!activeThreadId || files.length === 0) return;
+  const addComposerImages = useCallback(
+    (files: File[]) => {
+      if (!activeThreadId || files.length === 0) return;
 
-    if (pendingUserInputs.length > 0) {
-      toastManager.add({
-        type: "error",
-        title: "Attach images after answering plan questions.",
-      });
-      return;
-    }
-
-    const nextImages: ComposerImageAttachment[] = [];
-    let nextImageCount = composerImagesRef.current.length;
-    let error: string | null = null;
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) {
-        error = `Unsupported file type for '${file.name}'. Please attach image files only.`;
-        continue;
-      }
-      if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-        error = `'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`;
-        continue;
-      }
-      if (nextImageCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
-        break;
+      if (pendingUserInputs.length > 0) {
+        toastManager.add({
+          type: "error",
+          title: "Attach images after answering plan questions.",
+        });
+        return;
       }
 
-      const previewUrl = URL.createObjectURL(file);
-      nextImages.push({
-        type: "image",
-        id: randomUUID(),
-        name: file.name || "image",
-        mimeType: file.type,
-        sizeBytes: file.size,
-        previewUrl,
-        file,
-      });
-      nextImageCount += 1;
-    }
+      const nextImages: ComposerImageAttachment[] = [];
+      let nextImageCount = composerImagesRef.current.length;
+      let error: string | null = null;
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) {
+          error = `Unsupported file type for '${file.name}'. Please attach image files only.`;
+          continue;
+        }
+        if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+          error = `'${file.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`;
+          continue;
+        }
+        if (nextImageCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+          error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
+          break;
+        }
 
-    if (nextImages.length === 1 && nextImages[0]) {
-      addComposerImage(nextImages[0]);
-    } else if (nextImages.length > 1) {
-      addComposerImagesToDraft(nextImages);
-    }
-    setThreadError(activeThreadId, error);
-  };
+        const previewUrl = URL.createObjectURL(file);
+        nextImages.push({
+          type: "image",
+          id: randomUUID(),
+          name: file.name || "image",
+          mimeType: file.type,
+          sizeBytes: file.size,
+          previewUrl,
+          file,
+        });
+        nextImageCount += 1;
+      }
+
+      if (nextImages.length === 1 && nextImages[0]) {
+        addComposerImage(nextImages[0]);
+      } else if (nextImages.length > 1) {
+        addComposerImagesToDraft(nextImages);
+      }
+      setThreadError(activeThreadId, error);
+    },
+    [
+      activeThreadId,
+      addComposerImage,
+      addComposerImagesToDraft,
+      pendingUserInputs.length,
+      setThreadError,
+    ],
+  );
 
   const removeComposerImage = (imageId: string) => {
     removeComposerImageFromDraft(imageId);
   };
 
-  const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
-    const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) {
-      return;
-    }
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) {
-      return;
-    }
-    event.preventDefault();
-    addComposerImages(imageFiles);
-  };
+  const onComposerPaste = useCallback(
+    (event: React.ClipboardEvent<HTMLElement>) => {
+      const files = Array.from(event.clipboardData.files);
+      if (files.length === 0) {
+        return;
+      }
+      const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+      if (imageFiles.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      addComposerImages(imageFiles);
+    },
+    [addComposerImages],
+  );
 
   const onComposerDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer.types.includes("Files")) {
@@ -2821,6 +2858,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       resetSendPhase();
     }
   };
+  onSendRef.current = onSend;
 
   const onInterrupt = async () => {
     const api = readNativeApi();
@@ -3521,43 +3559,48 @@ export default function ChatView({ threadId }: ChatViewProps) {
     ],
   );
 
-  const onComposerCommandKey = (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
-    event: KeyboardEvent,
-  ) => {
-    if (key === "Tab" && event.shiftKey) {
-      toggleInteractionMode();
-      return true;
-    }
-
-    const { trigger } = resolveActiveComposerTrigger();
-    const menuIsActive = composerMenuOpenRef.current || trigger !== null;
-
-    if (menuIsActive) {
-      const currentItems = composerMenuItemsRef.current;
-      if (key === "ArrowDown" && currentItems.length > 0) {
-        nudgeComposerMenuHighlight("ArrowDown");
+  const onComposerCommandKey = useCallback(
+    (key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab", event: KeyboardEvent) => {
+      if (key === "Tab" && event.shiftKey) {
+        toggleInteractionMode();
         return true;
       }
-      if (key === "ArrowUp" && currentItems.length > 0) {
-        nudgeComposerMenuHighlight("ArrowUp");
-        return true;
-      }
-      if (key === "Tab" || key === "Enter") {
-        const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
-        if (selectedItem) {
-          onSelectComposerItem(selectedItem);
+
+      const { trigger } = resolveActiveComposerTrigger();
+      const menuIsActive = composerMenuOpenRef.current || trigger !== null;
+
+      if (menuIsActive) {
+        const currentItems = composerMenuItemsRef.current;
+        if (key === "ArrowDown" && currentItems.length > 0) {
+          nudgeComposerMenuHighlight("ArrowDown");
           return true;
         }
+        if (key === "ArrowUp" && currentItems.length > 0) {
+          nudgeComposerMenuHighlight("ArrowUp");
+          return true;
+        }
+        if (key === "Tab" || key === "Enter") {
+          const selectedItem = activeComposerMenuItemRef.current ?? currentItems[0];
+          if (selectedItem) {
+            onSelectComposerItem(selectedItem);
+            return true;
+          }
+        }
       }
-    }
 
-    if (key === "Enter" && !event.shiftKey) {
-      void onSend();
-      return true;
-    }
-    return false;
-  };
+      if (key === "Enter" && !event.shiftKey) {
+        void onSendRef.current?.();
+        return true;
+      }
+      return false;
+    },
+    [
+      nudgeComposerMenuHighlight,
+      onSelectComposerItem,
+      resolveActiveComposerTrigger,
+      toggleInteractionMode,
+    ],
+  );
   const onToggleWorkGroup = useCallback((groupId: string) => {
     setExpandedWorkGroups((existing) => ({
       ...existing,
@@ -3583,13 +3626,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
     },
     [navigate, threadId],
   );
-  const onRevertUserMessage = (messageId: MessageId) => {
-    const targetTurnCount = revertTurnCountByUserMessageId.get(messageId);
-    if (typeof targetTurnCount !== "number") {
-      return;
-    }
-    void onRevertToTurnCount(targetTurnCount);
-  };
+  const onRevertUserMessage = useCallback(
+    (messageId: MessageId) => {
+      const targetTurnCount = revertTurnCountByUserMessageId.get(messageId);
+      if (typeof targetTurnCount !== "number") {
+        return;
+      }
+      void onRevertToTurnCount(targetTurnCount);
+    },
+    [onRevertToTurnCount, revertTurnCountByUserMessageId],
+  );
 
   // Empty state: no active thread
   if (!activeThread) {
@@ -3645,9 +3691,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
-          onRunProjectScript={(script) => {
-            void runProjectScript(script);
-          }}
+          onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
