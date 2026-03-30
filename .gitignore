@@ -13,6 +13,7 @@ build/
 .logs/
 release/
 .marcode
+release-mock/
 .idea/
 apps/web/.playwright
 apps/web/playwright-report

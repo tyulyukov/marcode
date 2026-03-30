@@ -20,12 +20,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildThreadNamePrompt,
+  buildThreadTitlePrompt,
 } from "../Prompts.ts";
 import {
   normalizeCliError,
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "../Utils.ts";
 import { normalizeClaudeModelOptions } from "../../provider/Layers/ClaudeProvider.ts";
@@ -75,7 +76,7 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadName";
+      | "generateThreadTitle";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -304,23 +305,23 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     };
   });
 
-  const generateThreadName: TextGenerationShape["generateThreadName"] = Effect.fn(
-    "ClaudeTextGeneration.generateThreadName",
+  const generateThreadTitle: TextGenerationShape["generateThreadTitle"] = Effect.fn(
+    "ClaudeTextGeneration.generateThreadTitle",
   )(function* (input) {
-    const { prompt, outputSchema } = buildThreadNamePrompt({
+    const { prompt, outputSchema } = buildThreadTitlePrompt({
       message: input.message,
       attachments: input.attachments,
     });
 
     if (input.modelSelection.provider !== "claudeAgent") {
       return yield* new TextGenerationError({
-        operation: "generateThreadName",
+        operation: "generateThreadTitle",
         detail: "Invalid model selection.",
       });
     }
 
     const generated = yield* runClaudeJson({
-      operation: "generateThreadName",
+      operation: "generateThreadTitle",
       cwd: input.cwd,
       prompt,
       outputSchemaJson: outputSchema,
@@ -328,7 +329,7 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     });
 
     return {
-      title: generated.title.trim().slice(0, 80),
+      title: sanitizeThreadTitle(generated.title),
     };
   });
 
@@ -336,7 +337,7 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
-    generateThreadName,
+    generateThreadTitle,
   } satisfies TextGenerationShape;
 });
 
