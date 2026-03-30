@@ -2008,7 +2008,17 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
-      case "task_started":
+      case "task_started": {
+        let agentType: string | undefined;
+        if (message.tool_use_id) {
+          for (const tool of context.inFlightTools.values()) {
+            if (tool.itemId === message.tool_use_id) {
+              const raw = tool.input.subagent_type;
+              if (typeof raw === "string" && raw.length > 0) agentType = raw;
+              break;
+            }
+          }
+        }
         yield* offerRuntimeEvent({
           ...base,
           type: "task.started",
@@ -2016,9 +2026,11 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             taskId: RuntimeTaskId.makeUnsafe(message.task_id),
             description: message.description,
             ...(message.task_type ? { taskType: message.task_type } : {}),
+            ...(agentType ? { agentType } : {}),
           },
         });
         return;
+      }
       case "task_progress":
         if (message.usage) {
           const normalizedUsage = normalizeClaudeTokenUsage(
@@ -2362,8 +2374,8 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     return Effect.succeed(context);
   };
 
-  const startSession: ClaudeAdapterShape["startSession"] = (input) =>
-    Effect.gen(function* () {
+  const startSession: ClaudeAdapterShape["startSession"] = Effect.fn("startSession")(
+    function* (input) {
       if (input.provider !== undefined && input.provider !== PROVIDER) {
         return yield* new ProviderAdapterValidationError({
           provider: PROVIDER,
@@ -2380,8 +2392,9 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         existingResumeSessionId === undefined ? yield* Random.nextUUIDv4 : undefined;
       const sessionId = existingResumeSessionId ?? newSessionId;
 
-      const runFork = Effect.runFork;
-      const runPromise = Effect.runPromise;
+      const services = yield* Effect.services();
+      const runFork = Effect.runForkWith(services);
+      const runPromise = Effect.runPromiseWith(services);
 
       const promptQueue = yield* Queue.unbounded<PromptQueueItem>();
       const prompt = Stream.fromQueue(promptQueue).pipe(
@@ -2714,7 +2727,13 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         includePartialMessages: true,
         canUseTool,
         env: process.env,
-        ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
+        ...(() => {
+          const dirs: string[] = [];
+          if (input.cwd) dirs.push(input.cwd);
+          if (input.additionalDirectories) dirs.push(...input.additionalDirectories);
+          const uniqueDirs = [...new Set(dirs)];
+          return uniqueDirs.length > 0 ? { additionalDirectories: uniqueDirs } : {};
+        })(),
       };
 
       const queryRuntime = yield* Effect.try({
@@ -2840,102 +2859,102 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return {
         ...session,
       };
-    });
+    },
+  );
 
-  const sendTurn: ClaudeAdapterShape["sendTurn"] = (input) =>
-    Effect.gen(function* () {
-      const context = yield* requireSession(input.threadId);
-      const modelSelection =
-        input.modelSelection?.provider === "claudeAgent" ? input.modelSelection : undefined;
+  const sendTurn: ClaudeAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+    const context = yield* requireSession(input.threadId);
+    const modelSelection =
+      input.modelSelection?.provider === "claudeAgent" ? input.modelSelection : undefined;
 
-      if (context.turnState) {
-        // Auto-close a stale synthetic turn (from background agent responses
-        // between user prompts) to prevent blocking the user's next turn.
-        yield* completeTurn(context, "completed");
-      }
+    if (context.turnState) {
+      // Auto-close a stale synthetic turn (from background agent responses
+      // between user prompts) to prevent blocking the user's next turn.
+      yield* completeTurn(context, "completed");
+    }
 
-      if (modelSelection?.model) {
-        const apiModelId = resolveApiModelId(modelSelection);
-        if (context.currentApiModelId !== apiModelId) {
-          yield* Effect.tryPromise({
-            try: () => context.query.setModel(apiModelId),
-            catch: (cause) => toRequestError(input.threadId, "turn/setModel", cause),
-          });
-          context.currentApiModelId = apiModelId;
-        }
-        context.session = {
-          ...context.session,
-          model: modelSelection.model,
-        };
-      }
-
-      // Apply interaction mode by switching the SDK's permission mode.
-      // "plan" maps directly to the SDK's "plan" permission mode;
-      // "default" restores the session's original permission mode.
-      // When interactionMode is absent we leave the current mode unchanged.
-      if (input.interactionMode === "plan") {
+    if (modelSelection?.model) {
+      const apiModelId = resolveApiModelId(modelSelection);
+      if (context.currentApiModelId !== apiModelId) {
         yield* Effect.tryPromise({
-          try: () => context.query.setPermissionMode("plan"),
-          catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
+          try: () => context.query.setModel(apiModelId),
+          catch: (cause) => toRequestError(input.threadId, "turn/setModel", cause),
         });
-      } else if (input.interactionMode === "default") {
-        yield* Effect.tryPromise({
-          try: () =>
-            context.query.setPermissionMode(context.basePermissionMode ?? "bypassPermissions"),
-          catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
-        });
+        context.currentApiModelId = apiModelId;
       }
-
-      const turnId = TurnId.makeUnsafe(yield* Random.nextUUIDv4);
-      const turnState: ClaudeTurnState = {
-        turnId,
-        startedAt: yield* nowIso,
-        items: [],
-        assistantTextBlocks: new Map(),
-        assistantTextBlockOrder: [],
-        capturedProposedPlanKeys: new Set(),
-        nextSyntheticAssistantBlockIndex: -1,
-      };
-
-      const updatedAt = yield* nowIso;
-      context.turnState = turnState;
       context.session = {
         ...context.session,
-        status: "running",
-        activeTurnId: turnId,
-        updatedAt,
+        model: modelSelection.model,
       };
+    }
 
-      const turnStartedStamp = yield* makeEventStamp();
-      yield* offerRuntimeEvent({
-        type: "turn.started",
-        eventId: turnStartedStamp.eventId,
-        provider: PROVIDER,
-        createdAt: turnStartedStamp.createdAt,
-        threadId: context.session.threadId,
-        turnId,
-        payload: modelSelection?.model ? { model: modelSelection.model } : {},
-        providerRefs: {},
+    // Apply interaction mode by switching the SDK's permission mode.
+    // "plan" maps directly to the SDK's "plan" permission mode;
+    // "default" restores the session's original permission mode.
+    // When interactionMode is absent we leave the current mode unchanged.
+    if (input.interactionMode === "plan") {
+      yield* Effect.tryPromise({
+        try: () => context.query.setPermissionMode("plan"),
+        catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
       });
-
-      const message = yield* buildUserMessageEffect(input, {
-        fileSystem,
-        attachmentsDir: serverConfig.attachmentsDir,
+    } else if (input.interactionMode === "default") {
+      yield* Effect.tryPromise({
+        try: () =>
+          context.query.setPermissionMode(context.basePermissionMode ?? "bypassPermissions"),
+        catch: (cause) => toRequestError(input.threadId, "turn/setPermissionMode", cause),
       });
+    }
 
-      yield* Queue.offer(context.promptQueue, {
-        type: "message",
-        message,
-      }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
+    const turnId = TurnId.makeUnsafe(yield* Random.nextUUIDv4);
+    const turnState: ClaudeTurnState = {
+      turnId,
+      startedAt: yield* nowIso,
+      items: [],
+      assistantTextBlocks: new Map(),
+      assistantTextBlockOrder: [],
+      capturedProposedPlanKeys: new Set(),
+      nextSyntheticAssistantBlockIndex: -1,
+    };
 
-      return {
-        threadId: context.session.threadId,
-        turnId,
-        ...(context.session.resumeCursor !== undefined
-          ? { resumeCursor: context.session.resumeCursor }
-          : {}),
-      };
+    const updatedAt = yield* nowIso;
+    context.turnState = turnState;
+    context.session = {
+      ...context.session,
+      status: "running",
+      activeTurnId: turnId,
+      updatedAt,
+    };
+
+    const turnStartedStamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "turn.started",
+      eventId: turnStartedStamp.eventId,
+      provider: PROVIDER,
+      createdAt: turnStartedStamp.createdAt,
+      threadId: context.session.threadId,
+      turnId,
+      payload: modelSelection?.model ? { model: modelSelection.model } : {},
+      providerRefs: {},
     });
+
+    const message = yield* buildUserMessageEffect(input, {
+      fileSystem,
+      attachmentsDir: serverConfig.attachmentsDir,
+    });
+
+    yield* Queue.offer(context.promptQueue, {
+      type: "message",
+      message,
+    }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
+
+    return {
+      threadId: context.session.threadId,
+      turnId,
+      ...(context.session.resumeCursor !== undefined
+        ? { resumeCursor: context.session.resumeCursor }
+        : {}),
+    };
+  });
 
   const interruptTurn: ClaudeAdapterShape["interruptTurn"] = Effect.fn("interruptTurn")(
     function* (threadId, _turnId) {
