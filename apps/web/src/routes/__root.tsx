@@ -156,6 +156,19 @@ function EventRouter() {
     let syncing = false;
     let pending = false;
     let needsProviderInvalidation = false;
+    let lastDomainEventAt = Date.now();
+    let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const RECONCILIATION_DELAY_MS = 2_000;
+    const WATCHDOG_INTERVAL_MS = 5_000;
+    const STALE_SESSION_THRESHOLD_MS = 5_000;
+
+    const hasRunningSessions = (): boolean =>
+      useStore
+        .getState()
+        .threads.some(
+          (t) => t.session?.orchestrationStatus === "running" && t.session.activeTurnId != null,
+        );
 
     const flushSnapshotSync = async (): Promise<void> => {
       const snapshot = await api.orchestration.getSnapshot();
@@ -197,8 +210,6 @@ function EventRouter() {
         if (needsProviderInvalidation) {
           needsProviderInvalidation = false;
           void queryClient.invalidateQueries({ queryKey: providerQueryKeys.all });
-          // Invalidate workspace entry queries so the @-mention file picker
-          // reflects files created, deleted, or restored during this turn.
           void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
         }
         void syncSnapshot();
@@ -210,11 +221,19 @@ function EventRouter() {
       },
     );
 
+    const watchdogInterval = setInterval(() => {
+      if (disposed) return;
+      if (!hasRunningSessions()) return;
+      if (Date.now() - lastDomainEventAt < STALE_SESSION_THRESHOLD_MS) return;
+      void syncSnapshot();
+    }, WATCHDOG_INTERVAL_MS);
+
     const unsubDomainEvent = api.orchestration.onDomainEvent((event) => {
       if (event.sequence <= latestSequence) {
         return;
       }
       latestSequence = event.sequence;
+      lastDomainEventAt = Date.now();
       if (event.type === "thread.turn-diff-completed" || event.type === "thread.reverted") {
         needsProviderInvalidation = true;
       }
@@ -234,13 +253,18 @@ function EventRouter() {
         );
     });
     const unsubWelcome = onServerWelcome((payload) => {
-      // Migrate old localStorage settings to server on first connect
       migrateLocalSettingsToServer();
       void (async () => {
         await syncSnapshot();
         if (disposed) {
           return;
         }
+
+        if (reconciliationTimer !== null) clearTimeout(reconciliationTimer);
+        reconciliationTimer = setTimeout(() => {
+          reconciliationTimer = null;
+          if (!disposed) void syncSnapshot();
+        }, RECONCILIATION_DELAY_MS);
 
         if (!payload.bootstrapProjectId || !payload.bootstrapThreadId) {
           return;
@@ -320,6 +344,8 @@ function EventRouter() {
       disposed = true;
       needsProviderInvalidation = false;
       domainEventFlushThrottler.cancel();
+      if (reconciliationTimer !== null) clearTimeout(reconciliationTimer);
+      clearInterval(watchdogInterval);
       unsubDomainEvent();
       unsubTerminalEvent();
       unsubWelcome();
