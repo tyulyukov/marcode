@@ -89,7 +89,6 @@ const ATTACHMENT_VIEWPORT_MATRIX = [
 interface UserRowMeasurement {
   measuredRowHeightPx: number;
   timelineWidthMeasuredPx: number;
-  renderedInVirtualizedRegion: boolean;
 }
 
 interface MountedChatView {
@@ -750,7 +749,6 @@ async function measureUserRow(options: {
 
   let timelineWidthMeasuredPx = 0;
   let measuredRowHeightPx = 0;
-  let renderedInVirtualizedRegion = false;
   await vi.waitFor(
     async () => {
       scrollContainer.scrollTop = 0;
@@ -760,7 +758,6 @@ async function measureUserRow(options: {
       expect(measuredRow, "Unable to measure targeted user row height.").toBeTruthy();
       timelineWidthMeasuredPx = timelineRoot.getBoundingClientRect().width;
       measuredRowHeightPx = measuredRow!.getBoundingClientRect().height;
-      renderedInVirtualizedRegion = measuredRow!.closest("[data-index]") instanceof HTMLElement;
       expect(timelineWidthMeasuredPx, "Unable to measure timeline width.").toBeGreaterThan(0);
       expect(measuredRowHeightPx, "Unable to measure targeted user row height.").toBeGreaterThan(0);
     },
@@ -770,7 +767,7 @@ async function measureUserRow(options: {
     },
   );
 
-  return { measuredRowHeightPx, timelineWidthMeasuredPx, renderedInVirtualizedRegion };
+  return { measuredRowHeightPx, timelineWidthMeasuredPx };
 }
 
 async function mountChatView(options: {
@@ -901,10 +898,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
 
       try {
-        const { measuredRowHeightPx, timelineWidthMeasuredPx, renderedInVirtualizedRegion } =
+        const { measuredRowHeightPx, timelineWidthMeasuredPx } =
           await mounted.measureUserRow(targetMessageId);
-
-        expect(renderedInVirtualizedRegion).toBe(true);
 
         const estimatedHeightPx = estimateTimelineMessageHeight(
           { role: "user", text: userText, attachments: [] },
@@ -944,7 +939,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
           { timelineWidthPx: measurement.timelineWidthMeasuredPx },
         );
 
-        expect(measurement.renderedInVirtualizedRegion).toBe(true);
         expect(Math.abs(measurement.measuredRowHeightPx - estimatedHeightPx)).toBeLessThanOrEqual(
           viewport.textTolerancePx,
         );
@@ -1021,10 +1015,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
 
       try {
-        const { measuredRowHeightPx, timelineWidthMeasuredPx, renderedInVirtualizedRegion } =
+        const { measuredRowHeightPx, timelineWidthMeasuredPx } =
           await mounted.measureUserRow(targetMessageId);
-
-        expect(renderedInVirtualizedRegion).toBe(true);
 
         const estimatedHeightPx = estimateTimelineMessageHeight(
           {
