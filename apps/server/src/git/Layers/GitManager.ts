@@ -1248,12 +1248,18 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               )
           : { status: "skipped_not_requested" as const };
 
+        const detectedHostProvider = wantsPr
+          ? yield* resolveDetectedProvider(input.cwd)
+          : undefined;
+        const prPhaseLabel =
+          detectedHostProvider === "gitlab" ? "Creating MR..." : "Creating PR...";
+
         const pr = wantsPr
           ? yield* progress
               .emit({
                 kind: "phase_started",
                 phase: "pr",
-                label: "Creating PR...",
+                label: prPhaseLabel,
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
