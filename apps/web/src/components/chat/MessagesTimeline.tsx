@@ -72,54 +72,47 @@ const DIFF_PREVIEW_MAX_HEIGHT = 260;
 const DIFF_HUNK_SPACING = 8;
 const AGENT_GROUP_HEADER_HEIGHT = 32;
 
-function estimateWorkRowHeight(
-  groupedEntries: ReadonlyArray<TimelineWorkEntry>,
-  showInlineDiffs: boolean,
-): number {
-  const visibleCount = Math.min(groupedEntries.length, MAX_VISIBLE_WORK_LOG_ENTRIES);
-  const baseHeight = WORK_GROUP_OVERHEAD_HEIGHT + visibleCount * WORK_ENTRY_HEIGHT;
-
-  let extraHeight = 0;
-  const visibleEntries =
-    groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES
-      ? groupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES)
-      : groupedEntries;
-
-  for (const entry of visibleEntries) {
-    if (entry.agentGroup) {
-      extraHeight += AGENT_GROUP_HEADER_HEIGHT;
-      continue;
+type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
+type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+type TimelineProposedPlan = Extract<TimelineEntry, { kind: "proposed-plan" }>["proposedPlan"];
+type TimelineWorkEntry = Extract<TimelineEntry, { kind: "work" }>["entry"];
+type TimelineRow =
+  | {
+      kind: "work";
+      id: string;
+      createdAt: string;
+      groupedEntries: TimelineWorkEntry[];
     }
-    if (!showInlineDiffs) continue;
-    const previews = entry.diffPreviews;
-    if (!previews || previews.length === 0) continue;
-    for (const hunk of previews) {
-      const bodyHeight = Math.min(
-        hunk.lines.length * DIFF_PREVIEW_LINE_HEIGHT,
-        DIFF_PREVIEW_MAX_HEIGHT,
-      );
-      extraHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + DIFF_HUNK_SPACING;
+  | {
+      kind: "message";
+      id: string;
+      createdAt: string;
+      message: TimelineMessage;
+      durationStart: string;
+      showCompletionDivider: boolean;
     }
-  }
+  | {
+      kind: "proposed-plan";
+      id: string;
+      createdAt: string;
+      proposedPlan: TimelineProposedPlan;
+    }
+  | { kind: "working"; id: string; createdAt: string | null };
 
-  return baseHeight + extraHeight;
-}
-
-interface MessagesTimelineProps {
-  hasMessages: boolean;
-  isWorking: boolean;
-  isSendBusy: boolean;
-  activeTurnStartedAt: string | null;
-  timelineEntries: ReturnType<typeof deriveTimelineEntries>;
-  completionDividerBeforeEntryId: string | null;
-  completionSummary: string | null;
-  turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
+interface TimelineRowContentProps {
+  row: TimelineRow;
   expandedWorkGroups: Record<string, boolean>;
   onToggleWorkGroup: (groupId: string) => void;
+  completionSummary: string | null;
+  turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
+  allDirectoriesExpandedByTurnId: Record<string, boolean>;
+  onToggleAllDirectories: (turnId: TurnId) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
+  isWorking: boolean;
+  isSendBusy: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
@@ -128,132 +121,28 @@ interface MessagesTimelineProps {
   workspaceRoot: string | undefined;
 }
 
-export const MessagesTimeline = memo(function MessagesTimeline({
-  hasMessages,
-  isWorking,
-  isSendBusy,
-  activeTurnStartedAt,
-  timelineEntries,
-  completionDividerBeforeEntryId,
-  completionSummary,
-  turnDiffSummaryByAssistantMessageId,
+const TimelineRowContent = memo(function TimelineRowContent({
+  row,
   expandedWorkGroups,
   onToggleWorkGroup,
+  completionSummary,
+  turnDiffSummaryByAssistantMessageId,
+  allDirectoriesExpandedByTurnId,
+  onToggleAllDirectories,
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
   isRevertingCheckpoint,
+  isWorking,
+  isSendBusy,
   onImageExpand,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
   showInlineDiffs,
   workspaceRoot,
-}: MessagesTimelineProps) {
-  const timelineRootRef = useRef<HTMLDivElement | null>(null);
-  const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    const timelineRoot = timelineRootRef.current;
-    if (!timelineRoot) return;
-
-    const updateWidth = (nextWidth: number) => {
-      setTimelineWidthPx((previousWidth) => {
-        if (previousWidth !== null && Math.abs(previousWidth - nextWidth) < 0.5) {
-          return previousWidth;
-        }
-        return nextWidth;
-      });
-    };
-
-    updateWidth(timelineRoot.getBoundingClientRect().width);
-
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      updateWidth(timelineRoot.getBoundingClientRect().width);
-    });
-    observer.observe(timelineRoot);
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMessages, isWorking]);
-
-  const rows = useMemo<TimelineRow[]>(() => {
-    const nextRows: TimelineRow[] = [];
-    const durationStartByMessageId = computeMessageDurationStart(
-      timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
-    );
-
-    for (let index = 0; index < timelineEntries.length; index += 1) {
-      const timelineEntry = timelineEntries[index];
-      if (!timelineEntry) {
-        continue;
-      }
-
-      if (timelineEntry.kind === "work") {
-        const groupedEntries = [timelineEntry.entry];
-        let cursor = index + 1;
-        while (cursor < timelineEntries.length) {
-          const nextEntry = timelineEntries[cursor];
-          if (!nextEntry || nextEntry.kind !== "work") break;
-          groupedEntries.push(nextEntry.entry);
-          cursor += 1;
-        }
-        nextRows.push({
-          kind: "work",
-          id: timelineEntry.id,
-          createdAt: timelineEntry.createdAt,
-          groupedEntries,
-        });
-        index = cursor - 1;
-        continue;
-      }
-
-      if (timelineEntry.kind === "proposed-plan") {
-        nextRows.push({
-          kind: "proposed-plan",
-          id: timelineEntry.id,
-          createdAt: timelineEntry.createdAt,
-          proposedPlan: timelineEntry.proposedPlan,
-        });
-        continue;
-      }
-
-      nextRows.push({
-        kind: "message",
-        id: timelineEntry.id,
-        createdAt: timelineEntry.createdAt,
-        message: timelineEntry.message,
-        durationStart:
-          durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt,
-        showCompletionDivider:
-          timelineEntry.message.role === "assistant" &&
-          completionDividerBeforeEntryId === timelineEntry.id,
-      });
-    }
-
-    if (isWorking) {
-      nextRows.push({
-        kind: "working",
-        id: "working-indicator-row",
-        createdAt: activeTurnStartedAt,
-      });
-    }
-
-    return nextRows;
-  }, [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt]);
-
-  const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
-    Record<string, boolean>
-  >({});
-  const onToggleAllDirectories = useCallback((turnId: TurnId) => {
-    setAllDirectoriesExpandedByTurnId((current) => ({
-      ...current,
-      [turnId]: !(current[turnId] ?? true),
-    }));
-  }, []);
-
-  const renderRowContent = (row: TimelineRow) => (
+}: TimelineRowContentProps) {
+  return (
     <div
       className="pb-4"
       data-timeline-row-kind={row.kind}
@@ -526,6 +415,188 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       )}
     </div>
   );
+});
+
+function estimateWorkRowHeight(
+  groupedEntries: ReadonlyArray<TimelineWorkEntry>,
+  showInlineDiffs: boolean,
+): number {
+  const visibleCount = Math.min(groupedEntries.length, MAX_VISIBLE_WORK_LOG_ENTRIES);
+  const baseHeight = WORK_GROUP_OVERHEAD_HEIGHT + visibleCount * WORK_ENTRY_HEIGHT;
+
+  let extraHeight = 0;
+  const visibleEntries =
+    groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES
+      ? groupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES)
+      : groupedEntries;
+
+  for (const entry of visibleEntries) {
+    if (entry.agentGroup) {
+      extraHeight += AGENT_GROUP_HEADER_HEIGHT;
+      continue;
+    }
+    if (!showInlineDiffs) continue;
+    const previews = entry.diffPreviews;
+    if (!previews || previews.length === 0) continue;
+    for (const hunk of previews) {
+      const bodyHeight = Math.min(
+        hunk.lines.length * DIFF_PREVIEW_LINE_HEIGHT,
+        DIFF_PREVIEW_MAX_HEIGHT,
+      );
+      extraHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + DIFF_HUNK_SPACING;
+    }
+  }
+
+  return baseHeight + extraHeight;
+}
+
+interface MessagesTimelineProps {
+  hasMessages: boolean;
+  isWorking: boolean;
+  isSendBusy: boolean;
+  activeTurnStartedAt: string | null;
+  timelineEntries: ReturnType<typeof deriveTimelineEntries>;
+  completionDividerBeforeEntryId: string | null;
+  completionSummary: string | null;
+  turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
+  expandedWorkGroups: Record<string, boolean>;
+  onToggleWorkGroup: (groupId: string) => void;
+  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  revertTurnCountByUserMessageId: Map<MessageId, number>;
+  onRevertUserMessage: (messageId: MessageId) => void;
+  isRevertingCheckpoint: boolean;
+  onImageExpand: (preview: ExpandedImagePreview) => void;
+  markdownCwd: string | undefined;
+  resolvedTheme: "light" | "dark";
+  timestampFormat: TimestampFormat;
+  showInlineDiffs: boolean;
+  workspaceRoot: string | undefined;
+}
+
+export const MessagesTimeline = memo(function MessagesTimeline({
+  hasMessages,
+  isWorking,
+  isSendBusy,
+  activeTurnStartedAt,
+  timelineEntries,
+  completionDividerBeforeEntryId,
+  completionSummary,
+  turnDiffSummaryByAssistantMessageId,
+  expandedWorkGroups,
+  onToggleWorkGroup,
+  onOpenTurnDiff,
+  revertTurnCountByUserMessageId,
+  onRevertUserMessage,
+  isRevertingCheckpoint,
+  onImageExpand,
+  markdownCwd,
+  resolvedTheme,
+  timestampFormat,
+  showInlineDiffs,
+  workspaceRoot,
+}: MessagesTimelineProps) {
+  const timelineRootRef = useRef<HTMLDivElement | null>(null);
+  const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const timelineRoot = timelineRootRef.current;
+    if (!timelineRoot) return;
+
+    const updateWidth = (nextWidth: number) => {
+      setTimelineWidthPx((previousWidth) => {
+        if (previousWidth !== null && Math.abs(previousWidth - nextWidth) < 0.5) {
+          return previousWidth;
+        }
+        return nextWidth;
+      });
+    };
+
+    updateWidth(timelineRoot.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      updateWidth(timelineRoot.getBoundingClientRect().width);
+    });
+    observer.observe(timelineRoot);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMessages, isWorking]);
+
+  const rows = useMemo<TimelineRow[]>(() => {
+    const nextRows: TimelineRow[] = [];
+    const durationStartByMessageId = computeMessageDurationStart(
+      timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
+    );
+
+    for (let index = 0; index < timelineEntries.length; index += 1) {
+      const timelineEntry = timelineEntries[index];
+      if (!timelineEntry) {
+        continue;
+      }
+
+      if (timelineEntry.kind === "work") {
+        const groupedEntries = [timelineEntry.entry];
+        let cursor = index + 1;
+        while (cursor < timelineEntries.length) {
+          const nextEntry = timelineEntries[cursor];
+          if (!nextEntry || nextEntry.kind !== "work") break;
+          groupedEntries.push(nextEntry.entry);
+          cursor += 1;
+        }
+        nextRows.push({
+          kind: "work",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          groupedEntries,
+        });
+        index = cursor - 1;
+        continue;
+      }
+
+      if (timelineEntry.kind === "proposed-plan") {
+        nextRows.push({
+          kind: "proposed-plan",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          proposedPlan: timelineEntry.proposedPlan,
+        });
+        continue;
+      }
+
+      nextRows.push({
+        kind: "message",
+        id: timelineEntry.id,
+        createdAt: timelineEntry.createdAt,
+        message: timelineEntry.message,
+        durationStart:
+          durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt,
+        showCompletionDivider:
+          timelineEntry.message.role === "assistant" &&
+          completionDividerBeforeEntryId === timelineEntry.id,
+      });
+    }
+
+    if (isWorking) {
+      nextRows.push({
+        kind: "working",
+        id: "working-indicator-row",
+        createdAt: activeTurnStartedAt,
+      });
+    }
+
+    return nextRows;
+  }, [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt]);
+
+  const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
+    Record<string, boolean>
+  >({});
+  const onToggleAllDirectories = useCallback((turnId: TurnId) => {
+    setAllDirectoriesExpandedByTurnId((current) => ({
+      ...current,
+      [turnId]: !(current[turnId] ?? true),
+    }));
+  }, []);
 
   if (!hasMessages && !isWorking) {
     return (
@@ -551,39 +622,32 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,
           }}
         >
-          {renderRowContent(row)}
+          <TimelineRowContent
+            row={row}
+            expandedWorkGroups={expandedWorkGroups}
+            onToggleWorkGroup={onToggleWorkGroup}
+            completionSummary={completionSummary}
+            turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+            allDirectoriesExpandedByTurnId={allDirectoriesExpandedByTurnId}
+            onToggleAllDirectories={onToggleAllDirectories}
+            onOpenTurnDiff={onOpenTurnDiff}
+            revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
+            onRevertUserMessage={onRevertUserMessage}
+            isRevertingCheckpoint={isRevertingCheckpoint}
+            isWorking={isWorking}
+            isSendBusy={isSendBusy}
+            onImageExpand={onImageExpand}
+            markdownCwd={markdownCwd}
+            resolvedTheme={resolvedTheme}
+            timestampFormat={timestampFormat}
+            showInlineDiffs={showInlineDiffs}
+            workspaceRoot={workspaceRoot}
+          />
         </div>
       ))}
     </div>
   );
 });
-
-type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
-type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
-type TimelineProposedPlan = Extract<TimelineEntry, { kind: "proposed-plan" }>["proposedPlan"];
-type TimelineWorkEntry = Extract<TimelineEntry, { kind: "work" }>["entry"];
-type TimelineRow =
-  | {
-      kind: "work";
-      id: string;
-      createdAt: string;
-      groupedEntries: TimelineWorkEntry[];
-    }
-  | {
-      kind: "message";
-      id: string;
-      createdAt: string;
-      message: TimelineMessage;
-      durationStart: string;
-      showCompletionDivider: boolean;
-    }
-  | {
-      kind: "proposed-plan";
-      id: string;
-      createdAt: string;
-      proposedPlan: TimelineProposedPlan;
-    }
-  | { kind: "working"; id: string; createdAt: string | null };
 
 function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan): number {
   const estimatedLines = Math.max(1, Math.ceil(proposedPlan.planMarkdown.length / 72));

@@ -880,6 +880,172 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[1]!.id).toBe("tool-after");
   });
 
+  it("separates sequential subagents even when task.completed sorts after next task.started", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Solo agent" },
+      }),
+      makeActivity({
+        id: "t1-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Working..." },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Parallel A" },
+      }),
+      makeActivity({
+        id: "t3-start",
+        createdAt: "2026-02-23T00:00:03.500Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t3", detail: "Parallel B" },
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:06.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t2", status: "completed" },
+      }),
+      makeActivity({
+        id: "t3-complete",
+        createdAt: "2026-02-23T00:00:07.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t3", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const groups = entries.filter((e) => e.agentGroup);
+    expect(groups).toHaveLength(2);
+
+    expect(groups[0]!.agentGroup!.tasks).toHaveLength(1);
+    expect(groups[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
+
+    expect(groups[1]!.agentGroup!.tasks).toHaveLength(2);
+    expect(groups[1]!.agentGroup!.tasks[0]!.taskId).toBe("t2");
+    expect(groups[1]!.agentGroup!.tasks[1]!.taskId).toBe("t3");
+  });
+
+  it("keeps parallel subagents grouped even when progress events interleave with started events", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Agent 1" },
+      }),
+      makeActivity({
+        id: "t2-start",
+        createdAt: "2026-02-23T00:00:01.200Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Agent 2" },
+      }),
+      makeActivity({
+        id: "t1-progress",
+        createdAt: "2026-02-23T00:00:01.500Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Working..." },
+      }),
+      makeActivity({
+        id: "t3-start",
+        createdAt: "2026-02-23T00:00:01.500Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t3", detail: "Agent 3" },
+      }),
+      makeActivity({
+        id: "t2-progress",
+        createdAt: "2026-02-23T00:00:01.800Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t2", detail: "Working..." },
+      }),
+      makeActivity({
+        id: "t4-start",
+        createdAt: "2026-02-23T00:00:01.800Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t4", detail: "Agent 4" },
+      }),
+      makeActivity({
+        id: "t3-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t3", detail: "Working..." },
+      }),
+      makeActivity({
+        id: "t5-start",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t5", detail: "Agent 5" },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:30.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+      makeActivity({
+        id: "t2-complete",
+        createdAt: "2026-02-23T00:00:31.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t2", status: "completed" },
+      }),
+      makeActivity({
+        id: "t3-complete",
+        createdAt: "2026-02-23T00:00:32.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t3", status: "completed" },
+      }),
+      makeActivity({
+        id: "t4-complete",
+        createdAt: "2026-02-23T00:00:33.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t4", status: "completed" },
+      }),
+      makeActivity({
+        id: "t5-complete",
+        createdAt: "2026-02-23T00:00:34.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t5", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const groups = entries.filter((e) => e.agentGroup);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.agentGroup!.tasks).toHaveLength(5);
+  });
+
   it("shows mixed label when some tasks are running and some completed", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -1722,8 +1888,8 @@ describe("PROVIDER_OPTIONS", () => {
     const claude = PROVIDER_OPTIONS.find((option) => option.value === "claudeAgent");
     const cursor = PROVIDER_OPTIONS.find((option) => option.value === "cursor");
     expect(PROVIDER_OPTIONS).toEqual([
-      { value: "codex", label: "Codex", available: true },
       { value: "claudeAgent", label: "Claude", available: true },
+      { value: "codex", label: "Codex", available: true },
       { value: "cursor", label: "Cursor", available: false },
     ]);
     expect(claude).toEqual({

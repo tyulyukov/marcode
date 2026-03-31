@@ -1,4 +1,4 @@
-import { ThreadId } from "@marcode/contracts";
+import { ThreadId, type OrchestrationEvent } from "@marcode/contracts";
 import {
   Outlet,
   createRootRouteWithContext,
@@ -160,8 +160,9 @@ function EventRouter() {
     let reconciliationTimer: ReturnType<typeof setTimeout> | null = null;
 
     const RECONCILIATION_DELAY_MS = 2_000;
-    const WATCHDOG_INTERVAL_MS = 5_000;
-    const STALE_SESSION_THRESHOLD_MS = 5_000;
+    const DEFERRED_RECONCILIATION_INTERVAL_MS = 10_000;
+    const WATCHDOG_INTERVAL_MS = 15_000;
+    const STALE_SESSION_THRESHOLD_MS = 15_000;
 
     const hasRunningSessions = (): boolean =>
       useStore
@@ -205,7 +206,25 @@ function EventRouter() {
       syncing = false;
     };
 
-    const domainEventFlushThrottler = new Throttler(
+    const INCREMENTAL_EVENT_TYPES = new Set([
+      "thread.message-sent",
+      "thread.activity-appended",
+      "thread.session-set",
+      "thread.turn-diff-completed",
+      "thread.proposed-plan-upserted",
+    ] as const);
+
+    let deferredReconciliationTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleReconciliation = () => {
+      if (deferredReconciliationTimer !== null) clearTimeout(deferredReconciliationTimer);
+      deferredReconciliationTimer = setTimeout(() => {
+        deferredReconciliationTimer = null;
+        if (!disposed) void syncSnapshot();
+      }, DEFERRED_RECONCILIATION_INTERVAL_MS);
+    };
+
+    const nonIncrementalThrottler = new Throttler(
       () => {
         if (needsProviderInvalidation) {
           needsProviderInvalidation = false;
@@ -215,11 +234,75 @@ function EventRouter() {
         void syncSnapshot();
       },
       {
-        wait: 100,
+        wait: 500,
         leading: false,
         trailing: true,
       },
     );
+
+    function applyIncrementalEvent(event: OrchestrationEvent): boolean {
+      const store = useStore.getState();
+      const threadExists = (tid: string) => store.threads.some((t) => t.id === tid);
+
+      switch (event.type) {
+        case "thread.message-sent": {
+          const p = event.payload;
+          if (!threadExists(p.threadId)) return false;
+          const mappedAttachments = p.attachments?.map((a) => ({ ...a }));
+          useStore.getState().applyMessageSent(p.threadId, {
+            messageId: p.messageId,
+            role: p.role,
+            text: p.text,
+            ...(mappedAttachments ? { attachments: mappedAttachments } : {}),
+            turnId: p.turnId,
+            streaming: p.streaming,
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
+          });
+          return true;
+        }
+        case "thread.activity-appended": {
+          const p = event.payload;
+          if (!threadExists(p.threadId)) return false;
+          useStore.getState().applyActivityAppended(p.threadId, p.activity, event.occurredAt);
+          return true;
+        }
+        case "thread.session-set": {
+          const p = event.payload;
+          if (!threadExists(p.threadId)) return false;
+          useStore.getState().applySessionSet(p.threadId, p.session, event.occurredAt);
+          return true;
+        }
+        case "thread.turn-diff-completed": {
+          const p = event.payload;
+          if (!threadExists(p.threadId)) return false;
+          useStore.getState().applyTurnDiffCompleted(
+            p.threadId,
+            {
+              turnId: p.turnId,
+              checkpointTurnCount: p.checkpointTurnCount,
+              checkpointRef: p.checkpointRef,
+              status: p.status,
+              files: p.files.map((f) => ({ ...f })),
+              assistantMessageId: p.assistantMessageId,
+              completedAt: p.completedAt,
+            },
+            event.occurredAt,
+          );
+          return true;
+        }
+        case "thread.proposed-plan-upserted": {
+          const p = event.payload;
+          if (!threadExists(p.threadId)) return false;
+          useStore
+            .getState()
+            .applyProposedPlanUpserted(p.threadId, p.proposedPlan, event.occurredAt);
+          return true;
+        }
+        default:
+          return false;
+      }
+    }
 
     const watchdogInterval = setInterval(() => {
       if (disposed) return;
@@ -229,15 +312,40 @@ function EventRouter() {
     }, WATCHDOG_INTERVAL_MS);
 
     const unsubDomainEvent = api.orchestration.onDomainEvent((event) => {
-      if (event.sequence <= latestSequence) {
-        return;
-      }
+      if (event.sequence <= latestSequence) return;
+
+      const hasGap = latestSequence > 0 && event.sequence > latestSequence + 1;
       latestSequence = event.sequence;
       lastDomainEventAt = Date.now();
+
       if (event.type === "thread.turn-diff-completed" || event.type === "thread.reverted") {
         needsProviderInvalidation = true;
       }
-      domainEventFlushThrottler.maybeExecute();
+
+      if (hasGap) {
+        nonIncrementalThrottler.maybeExecute();
+        return;
+      }
+
+      if (
+        INCREMENTAL_EVENT_TYPES.has(
+          event.type as typeof INCREMENTAL_EVENT_TYPES extends Set<infer T> ? T : never,
+        )
+      ) {
+        const applied = applyIncrementalEvent(event);
+        if (!applied) {
+          nonIncrementalThrottler.maybeExecute();
+          return;
+        }
+        if (event.type === "thread.turn-diff-completed") {
+          void queryClient.invalidateQueries({ queryKey: providerQueryKeys.all });
+          void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
+        }
+        scheduleReconciliation();
+        return;
+      }
+
+      nonIncrementalThrottler.maybeExecute();
     });
     const unsubTerminalEvent = api.terminal.onEvent((event) => {
       const hasRunningSubprocess = terminalRunningSubprocessFromEvent(event);
@@ -343,7 +451,8 @@ function EventRouter() {
     return () => {
       disposed = true;
       needsProviderInvalidation = false;
-      domainEventFlushThrottler.cancel();
+      nonIncrementalThrottler.cancel();
+      if (deferredReconciliationTimer !== null) clearTimeout(deferredReconciliationTimer);
       if (reconciliationTimer !== null) clearTimeout(reconciliationTimer);
       clearInterval(watchdogInterval);
       unsubDomainEvent();

@@ -2,12 +2,19 @@ import { Fragment, type ReactNode, createElement, useEffect } from "react";
 import {
   type ProviderKind,
   ThreadId,
+  type MessageId,
+  type TurnId,
+  type CheckpointRef,
   type OrchestrationReadModel,
   type OrchestrationSessionStatus,
+  type OrchestrationCheckpointStatus,
+  type OrchestrationSession,
+  type OrchestrationThreadActivity,
+  type OrchestrationProposedPlan,
 } from "@marcode/contracts";
 import { resolveModelSlugForProvider } from "@marcode/shared/model";
 import { create } from "zustand";
-import { type ChatMessage, type Project, type Thread } from "./types";
+import { type ChatMessage, type Project, type Thread, type ThreadSession } from "./types";
 import { Debouncer } from "@tanstack/react-pacer";
 
 // ── State ────────────────────────────────────────────────────────────
@@ -155,7 +162,7 @@ function mapProjectsFromReadModel(
     } satisfies Project;
   });
 
-  return mappedProjects
+  const sortedProjects = mappedProjects
     .map((project, incomingIndex) => {
       const previousIndex =
         previousOrderById.get(project.id) ?? previousOrderByCwd.get(project.cwd);
@@ -172,6 +179,14 @@ function mapProjectsFromReadModel(
       return a.incomingIndex - b.incomingIndex;
     })
     .map((entry) => entry.project);
+
+  return sortedProjects.map((project) => {
+    const existing = previousById.get(project.id) ?? previousByCwd.get(project.cwd);
+    if (existing && !projectChanged(existing, project)) {
+      return existing;
+    }
+    return project;
+  });
 }
 
 function toLegacySessionStatus(
@@ -232,6 +247,87 @@ function attachmentPreviewRoutePath(attachmentId: string): string {
   return `/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
+// ── Structural sharing helpers ────────────────────────────────────────
+
+function sessionChanged(prev: ThreadSession | null, next: ThreadSession | null): boolean {
+  if (prev === null && next === null) return false;
+  if (prev === null || next === null) return true;
+  return (
+    prev.provider !== next.provider ||
+    prev.status !== next.status ||
+    prev.orchestrationStatus !== next.orchestrationStatus ||
+    prev.activeTurnId !== next.activeTurnId ||
+    prev.createdAt !== next.createdAt ||
+    prev.updatedAt !== next.updatedAt ||
+    prev.lastError !== next.lastError
+  );
+}
+
+function threadChanged(prev: Thread, next: Thread): boolean {
+  return (
+    prev.title !== next.title ||
+    prev.updatedAt !== next.updatedAt ||
+    prev.archivedAt !== next.archivedAt ||
+    prev.error !== next.error ||
+    prev.branch !== next.branch ||
+    prev.worktreePath !== next.worktreePath ||
+    prev.runtimeMode !== next.runtimeMode ||
+    prev.interactionMode !== next.interactionMode ||
+    prev.modelSelection.provider !== next.modelSelection.provider ||
+    prev.modelSelection.model !== next.modelSelection.model ||
+    sessionChanged(prev.session, next.session) ||
+    prev.messages.length !== next.messages.length ||
+    prev.activities.length !== next.activities.length ||
+    prev.proposedPlans.length !== next.proposedPlans.length ||
+    prev.turnDiffSummaries.length !== next.turnDiffSummaries.length ||
+    prev.latestTurn?.turnId !== next.latestTurn?.turnId ||
+    prev.latestTurn?.state !== next.latestTurn?.state ||
+    prev.latestTurn?.completedAt !== next.latestTurn?.completedAt
+  );
+}
+
+function projectChanged(prev: Project, next: Project): boolean {
+  return (
+    prev.name !== next.name ||
+    prev.cwd !== next.cwd ||
+    prev.updatedAt !== next.updatedAt ||
+    prev.expanded !== next.expanded ||
+    prev.jiraBoard !== next.jiraBoard ||
+    prev.scripts.length !== next.scripts.length ||
+    prev.defaultModelSelection?.provider !== next.defaultModelSelection?.provider ||
+    prev.defaultModelSelection?.model !== next.defaultModelSelection?.model
+  );
+}
+
+const MAX_THREAD_MESSAGES = 2_000;
+const MAX_THREAD_ACTIVITIES = 500;
+const MAX_THREAD_CHECKPOINTS = 500;
+const MAX_THREAD_PROPOSED_PLANS = 200;
+
+function checkpointStatusToLatestTurnState(
+  status: OrchestrationCheckpointStatus,
+): "completed" | "interrupted" | "error" {
+  if (status === "error") return "error";
+  if (status === "missing") return "interrupted";
+  return "completed";
+}
+
+function compareThreadActivities(
+  left: OrchestrationThreadActivity,
+  right: OrchestrationThreadActivity,
+): number {
+  if (left.sequence !== undefined && right.sequence !== undefined) {
+    if (left.sequence !== right.sequence) {
+      return left.sequence - right.sequence;
+    }
+  } else if (left.sequence !== undefined) {
+    return 1;
+  } else if (right.sequence !== undefined) {
+    return -1;
+  }
+  return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+}
+
 // ── Pure state transition functions ────────────────────────────────────
 
 export function syncServerReadModel(state: AppState, readModel: OrchestrationReadModel): AppState {
@@ -244,7 +340,7 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
     .filter((thread) => thread.deletedAt === null)
     .map((thread) => {
       const existing = existingThreadById.get(thread.id);
-      return {
+      const next: Thread = {
         id: thread.id,
         codexThreadId: null,
         projectId: thread.projectId,
@@ -317,13 +413,245 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         })),
         activities: thread.activities.map((activity) => ({ ...activity })),
       };
+      if (existing && !threadChanged(existing, next)) {
+        return existing;
+      }
+      return next;
     });
+
+  const threadsUnchanged =
+    threads.length === state.threads.length && threads.every((t, i) => t === state.threads[i]);
+  const projectsUnchanged =
+    projects.length === state.projects.length && projects.every((p, i) => p === state.projects[i]);
+
+  if (threadsUnchanged && projectsUnchanged && state.threadsHydrated) {
+    return state;
+  }
   return {
     ...state,
-    projects,
-    threads,
+    ...(projectsUnchanged ? {} : { projects }),
+    ...(threadsUnchanged ? {} : { threads }),
     threadsHydrated: true,
   };
+}
+
+export function applyMessageSent(
+  state: AppState,
+  threadId: ThreadId,
+  payload: {
+    messageId: MessageId;
+    role: "user" | "assistant" | "system";
+    text: string;
+    attachments?: Array<{
+      type: "image";
+      id: string;
+      name: string;
+      mimeType: string;
+      sizeBytes: number;
+    }>;
+    turnId: TurnId | null;
+    streaming: boolean;
+    createdAt: string;
+    updatedAt: string;
+  },
+): AppState {
+  const threads = updateThread(state.threads, threadId, (thread) => {
+    const existingMessage = thread.messages.find((m) => m.id === payload.messageId);
+
+    const attachments = payload.attachments?.map((attachment) => ({
+      type: "image" as const,
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+      previewUrl: toAttachmentPreviewUrl(attachmentPreviewRoutePath(attachment.id)),
+    }));
+
+    const messages = existingMessage
+      ? thread.messages.map((m) =>
+          m.id === payload.messageId
+            ? {
+                ...m,
+                text: payload.streaming
+                  ? `${m.text}${payload.text}`
+                  : payload.text.length > 0
+                    ? payload.text
+                    : m.text,
+                streaming: payload.streaming,
+                ...(payload.streaming ? {} : { completedAt: payload.updatedAt }),
+                ...(attachments !== undefined ? { attachments } : {}),
+              }
+            : m,
+        )
+      : [
+          ...thread.messages,
+          {
+            id: payload.messageId,
+            role: payload.role,
+            text: payload.text,
+            createdAt: payload.createdAt,
+            streaming: payload.streaming,
+            ...(payload.streaming ? {} : { completedAt: payload.updatedAt }),
+            ...(attachments && attachments.length > 0 ? { attachments } : {}),
+          } satisfies ChatMessage,
+        ];
+
+    return {
+      ...thread,
+      messages:
+        messages.length > MAX_THREAD_MESSAGES ? messages.slice(-MAX_THREAD_MESSAGES) : messages,
+      updatedAt: payload.updatedAt,
+    };
+  });
+  return threads === state.threads ? state : { ...state, threads };
+}
+
+export function applyActivityAppended(
+  state: AppState,
+  threadId: ThreadId,
+  activity: OrchestrationThreadActivity,
+  occurredAt: string,
+): AppState {
+  const threads = updateThread(state.threads, threadId, (thread) => {
+    const activities = [...thread.activities.filter((a) => a.id !== activity.id), activity]
+      .toSorted(compareThreadActivities)
+      .slice(-MAX_THREAD_ACTIVITIES);
+    return { ...thread, activities, updatedAt: occurredAt };
+  });
+  return threads === state.threads ? state : { ...state, threads };
+}
+
+export function applySessionSet(
+  state: AppState,
+  threadId: ThreadId,
+  session: OrchestrationSession,
+  occurredAt: string,
+): AppState {
+  const threads = updateThread(state.threads, threadId, (thread) => {
+    const clientSession: ThreadSession = {
+      provider: toLegacyProvider(session.providerName),
+      status: toLegacySessionStatus(session.status),
+      orchestrationStatus: session.status,
+      activeTurnId: session.activeTurnId ?? undefined,
+      createdAt: session.updatedAt,
+      updatedAt: session.updatedAt,
+      ...(session.lastError ? { lastError: session.lastError } : {}),
+    };
+
+    const latestTurn =
+      session.status === "running" && session.activeTurnId !== null
+        ? {
+            turnId: session.activeTurnId,
+            state: "running" as const,
+            requestedAt:
+              thread.latestTurn?.turnId === session.activeTurnId
+                ? thread.latestTurn.requestedAt
+                : session.updatedAt,
+            startedAt:
+              thread.latestTurn?.turnId === session.activeTurnId
+                ? (thread.latestTurn.startedAt ?? session.updatedAt)
+                : session.updatedAt,
+            completedAt: null,
+            assistantMessageId:
+              thread.latestTurn?.turnId === session.activeTurnId
+                ? thread.latestTurn.assistantMessageId
+                : null,
+          }
+        : thread.latestTurn;
+
+    return {
+      ...thread,
+      session: clientSession,
+      latestTurn,
+      error: session.lastError ?? null,
+      updatedAt: occurredAt,
+    };
+  });
+  return threads === state.threads ? state : { ...state, threads };
+}
+
+export function applyTurnDiffCompleted(
+  state: AppState,
+  threadId: ThreadId,
+  payload: {
+    turnId: TurnId;
+    checkpointTurnCount: number;
+    checkpointRef: CheckpointRef;
+    status: OrchestrationCheckpointStatus;
+    files: Array<{ path: string; kind: string; additions: number; deletions: number }>;
+    assistantMessageId: MessageId | null;
+    completedAt: string;
+  },
+  occurredAt: string,
+): AppState {
+  const threads = updateThread(state.threads, threadId, (thread) => {
+    const existing = thread.turnDiffSummaries.find((s) => s.turnId === payload.turnId);
+    if (existing && existing.status !== "missing" && payload.status === "missing") {
+      return thread;
+    }
+
+    const summary = {
+      turnId: payload.turnId,
+      completedAt: payload.completedAt,
+      status: payload.status,
+      assistantMessageId: payload.assistantMessageId ?? undefined,
+      checkpointTurnCount: payload.checkpointTurnCount,
+      checkpointRef: payload.checkpointRef,
+      files: payload.files.map((f) => ({ ...f })),
+    };
+
+    const turnDiffSummaries = [
+      ...thread.turnDiffSummaries.filter((s) => s.turnId !== payload.turnId),
+      summary,
+    ]
+      .toSorted((a, b) => (a.checkpointTurnCount ?? 0) - (b.checkpointTurnCount ?? 0))
+      .slice(-MAX_THREAD_CHECKPOINTS);
+
+    const latestTurn = {
+      turnId: payload.turnId,
+      state: checkpointStatusToLatestTurnState(payload.status),
+      requestedAt:
+        thread.latestTurn?.turnId === payload.turnId
+          ? thread.latestTurn.requestedAt
+          : payload.completedAt,
+      startedAt:
+        thread.latestTurn?.turnId === payload.turnId
+          ? (thread.latestTurn.startedAt ?? payload.completedAt)
+          : payload.completedAt,
+      completedAt: payload.completedAt,
+      assistantMessageId: payload.assistantMessageId,
+    };
+
+    return { ...thread, turnDiffSummaries, latestTurn, updatedAt: occurredAt };
+  });
+  return threads === state.threads ? state : { ...state, threads };
+}
+
+export function applyProposedPlanUpserted(
+  state: AppState,
+  threadId: ThreadId,
+  plan: OrchestrationProposedPlan,
+  occurredAt: string,
+): AppState {
+  const threads = updateThread(state.threads, threadId, (thread) => {
+    const proposedPlans = [
+      ...thread.proposedPlans.filter((p) => p.id !== plan.id),
+      {
+        id: plan.id,
+        turnId: plan.turnId,
+        planMarkdown: plan.planMarkdown,
+        implementedAt: plan.implementedAt,
+        implementationThreadId: plan.implementationThreadId,
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+      },
+    ]
+      .toSorted((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .slice(-MAX_THREAD_PROPOSED_PLANS);
+
+    return { ...thread, proposedPlans, updatedAt: occurredAt };
+  });
+  return threads === state.threads ? state : { ...state, threads };
 }
 
 export function markThreadVisited(
@@ -434,6 +762,23 @@ interface AppStore extends AppState {
   reorderProjects: (draggedProjectId: Project["id"], targetProjectId: Project["id"]) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
+  applyMessageSent: (threadId: ThreadId, payload: Parameters<typeof applyMessageSent>[2]) => void;
+  applyActivityAppended: (
+    threadId: ThreadId,
+    activity: OrchestrationThreadActivity,
+    occurredAt: string,
+  ) => void;
+  applySessionSet: (threadId: ThreadId, session: OrchestrationSession, occurredAt: string) => void;
+  applyTurnDiffCompleted: (
+    threadId: ThreadId,
+    payload: Parameters<typeof applyTurnDiffCompleted>[2],
+    occurredAt: string,
+  ) => void;
+  applyProposedPlanUpserted: (
+    threadId: ThreadId,
+    plan: OrchestrationProposedPlan,
+    occurredAt: string,
+  ) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -450,6 +795,16 @@ export const useStore = create<AppStore>((set) => ({
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
+  applyMessageSent: (threadId, payload) =>
+    set((state) => applyMessageSent(state, threadId, payload)),
+  applyActivityAppended: (threadId, activity, occurredAt) =>
+    set((state) => applyActivityAppended(state, threadId, activity, occurredAt)),
+  applySessionSet: (threadId, session, occurredAt) =>
+    set((state) => applySessionSet(state, threadId, session, occurredAt)),
+  applyTurnDiffCompleted: (threadId, payload, occurredAt) =>
+    set((state) => applyTurnDiffCompleted(state, threadId, payload, occurredAt)),
+  applyProposedPlanUpserted: (threadId, plan, occurredAt) =>
+    set((state) => applyProposedPlanUpserted(state, threadId, plan, occurredAt)),
 }));
 
 // Persist state changes with debouncing to avoid localStorage thrashing

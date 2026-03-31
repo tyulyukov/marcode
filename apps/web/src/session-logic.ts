@@ -532,6 +532,14 @@ export function deriveWorkLogEntries(
     .filter((activity) => !isSubagentToolActivity(activity))
     .filter((activity) => !excludeTodos || !isTodoWriteActivity(activity));
 
+  const taskCompletionTime = new Map<string, string>();
+  for (const activity of filtered) {
+    if (activity.kind === "task.completed") {
+      const tid = extractTaskId(activity);
+      if (tid) taskCompletionTime.set(tid, activity.createdAt);
+    }
+  }
+
   const taskLaunchGroup = new Map<string, number>();
   let groupIndex = -1;
   let needsNewGroup = true;
@@ -551,6 +559,16 @@ export function deriveWorkLogEntries(
     }
 
     if (taskLaunchGroup.has(taskId)) continue;
+
+    if (!needsNewGroup) {
+      for (const pendingId of pendingTaskIds) {
+        const completedAt = taskCompletionTime.get(pendingId);
+        if (completedAt && completedAt <= activity.createdAt) {
+          needsNewGroup = true;
+          pendingTaskIds.delete(pendingId);
+        }
+      }
+    }
 
     if (needsNewGroup) {
       groupIndex++;

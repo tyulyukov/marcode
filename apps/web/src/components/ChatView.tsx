@@ -90,7 +90,9 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
+  type Project,
   type ProposedPlan,
+  type Thread,
   type TurnDiffSummary,
 } from "../types";
 import { basenameOfPath } from "../vscode-icons";
@@ -222,6 +224,8 @@ const EMPTY_PROPOSED_PLANS: ProposedPlan[] = [];
 const EMPTY_AVAILABLE_EDITORS: EditorId[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
+const EMPTY_TERMINAL_CONTEXT_DRAFTS: readonly TerminalContextDraft[] = [];
+const EMPTY_JIRA_TASK_DRAFTS: readonly JiraTaskDraft[] = [];
 
 function formatOutgoingPrompt(params: {
   provider: ProviderKind;
@@ -297,8 +301,12 @@ interface PendingPullRequestSetupRequest {
 export default function ChatView({ threadId }: ChatViewProps) {
   const { isMobile, state: sidebarState } = useSidebar();
   const sidebarVisible = !isMobile && sidebarState === "expanded";
-  const threads = useStore((store) => store.threads);
-  const projects = useStore((store) => store.projects);
+  const serverThread = useStore(
+    useCallback(
+      (store: { threads: Thread[] }) => store.threads.find((t) => t.id === threadId),
+      [threadId],
+    ),
+  );
   const markThreadVisited = useStore((store) => store.markThreadVisited);
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
   const setStoreThreadError = useStore((store) => store.setError);
@@ -546,8 +554,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [composerJiraTaskContexts, removeComposerDraftJiraTaskContext, setPrompt, threadId],
   );
 
-  const serverThread = threads.find((t) => t.id === threadId);
-  const fallbackDraftProject = projects.find((project) => project.id === draftThread?.projectId);
+  const fallbackDraftProject = useStore(
+    useCallback(
+      (store: { projects: Project[] }) => {
+        if (!draftThread?.projectId) return undefined;
+        return store.projects.find((project) => project.id === draftThread.projectId);
+      },
+      [draftThread?.projectId],
+    ),
+  );
   const localDraftError = serverThread ? null : (localDraftErrorsByThreadId[threadId] ?? null);
   const localDraftThread = useMemo(
     () =>
@@ -590,7 +605,23 @@ export default function ChatView({ threadId }: ChatViewProps) {
     timelineLatestTurn,
     timelineThread?.session ?? null,
   );
-  const activeProject = projects.find((p) => p.id === activeThread?.projectId);
+  const sourceProposedPlanThreadId = activeLatestTurn?.sourceProposedPlan?.threadId ?? null;
+  const sourceProposedPlanThread = useStore(
+    useCallback(
+      (store: { threads: Thread[] }) => {
+        if (!sourceProposedPlanThreadId) return undefined;
+        return store.threads.find((t) => t.id === sourceProposedPlanThreadId);
+      },
+      [sourceProposedPlanThreadId],
+    ),
+  );
+  const activeProjectId = activeThread?.projectId;
+  const activeProject = useStore(
+    useCallback(
+      (store: { projects: Project[] }) => store.projects.find((p) => p.id === activeProjectId),
+      [activeProjectId],
+    ),
+  );
 
   const openPullRequestDialog = useCallback(
     (reference?: string) => {
@@ -820,6 +851,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
         : null,
     [activePendingDraftAnswers, activePendingUserInput],
   );
+  const activePendingProgressRef = useRef(activePendingProgress);
+  activePendingProgressRef.current = activePendingProgress;
+  const activePendingUserInputRef = useRef(activePendingUserInput);
+  activePendingUserInputRef.current = activePendingUserInput;
   const activePendingIsResponding = activePendingUserInput
     ? respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
     : false;
@@ -832,16 +867,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
       activeLatestTurn?.turnId ?? null,
     );
   }, [activeLatestTurn?.turnId, activeThread?.proposedPlans, latestTurnSettled]);
-  const sidebarProposedPlan = useMemo(
-    () =>
-      findSidebarProposedPlan({
-        threads,
-        latestTurn: activeLatestTurn,
-        latestTurnSettled,
-        threadId: activeThread?.id ?? null,
-      }),
-    [activeLatestTurn, activeThread?.id, latestTurnSettled, threads],
-  );
+  const sidebarProposedPlan = useMemo(() => {
+    const relevantThreads: Pick<Thread, "id" | "proposedPlans">[] = [];
+    if (activeThread) relevantThreads.push(activeThread);
+    if (sourceProposedPlanThread && sourceProposedPlanThread.id !== activeThread?.id) {
+      relevantThreads.push(sourceProposedPlanThread);
+    }
+    return findSidebarProposedPlan({
+      threads: relevantThreads,
+      latestTurn: activeLatestTurn,
+      latestTurnSettled,
+      threadId: activeThread?.id ?? null,
+    });
+  }, [activeLatestTurn, activeThread, latestTurnSettled, sourceProposedPlanThread]);
   const activePlan = useMemo(
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
@@ -1403,7 +1441,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const setThreadError = useCallback(
     (targetThreadId: ThreadId | null, error: string | null) => {
       if (!targetThreadId) return;
-      if (threads.some((thread) => thread.id === targetThreadId)) {
+      if (useStore.getState().threads.some((thread) => thread.id === targetThreadId)) {
         setStoreThreadError(targetThreadId, error);
         return;
       }
@@ -1417,7 +1455,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         };
       });
     },
-    [setStoreThreadError, threads],
+    [setStoreThreadError],
   );
 
   const focusComposer = useCallback(() => {
@@ -3697,9 +3735,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
       terminalContextIds: string[],
       jiraTaskIds: string[],
     ) => {
-      if (activePendingProgress?.activeQuestion && activePendingUserInput) {
+      const currentPendingProgress = activePendingProgressRef.current;
+      const currentPendingUserInput = activePendingUserInputRef.current;
+      if (currentPendingProgress?.activeQuestion && currentPendingUserInput) {
         onChangeActivePendingUserInputCustomAnswer(
-          activePendingProgress.activeQuestion.id,
+          currentPendingProgress.activeQuestion.id,
           nextPrompt,
           nextCursor,
           expandedCursor,
@@ -3709,16 +3749,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       promptRef.current = nextPrompt;
       setPrompt(nextPrompt);
-      if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
+      const currentTerminalContexts = composerTerminalContextsRef.current;
+      if (!terminalContextIdListsEqual(currentTerminalContexts, terminalContextIds)) {
         setComposerDraftTerminalContexts(
           threadId,
-          syncTerminalContextsByIds(composerTerminalContexts, terminalContextIds),
+          syncTerminalContextsByIds(currentTerminalContexts, terminalContextIds),
         );
       }
-      if (!jiraTaskIdListsEqual(composerJiraTaskContexts, jiraTaskIds)) {
+      const currentJiraContexts = composerJiraTaskContextsRef.current;
+      if (!jiraTaskIdListsEqual(currentJiraContexts, jiraTaskIds)) {
         setComposerDraftJiraTaskContexts(
           threadId,
-          syncJiraTasksByIds(composerJiraTaskContexts, jiraTaskIds),
+          syncJiraTasksByIds(currentJiraContexts, jiraTaskIds),
         );
       }
       setComposerCursor(nextCursor);
@@ -3727,10 +3769,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
       );
     },
     [
-      activePendingProgress?.activeQuestion,
-      activePendingUserInput,
-      composerJiraTaskContexts,
-      composerTerminalContexts,
       onChangeActivePendingUserInputCustomAnswer,
       setComposerDraftJiraTaskContexts,
       setPrompt,
@@ -4104,12 +4142,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       terminalContexts={
                         !isComposerApprovalState && pendingUserInputs.length === 0
                           ? composerTerminalContexts
-                          : []
+                          : EMPTY_TERMINAL_CONTEXT_DRAFTS
                       }
                       jiraTaskContexts={
                         !isComposerApprovalState && pendingUserInputs.length === 0
                           ? composerJiraTaskContexts
-                          : []
+                          : EMPTY_JIRA_TASK_DRAFTS
                       }
                       onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                       onRemoveJiraTask={removeComposerJiraTaskFromDraft}

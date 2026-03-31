@@ -348,8 +348,8 @@ describe("resolveThreadRowClassName", () => {
 
   it("keeps the accent palette for active-only threads", () => {
     const className = resolveThreadRowClassName({ isActive: true, isSelected: false });
-    expect(className).toContain("bg-accent/85");
-    expect(className).toContain("hover:bg-accent");
+    expect(className).toContain("bg-primary/10");
+    expect(className).toContain("hover:bg-primary/14");
   });
 });
 

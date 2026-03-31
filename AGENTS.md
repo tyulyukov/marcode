@@ -57,6 +57,41 @@ Docs:
 
 - Codex App Server docs: https://developers.openai.com/codex/sdk/#app-server
 
+## Performance: State & Rendering Architecture
+
+### Incremental domain event application (`__root.tsx`, `store.ts`)
+
+High-frequency events (`thread.message-sent`, `thread.activity-appended`, `thread.session-set`, `thread.turn-diff-completed`, `thread.proposed-plan-upserted`) are applied **incrementally** to the Zustand store from event payloads — no full snapshot fetch. This avoids blocking the main thread with JSON parsing and object reconstruction during active agent work.
+
+Full snapshot sync (`getSnapshot()`) only runs for:
+
+- Non-incremental events (thread created/deleted/archived, etc.) via `nonIncrementalThrottler` (500ms)
+- Sequence gaps (missed events)
+- Deferred reconciliation safety net (every 10 seconds after last incremental event)
+- Welcome/reconnect
+- Watchdog (15s stale session threshold)
+
+When adding new event types, decide whether they should be handled incrementally (add to `INCREMENTAL_EVENT_TYPES` set and add a store `apply*` function) or via snapshot sync.
+
+### Store structural sharing (`store.ts`)
+
+`syncServerReadModel` uses structural sharing: when a snapshot arrives, each thread/project is compared field-by-field against the previous version. If nothing changed, the **same object reference** is returned. This prevents unnecessary Zustand subscriber re-renders. When adding new fields to `Thread` or `Project`, update `threadChanged()` / `projectChanged()` accordingly.
+
+### ChatView selectors
+
+ChatView uses **fine-grained Zustand selectors** (one per thread/project ID) instead of subscribing to the full `threads`/`projects` arrays. This means changes to other threads don't cause the active chat to re-render. When adding new store-dependent logic in ChatView, always use a targeted selector.
+
+### Composer isolation
+
+`ComposerPromptEditor` stays responsive during agent work because:
+
+- Its volatile dependencies (`activePendingProgress`, `activePendingUserInput`, `composerTerminalContexts`, `composerJiraTaskContexts`) are accessed via **refs** in callbacks, not in the `useCallback` dependency array.
+- Fallback empty arrays use **module-level constants** (`EMPTY_TERMINAL_CONTEXT_DRAFTS`, `EMPTY_JIRA_TASK_DRAFTS`) instead of inline `[]`.
+
+### Timeline row memoization (`MessagesTimeline.tsx`)
+
+Each timeline row renders through a `memo`'d `TimelineRowContent` component (not an inline function). When adding new row types or modifying row rendering, keep the logic inside `TimelineRowContent` to preserve per-row memoization.
+
 ## Git Host Provider Abstraction (GitHub + GitLab)
 
 MarCode supports both GitHub and GitLab (including self-hosted instances) for PR/MR operations. The integration is provider-agnostic:
