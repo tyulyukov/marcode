@@ -79,6 +79,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           workspaceRoot: command.workspaceRoot,
           defaultModelSelection: command.defaultModelSelection ?? null,
           scripts: [],
+          jiraBoard: null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

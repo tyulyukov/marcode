@@ -1,6 +1,7 @@
 import {
   ChatAttachment,
   IsoDateTime,
+  JiraBoardReference,
   MessageId,
   NonNegativeInt,
   OrchestrationCheckpointFile,
@@ -48,6 +49,9 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
+    jiraBoard: Schema.NullOr(Schema.fromJsonString(JiraBoardReference)).pipe(
+      Schema.withDecodingDefault(() => null),
+    ),
   }),
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
@@ -150,6 +154,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           scripts_json AS "scripts",
+          jira_board_json AS "jiraBoard",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
