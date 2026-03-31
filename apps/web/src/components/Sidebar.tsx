@@ -147,13 +147,19 @@ interface TerminalStatusIndicator {
 }
 
 interface PrStatusIndicator {
-  label: "PR open" | "PR closed" | "PR merged";
+  label: string;
   colorClass: string;
   tooltip: string;
   url: string;
 }
 
 type ThreadPr = GitStatusResult["pr"];
+type GitHostProvider = NonNullable<GitStatusResult["gitHostProvider"]>;
+
+interface ThreadPrWithProvider {
+  pr: ThreadPr;
+  gitHostProvider: GitHostProvider | undefined;
+}
 
 function ThreadStatusLabel({
   status,
@@ -206,30 +212,33 @@ function terminalStatusFromRunningIds(
   };
 }
 
-function prStatusIndicator(pr: ThreadPr): PrStatusIndicator | null {
+function prStatusIndicator(input: ThreadPrWithProvider): PrStatusIndicator | null {
+  const { pr, gitHostProvider } = input;
   if (!pr) return null;
+
+  const label = gitHostProvider === "gitlab" ? "MR" : "PR";
 
   if (pr.state === "open") {
     return {
-      label: "PR open",
+      label: `${label} open`,
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      tooltip: `#${pr.number} PR open: ${pr.title}`,
+      tooltip: `#${pr.number} ${label} open: ${pr.title}`,
       url: pr.url,
     };
   }
   if (pr.state === "closed") {
     return {
-      label: "PR closed",
+      label: `${label} closed`,
       colorClass: "text-zinc-500 dark:text-zinc-400/80",
-      tooltip: `#${pr.number} PR closed: ${pr.title}`,
+      tooltip: `#${pr.number} ${label} closed: ${pr.title}`,
       url: pr.url,
     };
   }
   if (pr.state === "merged") {
     return {
-      label: "PR merged",
+      label: `${label} merged`,
       colorClass: "text-violet-600 dark:text-violet-300/90",
-      tooltip: `#${pr.number} PR merged: ${pr.title}`,
+      tooltip: `#${pr.number} ${label} merged: ${pr.title}`,
       url: pr.url,
     };
   }
@@ -501,12 +510,15 @@ export default function Sidebar() {
       }
     }
 
-    const map = new Map<ThreadId, ThreadPr>();
+    const map = new Map<ThreadId, ThreadPrWithProvider>();
     for (const target of threadGitTargets) {
       const status = target.cwd ? statusByCwd.get(target.cwd) : undefined;
       const branchMatches =
         target.branch !== null && status?.branch !== null && status?.branch === target.branch;
-      map.set(target.threadId, branchMatches ? (status?.pr ?? null) : null);
+      map.set(target.threadId, {
+        pr: branchMatches ? (status?.pr ?? null) : null,
+        gitHostProvider: status?.gitHostProvider,
+      });
     }
     return map;
   }, [threadGitStatusCwds, threadGitStatusQueries, threadGitTargets]);
@@ -1299,7 +1311,9 @@ export default function Sidebar() {
       const isThreadRunning =
         thread.session?.status === "running" && thread.session.activeTurnId != null;
       const threadStatus = threadStatuses.get(thread.id) ?? null;
-      const prStatus = prStatusIndicator(prByThreadId.get(thread.id) ?? null);
+      const prStatus = prStatusIndicator(
+        prByThreadId.get(thread.id) ?? { pr: null, gitHostProvider: undefined },
+      );
       const terminalStatus = terminalStatusFromRunningIds(
         selectThreadTerminalState(terminalStateByThreadId, thread.id).runningTerminalIds,
       );

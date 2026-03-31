@@ -357,7 +357,11 @@ export function BranchToolbarBranchSelector({
           }}
         >
           <div className="flex min-w-0 flex-col items-start py-1">
-            <span className="truncate font-medium">Checkout Pull Request</span>
+            <span className="truncate font-medium">
+              {branchStatusQuery.data?.gitHostProvider === "gitlab"
+                ? "Checkout Merge Request"
+                : "Checkout Pull Request"}
+            </span>
             <span className="truncate text-muted-foreground text-xs">{prReference}</span>
           </div>
         </ComboboxItem>

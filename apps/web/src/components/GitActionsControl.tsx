@@ -133,6 +133,7 @@ function getMenuActionDisabledReason({
   const hasOpenPr = gitStatus.pr?.state === "open";
   const isAhead = gitStatus.aheadCount > 0;
   const isBehind = gitStatus.behindCount > 0;
+  const label = gitStatus.gitHostProvider === "gitlab" ? "MR" : "PR";
 
   if (item.id === "commit") {
     if (!hasChanges) {
@@ -161,24 +162,24 @@ function getMenuActionDisabledReason({
   }
 
   if (hasOpenPr) {
-    return "View PR is currently unavailable.";
+    return `View ${label} is currently unavailable.`;
   }
   if (!hasBranch) {
-    return "Detached HEAD: checkout a branch before creating a PR.";
+    return `Detached HEAD: checkout a branch before creating a ${label}.`;
   }
   if (hasChanges) {
-    return "Commit local changes before creating a PR.";
+    return `Commit local changes before creating a ${label}.`;
   }
   if (!gitStatus.hasUpstream && !hasOriginRemote) {
-    return 'Add an "origin" remote before creating a PR.';
+    return `Add an "origin" remote before creating a ${label}.`;
   }
   if (!isAhead) {
-    return "No local commits to include in a PR.";
+    return `No local commits to include in a ${label}.`;
   }
   if (isBehind) {
-    return "Branch is behind upstream. Pull/rebase before creating a PR.";
+    return `Branch is behind upstream. Pull/rebase before creating a ${label}.`;
   }
-  return "Create PR is currently unavailable.";
+  return `Create ${label} is currently unavailable.`;
 }
 
 const COMMIT_DIALOG_TITLE = "Commit changes";

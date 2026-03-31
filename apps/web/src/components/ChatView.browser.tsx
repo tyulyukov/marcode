@@ -816,6 +816,7 @@ async function mountChatView(options: {
     setViewport: async (viewport: ViewportSpec) => {
       await setViewport(viewport);
       await waitForProductionStyles();
+      await waitForLayout();
     },
     router,
   };
@@ -835,6 +836,8 @@ async function measureUserRowAtViewport(options: {
     return await mounted.measureUserRow(options.targetMessageId);
   } finally {
     await mounted.cleanup();
+    document.body.innerHTML = "";
+    await waitForLayout();
   }
 }
 
