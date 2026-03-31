@@ -37,6 +37,11 @@ export type ComposerCommandItem =
       issueKey: string;
       summary: string;
       status: string;
+      issueType: string;
+      priority: string | undefined;
+      assignee: string | undefined;
+      issueDescription: string | undefined;
+      url: string;
       label: string;
       description: string;
     };
@@ -74,14 +79,10 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         {props.items.length === 0 && (
           <p className="px-3 py-2 text-muted-foreground/70 text-xs">
             {props.isLoading
-              ? props.triggerKind === "slash-add-dir"
-                ? "Browsing directories..."
-                : "Searching..."
-              : props.triggerKind === "slash-add-dir"
-                ? "No matching directories."
-                : props.triggerKind === "path"
-                  ? "No matching results."
-                  : "No matching command."}
+              ? "Searching..."
+              : props.triggerKind === "path"
+                ? "No matching results."
+                : "No matching command."}
           </p>
         )}
       </div>

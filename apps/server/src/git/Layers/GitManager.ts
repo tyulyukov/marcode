@@ -31,8 +31,8 @@ import type { GitManagerServiceError } from "../Errors.ts";
 const COMMIT_TIMEOUT_MS = 10 * 60_000;
 const MAX_PROGRESS_TEXT_LENGTH = 500;
 
-const PR_CREATE_RETRY_ATTEMPTS = 3;
-const PR_CREATE_RETRY_DELAY = Duration.seconds(3);
+const PR_CREATE_RETRY_ATTEMPTS = 5;
+const PR_CREATE_RETRY_BASE_DELAY = Duration.seconds(2);
 
 const BRANCH_NOT_READY_PATTERNS = [
   "head sha can't be blank",
@@ -896,7 +896,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       .pipe(
         Effect.retry({
           times: PR_CREATE_RETRY_ATTEMPTS,
-          schedule: Schedule.spaced(PR_CREATE_RETRY_DELAY),
+          schedule: Schedule.exponential(PR_CREATE_RETRY_BASE_DELAY, 2),
           while: isBranchNotReadyError,
         }),
       );

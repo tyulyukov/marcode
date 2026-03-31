@@ -38,12 +38,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDebouncedValue } from "@tanstack/react-pacer";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { gitBranchesQueryOptions, gitCreateWorktreeMutationOptions } from "~/lib/gitReactQuery";
-import {
-  projectBrowseDirectoriesQueryOptions,
-  projectSearchEntriesQueryOptions,
-} from "~/lib/projectReactQuery";
+import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
-import { isElectron } from "../env";
+import { getServerHttpOrigin, isElectron } from "../env";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
 import {
   clampCollapsedComposerCursor,
@@ -159,6 +156,7 @@ import {
 import {
   appendJiraContextsToPrompt,
   formatJiraTaskLabel,
+  formatJiraTaskInlineLabel,
   INLINE_JIRA_CONTEXT_PLACEHOLDER,
   isJiraIssueKeyPattern,
   jiraIssueToTaskDraft,
@@ -171,6 +169,7 @@ import {
   jiraIssueSearchQueryOptions,
   jiraIssueQueryOptions,
 } from "../lib/jiraReactQuery";
+import { DirectoryPickerPopover } from "./chat/DirectoryPickerPopover";
 import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
@@ -287,6 +286,24 @@ const jiraTaskIdListsEqual = (
   tasks: ReadonlyArray<JiraTaskDraft>,
   ids: ReadonlyArray<string>,
 ): boolean => tasks.length === ids.length && tasks.every((task, index) => task.id === ids[index]);
+
+function replaceInlineJiraPlaceholdersWithLabels(
+  prompt: string,
+  tasks: ReadonlyArray<JiraTaskDraft>,
+): string {
+  let result = "";
+  let taskIndex = 0;
+  for (let i = 0; i < prompt.length; i++) {
+    if (prompt[i] === INLINE_JIRA_CONTEXT_PLACEHOLDER) {
+      const task = tasks[taskIndex];
+      result += task ? formatJiraTaskInlineLabel(task) : "";
+      taskIndex++;
+    } else {
+      result += prompt[i];
+    }
+  }
+  return result;
+}
 
 interface ChatViewProps {
   threadId: ThreadId;
@@ -553,7 +570,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
     },
     [composerJiraTaskContexts, removeComposerDraftJiraTaskContext, setPrompt, threadId],
   );
-
   const fallbackDraftProject = useStore(
     useCallback(
       (store: { projects: Project[] }) => {
@@ -1157,13 +1173,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       })
     : null;
   const composerTriggerKind = composerTrigger?.kind ?? null;
-  const pathTriggerQuery =
-    composerTrigger?.kind === "path" || composerTrigger?.kind === "slash-add-dir"
-      ? composerTrigger.query
-      : "";
+  const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
   const isWorkspacePathTrigger = composerTriggerKind === "path";
-  const isAddDirTrigger = composerTriggerKind === "slash-add-dir";
-  const isPathTrigger = isWorkspacePathTrigger || isAddDirTrigger;
+  const isPathTrigger = isWorkspacePathTrigger;
   const [debouncedPathQuery, composerPathQueryDebouncer] = useDebouncedValue(
     pathTriggerQuery,
     { wait: COMPOSER_PATH_QUERY_DEBOUNCE_MS },
@@ -1212,16 +1224,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       limit: 80,
     }),
   );
-  const directoryBrowseQuery = useQuery(
-    projectBrowseDirectoriesQueryOptions({
-      cwd: gitCwd,
-      pathQuery: effectivePathQuery,
-      enabled: isAddDirTrigger,
-      limit: 80,
-    }),
-  );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
-  const browsedDirectories = directoryBrowseQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
   const jiraConnectionQuery = useQuery(jiraConnectionStatusQueryOptions());
   const jiraConnected = jiraConnectionQuery.data?.connected ?? false;
   const jiraCloudId = jiraConnectionQuery.data?.sites?.[0]?.cloudId ?? ("" as JiraCloudId);
@@ -1243,16 +1246,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
   }, [jiraIssuesError, isJiraAtQueryActive]);
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
-    if (composerTrigger.kind === "slash-add-dir") {
-      return browsedDirectories.map((entry) => ({
-        id: `path:${entry.kind}:${entry.path}`,
-        type: "path",
-        path: entry.path,
-        pathKind: entry.kind,
-        label: basenameOfPath(entry.path),
-        description: entry.parentPath ?? "",
-      }));
-    }
     if (composerTrigger.kind === "path") {
       const fileItems: ComposerCommandItem[] = workspaceEntries.map((entry) => ({
         id: `path:${entry.kind}:${entry.path}`,
@@ -1268,6 +1261,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
         issueKey: issue.key,
         summary: issue.summary,
         status: issue.status,
+        issueType: issue.issueType,
+        priority: issue.priority,
+        assignee: issue.assignee?.displayName,
+        issueDescription: issue.description,
+        url: issue.url,
         label: issue.summary,
         description: `${issue.key} · ${issue.status}`,
       }));
@@ -1297,13 +1295,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
           command: "default",
           label: "/default",
           description: "Switch this thread back to normal chat mode",
-        },
-        {
-          id: "slash:add-dir",
-          type: "slash-command",
-          command: "add-dir",
-          label: "/add-dir",
-          description: "Add a directory to context",
         },
         {
           id: "slash:compact",
@@ -1340,7 +1331,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [browsedDirectories, composerTrigger, jiraIssues, searchableModelOptions, workspaceEntries]);
+  }, [composerTrigger, jiraIssues, searchableModelOptions, workspaceEntries]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -2563,34 +2554,71 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
   const onComposerJiraPaste = useCallback(
     (pastedText: string): boolean => {
-      const jiraKey = parseJiraUrl(pastedText);
-      if (!jiraKey) return false;
+      const jiraUrlKey = parseJiraUrl(pastedText);
+      const inlineMatches = [...pastedText.matchAll(/@jira:([A-Z][A-Z0-9]+-\d+)/gi)];
+      if (!jiraUrlKey && inlineMatches.length === 0) return false;
       if (!jiraConnected || !jiraCloudId) {
-        toastManager.add({
-          type: "info",
-          title: "Jira not connected",
-          description:
-            "Connect your Jira account in Settings \u2192 Integrations to auto-resolve issue links.",
-        });
+        if (jiraUrlKey) {
+          toastManager.add({
+            type: "info",
+            title: "Jira not connected",
+            description:
+              "Connect your Jira account in Settings \u2192 Integrations to auto-resolve issue links.",
+          });
+        }
         return false;
+      }
+      if (jiraUrlKey && inlineMatches.length === 0) {
+        void (async () => {
+          try {
+            const issue = await queryClient.fetchQuery(
+              jiraIssueQueryOptions(jiraCloudId, jiraUrlKey as JiraIssueKey),
+            );
+            if (!issue) return;
+            const task = jiraIssueToTaskDraft(issue);
+            addComposerDraftJiraTaskContext(threadId, task);
+            const currentPrompt = promptRef.current;
+            const nextPrompt = `${currentPrompt}${INLINE_JIRA_CONTEXT_PLACEHOLDER}`;
+            promptRef.current = nextPrompt;
+            setPrompt(nextPrompt);
+            setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
+          } catch {
+            // Silently ignore
+          }
+        })();
+        return true;
       }
       void (async () => {
         try {
-          const issue = await queryClient.fetchQuery(
-            jiraIssueQueryOptions(jiraCloudId, jiraKey as JiraIssueKey),
+          const issueKeys = inlineMatches.map((m) => m[1]!);
+          const issues = await Promise.all(
+            issueKeys.map((key) =>
+              queryClient
+                .fetchQuery(jiraIssueQueryOptions(jiraCloudId, key as JiraIssueKey))
+                .catch(() => null),
+            ),
           );
-          if (!issue) return;
-          const task = jiraIssueToTaskDraft(issue);
-          addComposerDraftJiraTaskContext(threadId, task);
-          const placeholder = INLINE_JIRA_CONTEXT_PLACEHOLDER;
+          let resultText = pastedText;
+          for (let i = 0; i < issueKeys.length; i++) {
+            const issue = issues[i];
+            if (issue) {
+              const task = jiraIssueToTaskDraft(issue);
+              addComposerDraftJiraTaskContext(threadId, task);
+              resultText = resultText.replace(
+                `@jira:${issueKeys[i]}`,
+                INLINE_JIRA_CONTEXT_PLACEHOLDER,
+              );
+            }
+          }
+          const trailingContextPattern = /\n*<jira_context>[\s\S]*<\/jira_context>\s*$/;
+          resultText = resultText.replace(trailingContextPattern, "");
           const currentPrompt = promptRef.current;
-          const nextPrompt = `${currentPrompt}${placeholder}`;
+          const nextPrompt = `${currentPrompt}${resultText}`;
           promptRef.current = nextPrompt;
           setPrompt(nextPrompt);
-          const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
-          setComposerCursor(nextCursor);
+          setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
         } catch {
-          // Silently ignore — issue may not exist
+          // Silently ignore
         }
       })();
       return true;
@@ -2789,8 +2817,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerJiraTaskContextsSnapshot = [...composerJiraTaskContexts];
+    const cleanedPromptForSend = replaceInlineJiraPlaceholdersWithLabels(
+      promptForSend,
+      composerJiraTaskContextsSnapshot,
+    );
     const messageTextForSend = appendJiraContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
+      appendTerminalContextsToPrompt(cleanedPromptForSend, composerTerminalContextsSnapshot),
       composerJiraTaskContextsSnapshot,
     );
     const messageIdForSend = newMessageId();
@@ -2802,7 +2834,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       effort: selectedPromptEffort,
       text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
     });
-    const turnAttachmentsPromise = Promise.all(
+    const composerImageAttachmentsPromise = Promise.all(
       composerImagesSnapshot.map(async (image) => ({
         type: "image" as const,
         name: image.name,
@@ -2811,6 +2843,46 @@ export default function ChatView({ threadId }: ChatViewProps) {
         dataUrl: await readFileAsDataUrl(image.file),
       })),
     );
+    const jiraImageAttachmentsPromise = (async () => {
+      if (!jiraCloudId) return [];
+      const imageAttachments = composerJiraTaskContextsSnapshot.flatMap((task) =>
+        task.attachments
+          .filter((att) => att.mimeType.startsWith("image/"))
+          .map((att) => ({ ...att, taskKey: task.issueKey })),
+      );
+      if (imageAttachments.length === 0) return [];
+      const origin = getServerHttpOrigin();
+      const results = await Promise.all(
+        imageAttachments.map(async (att) => {
+          try {
+            const response = await fetch(
+              `${origin}/api/jira/attachment/${att.id}?cloudId=${encodeURIComponent(jiraCloudId)}`,
+            );
+            if (!response.ok) return null;
+            const blob = await response.blob();
+            return {
+              type: "image" as const,
+              name: `${att.taskKey}-${att.filename}`,
+              mimeType: att.mimeType,
+              sizeBytes: att.size,
+              dataUrl: await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+              }),
+            };
+          } catch {
+            return null;
+          }
+        }),
+      );
+      return results.filter((r): r is NonNullable<typeof r> => r !== null);
+    })();
+    const turnAttachmentsPromise = Promise.all([
+      composerImageAttachmentsPromise,
+      jiraImageAttachmentsPromise,
+    ]).then(([composerImages, jiraImages]) => [...composerImages, ...jiraImages]);
     const optimisticAttachments = composerImagesSnapshot.map((image) => ({
       type: "image" as const,
       id: image.id,
@@ -3607,8 +3679,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
       if (item.type === "path") {
-        const replacement =
-          trigger.kind === "slash-add-dir" ? `/add-dir ${item.path} ` : `@${item.path} `;
+        const replacement = `@${item.path} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
           trigger.rangeEnd,
@@ -3631,11 +3702,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
           issueKey: item.issueKey,
           summary: item.summary,
           status: item.status,
-          issueType: "Task",
-          priority: undefined,
-          assignee: undefined,
-          description: undefined,
-          url: "",
+          issueType: item.issueType,
+          priority: item.priority,
+          assignee: item.assignee,
+          description: item.issueDescription,
+          url: item.url,
           attachments: [],
         };
         addComposerDraftJiraTaskContext(threadId, task);
@@ -3649,7 +3720,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         return;
       }
       if (item.type === "slash-command") {
-        if (item.command === "model" || item.command === "add-dir" || item.command === "compact") {
+        if (item.command === "model" || item.command === "compact") {
           const replacement = `/${item.command} `;
           const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
             snapshot.value,
@@ -3718,9 +3789,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     (isPathTrigger &&
       ((pathTriggerQuery.length > 0 && composerPathQueryDebouncer.state.isPending) ||
         (isWorkspacePathTrigger &&
-          (workspaceEntriesQuery.isLoading || workspaceEntriesQuery.isFetching)) ||
-        (isAddDirTrigger &&
-          (directoryBrowseQuery.isLoading || directoryBrowseQuery.isFetching)))) ||
+          (workspaceEntriesQuery.isLoading || workspaceEntriesQuery.isFetching)))) ||
     (isJiraAtQueryActive && (jiraIssuesQuery.isLoading || jiraIssuesQuery.isFetching));
 
   const setComposerDraftJiraTaskContexts = useComposerDraftStore(
@@ -4218,18 +4287,28 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         />
 
                         {isComposerFooterCompact ? (
-                          <CompactComposerControlsMenu
-                            activePlan={Boolean(
-                              activePlan || sidebarProposedPlan || planSidebarOpen,
-                            )}
-                            interactionMode={interactionMode}
-                            planSidebarOpen={planSidebarOpen}
-                            runtimeMode={runtimeMode}
-                            traitsMenuContent={providerTraitsMenuContent}
-                            onToggleInteractionMode={toggleInteractionMode}
-                            onTogglePlanSidebar={togglePlanSidebar}
-                            onToggleRuntimeMode={toggleRuntimeMode}
-                          />
+                          <>
+                            <CompactComposerControlsMenu
+                              activePlan={Boolean(
+                                activePlan || sidebarProposedPlan || planSidebarOpen,
+                              )}
+                              interactionMode={interactionMode}
+                              planSidebarOpen={planSidebarOpen}
+                              runtimeMode={runtimeMode}
+                              traitsMenuContent={providerTraitsMenuContent}
+                              onToggleInteractionMode={toggleInteractionMode}
+                              onTogglePlanSidebar={togglePlanSidebar}
+                              onToggleRuntimeMode={toggleRuntimeMode}
+                            />
+                            {isServerThread ? (
+                              <DirectoryPickerPopover
+                                threadId={activeThread.id}
+                                projectCwd={gitCwd}
+                                additionalDirectories={activeThread.additionalDirectories}
+                                disabled={isConnecting}
+                              />
+                            ) : null}
+                          </>
                         ) : (
                           <>
                             {providerTraitsPicker ? (
@@ -4318,6 +4397,21 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                   <ListTodoIcon />
                                   <span className="sr-only sm:not-sr-only">Plan</span>
                                 </Button>
+                              </>
+                            ) : null}
+
+                            {isServerThread ? (
+                              <>
+                                <Separator
+                                  orientation="vertical"
+                                  className="mx-0.5 hidden h-4 sm:block"
+                                />
+                                <DirectoryPickerPopover
+                                  threadId={activeThread.id}
+                                  projectCwd={gitCwd}
+                                  additionalDirectories={activeThread.additionalDirectories}
+                                  disabled={isConnecting}
+                                />
                               </>
                             ) : null}
                           </>

@@ -22,8 +22,11 @@ const JIRA_URL_PATTERN = /https?:\/\/[a-zA-Z0-9-]+\.atlassian\.net\/browse\/([A-
 const JIRA_ISSUE_KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/i;
 
 export function parseJiraUrl(text: string): string | null {
-  const match = text.match(JIRA_URL_PATTERN);
-  return match?.[1] ?? null;
+  const trimmed = text.trim();
+  const match = trimmed.match(JIRA_URL_PATTERN);
+  if (!match?.[1]) return null;
+  if (match[0] !== trimmed) return null;
+  return match[1];
 }
 
 export function isJiraIssueKeyPattern(query: string): boolean {
@@ -97,7 +100,7 @@ function formatBytes(bytes: number): string {
 
 export function buildJiraContextBlock(tasks: ReadonlyArray<JiraTaskDraft>): string {
   if (tasks.length === 0) return "";
-  const body = tasks.map(formatSingleTaskContext).join("\n\n---\n\n");
+  const body = tasks.map(formatSingleTaskContext).join("\n\n<!-- jira-task-separator -->\n\n");
   return `\n<jira_context>\n${body}\n</jira_context>`;
 }
 
@@ -129,7 +132,9 @@ export function extractTrailingJiraContexts(text: string): ExtractedJiraContexts
   const rawBody = match[1] ?? "";
   const promptText = text.slice(0, match.index ?? 0).trimEnd();
 
-  const taskBlocks = rawBody.split(/\n---\n/).filter((block) => block.trim().length > 0);
+  const taskBlocks = rawBody
+    .split(/\n<!-- jira-task-separator -->\n/)
+    .filter((block) => block.trim().length > 0);
   const contexts: ParsedJiraContextEntry[] = taskBlocks.map((block) => {
     const trimmed = block.trim();
     const firstNewline = trimmed.indexOf("\n");

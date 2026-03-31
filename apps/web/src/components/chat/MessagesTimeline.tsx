@@ -49,8 +49,8 @@ import {
   deriveDisplayedUserMessageState,
   type ParsedTerminalContextEntry,
 } from "~/lib/terminalContext";
-import { extractTrailingJiraContexts } from "~/lib/jiraContext";
-import { UserMessageJiraContextLabel } from "./UserMessageJiraContextLabel";
+import { extractTrailingJiraContexts, type ParsedJiraContextEntry } from "~/lib/jiraContext";
+import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type TimestampFormat } from "@marcode/contracts/settings";
@@ -210,9 +210,16 @@ const TimelineRowContent = memo(function TimelineRowContent({
           const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
           const terminalContexts = displayedUserMessage.contexts;
           const jiraExtracted = extractTrailingJiraContexts(displayedUserMessage.visibleText);
-          const jiraContexts = jiraExtracted.contexts;
-          const visibleTextAfterJira =
-            jiraContexts.length > 0 ? jiraExtracted.promptText : displayedUserMessage.visibleText;
+          const visibleText =
+            jiraExtracted.contexts.length > 0
+              ? jiraExtracted.promptText
+              : displayedUserMessage.visibleText;
+          const jiraContextMap = new Map(
+            jiraExtracted.contexts.map((ctx) => {
+              const keyMatch = ctx.header.match(/^\[([A-Z][A-Z0-9]+-\d+)]/);
+              return [keyMatch?.[1]?.toUpperCase() ?? "", ctx] as const;
+            }),
+          );
           const canRevertAgentWork = revertTurnCountByUserMessageId.has(row.message.id);
           return (
             <div className="flex justify-end">
@@ -252,18 +259,16 @@ const TimelineRowContent = memo(function TimelineRowContent({
                     )}
                   </div>
                 )}
-                {(visibleTextAfterJira.trim().length > 0 || terminalContexts.length > 0) && (
+                {(visibleText.trim().length > 0 || terminalContexts.length > 0) && (
                   <UserMessageBody
-                    text={visibleTextAfterJira}
+                    text={visibleText}
                     terminalContexts={terminalContexts}
+                    jiraContextMap={jiraContextMap}
                   />
                 )}
-                {jiraContexts.length > 0 && <UserMessageJiraContextLabel contexts={jiraContexts} />}
                 <div className="mt-1.5 flex items-center justify-end gap-2">
                   <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
-                    {displayedUserMessage.copyText && (
-                      <MessageCopyButton text={displayedUserMessage.copyText} />
-                    )}
+                    {visibleText && <MessageCopyButton text={visibleText} />}
                     {canRevertAgentWork && (
                       <Button
                         type="button"
@@ -732,9 +737,44 @@ const UserMessageTerminalContextInlineLabel = memo(
   },
 );
 
+const JIRA_INLINE_LABEL_PATTERN = /@jira:([A-Z][A-Z0-9]+-\d+)/gi;
+
+function renderTextWithJiraChips(
+  text: string,
+  keyPrefix: string,
+  jiraContextMap: ReadonlyMap<string, ParsedJiraContextEntry>,
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of text.matchAll(JIRA_INLINE_LABEL_PATTERN)) {
+    const matchStart = match.index ?? 0;
+    const issueKey = match[1] ?? "";
+    if (matchStart > cursor) {
+      nodes.push(<span key={`${keyPrefix}-text-${cursor}`}>{text.slice(cursor, matchStart)}</span>);
+    }
+    const context = jiraContextMap.get(issueKey.toUpperCase());
+    nodes.push(
+      <JiraTaskInlineChip
+        key={`${keyPrefix}-jira-${issueKey}`}
+        label={issueKey}
+        tooltipText={context ? context.header : issueKey}
+        detailHeader={context?.header}
+        detailBody={context?.body}
+      />,
+    );
+    cursor = matchStart + match[0].length;
+  }
+  if (cursor === 0) return [];
+  if (cursor < text.length) {
+    nodes.push(<span key={`${keyPrefix}-text-rest`}>{text.slice(cursor)}</span>);
+  }
+  return nodes;
+}
+
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
+  jiraContextMap: ReadonlyMap<string, ParsedJiraContextEntry>;
 }) {
   if (props.terminalContexts.length > 0) {
     const hasEmbeddedInlineLabels = textContainsInlineTerminalContextLabels(
@@ -816,6 +856,15 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 
   if (props.text.length === 0) {
     return null;
+  }
+
+  const jiraNodes = renderTextWithJiraChips(props.text, "user-msg-jira", props.jiraContextMap);
+  if (jiraNodes.length > 0) {
+    return (
+      <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
+        {jiraNodes}
+      </div>
+    );
   }
 
   return (

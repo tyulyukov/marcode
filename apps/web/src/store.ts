@@ -271,6 +271,7 @@ function threadChanged(prev: Thread, next: Thread): boolean {
     prev.error !== next.error ||
     prev.branch !== next.branch ||
     prev.worktreePath !== next.worktreePath ||
+    prev.additionalDirectories.length !== next.additionalDirectories.length ||
     prev.runtimeMode !== next.runtimeMode ||
     prev.interactionMode !== next.interactionMode ||
     prev.modelSelection.provider !== next.modelSelection.provider ||
@@ -402,6 +403,7 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
         lastVisitedAt: existing?.lastVisitedAt ?? thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        additionalDirectories: [...thread.additionalDirectories],
         turnDiffSummaries: thread.checkpoints.map((checkpoint) => ({
           turnId: checkpoint.turnId,
           completedAt: checkpoint.completedAt,
@@ -654,6 +656,34 @@ export function applyProposedPlanUpserted(
   return threads === state.threads ? state : { ...state, threads };
 }
 
+export function applyThreadMetaUpdated(
+  state: AppState,
+  threadId: ThreadId,
+  payload: {
+    title?: string;
+    modelSelection?: Thread["modelSelection"];
+    branch?: string | null;
+    worktreePath?: string | null;
+    additionalDirectories?: string[];
+    updatedAt: string;
+  },
+): AppState {
+  const threads = updateThread(state.threads, threadId, (thread) => {
+    return {
+      ...thread,
+      ...(payload.title !== undefined ? { title: payload.title } : {}),
+      ...(payload.modelSelection !== undefined ? { modelSelection: payload.modelSelection } : {}),
+      ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
+      ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+      ...(payload.additionalDirectories !== undefined
+        ? { additionalDirectories: payload.additionalDirectories }
+        : {}),
+      updatedAt: payload.updatedAt,
+    };
+  });
+  return threads === state.threads ? state : { ...state, threads };
+}
+
 export function markThreadVisited(
   state: AppState,
   threadId: ThreadId,
@@ -779,6 +809,10 @@ interface AppStore extends AppState {
     plan: OrchestrationProposedPlan,
     occurredAt: string,
   ) => void;
+  applyThreadMetaUpdated: (
+    threadId: ThreadId,
+    payload: Parameters<typeof applyThreadMetaUpdated>[2],
+  ) => void;
 }
 
 export const useStore = create<AppStore>((set) => ({
@@ -805,6 +839,8 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => applyTurnDiffCompleted(state, threadId, payload, occurredAt)),
   applyProposedPlanUpserted: (threadId, plan, occurredAt) =>
     set((state) => applyProposedPlanUpserted(state, threadId, plan, occurredAt)),
+  applyThreadMetaUpdated: (threadId, payload) =>
+    set((state) => applyThreadMetaUpdated(state, threadId, payload)),
 }));
 
 // Persist state changes with debouncing to avoid localStorage thrashing

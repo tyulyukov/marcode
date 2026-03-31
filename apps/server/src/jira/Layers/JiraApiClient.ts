@@ -1,4 +1,5 @@
 import { Effect, Layer, Option } from "effect";
+import { ServerConfig } from "../../config";
 import type {
   JiraConnectionStatus,
   JiraGetAttachmentInput,
@@ -76,6 +77,8 @@ export const JiraApiClientLive = Layer.effect(
   JiraApiClient,
   Effect.gen(function* () {
     const tokenService = yield* JiraTokenService;
+    const config = yield* ServerConfig;
+    const serverPort = config.port;
 
     const siteUrlByCloudId = new Map<string, string>();
 
@@ -248,14 +251,16 @@ export const JiraApiClientLive = Layer.effect(
             }>(fallbackResponse, "listIssues");
             return {
               issues: fallbackData.issues.map(
-                mapRawIssue(input.cloudId as string, siteUrlByCloudId),
+                mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
               ),
               total: fallbackData.total,
             } as unknown as JiraListIssuesResult;
           }
 
           return {
-            issues: data.issues.map(mapRawIssue(input.cloudId as string, siteUrlByCloudId)),
+            issues: data.issues.map(
+              mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
+            ),
             total: data.total,
           } as unknown as JiraListIssuesResult;
         } else {
@@ -272,7 +277,9 @@ export const JiraApiClientLive = Layer.effect(
         }>(response, "listIssues");
 
         return {
-          issues: data.issues.map(mapRawIssue(input.cloudId as string, siteUrlByCloudId)),
+          issues: data.issues.map(
+            mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
+          ),
           total: data.total,
         } as unknown as JiraListIssuesResult;
       });
@@ -284,7 +291,11 @@ export const JiraApiClientLive = Layer.effect(
           "getIssue",
         );
         const data = yield* parseJsonResponse<JiraApiIssueRaw>(response, "getIssue");
-        return mapRawIssue(input.cloudId as string, siteUrlByCloudId)(data) as unknown as JiraIssue;
+        return mapRawIssue(
+          input.cloudId as string,
+          siteUrlByCloudId,
+          serverPort,
+        )(data) as unknown as JiraIssue;
       });
 
     const getAttachment: JiraApiClientShape["getAttachment"] = (input) =>
@@ -392,50 +403,213 @@ interface JiraApiIssueRaw {
   };
 }
 
-function renderAdfToPlainText(node: unknown): string {
+interface AdfNode {
+  type?: string;
+  text?: string;
+  attrs?: Record<string, unknown>;
+  marks?: ReadonlyArray<{ type: string; attrs?: Record<string, unknown> }>;
+  content?: ReadonlyArray<AdfNode>;
+}
+
+function renderAdfInlineText(node: AdfNode): string {
+  if (node.type === "text" && typeof node.text === "string") {
+    let text = node.text;
+    if (node.marks) {
+      for (const mark of node.marks) {
+        if (mark.type === "strong") text = `**${text}**`;
+        else if (mark.type === "em") text = `*${text}*`;
+        else if (mark.type === "code") text = `\`${text}\``;
+        else if (mark.type === "link" && mark.attrs?.href) text = `[${text}](${mark.attrs.href})`;
+        else if (mark.type === "strike") text = `~~${text}~~`;
+      }
+    }
+    return text;
+  }
+  if (node.type === "hardBreak") return "\n";
+  if (node.type === "mention" && node.attrs?.text) return String(node.attrs.text);
+  if (node.type === "emoji" && node.attrs?.shortName) return String(node.attrs.shortName);
+  if (node.type === "inlineCard" && node.attrs?.url) return String(node.attrs.url);
+  if (node.content) return node.content.map(renderAdfInlineText).join("");
+  return "";
+}
+
+function renderAdfChildren(
+  nodes: ReadonlyArray<AdfNode>,
+  context?: { listPrefix?: string },
+): string {
+  const blocks: string[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const child = nodes[i]!;
+    blocks.push(renderAdfBlock(child, i, context));
+  }
+  return blocks.join("\n\n");
+}
+
+function renderAdfBlock(node: AdfNode, index: number, context?: { listPrefix?: string }): string {
+  if (!node.type) return "";
+
+  if (node.type === "paragraph") {
+    return node.content ? node.content.map(renderAdfInlineText).join("") : "";
+  }
+
+  if (node.type === "heading") {
+    const level = Number(node.attrs?.level ?? 1);
+    const prefix = "#".repeat(Math.min(level, 6));
+    const text = node.content ? node.content.map(renderAdfInlineText).join("") : "";
+    return `${prefix} ${text}`;
+  }
+
+  if (node.type === "bulletList" && node.content) {
+    return node.content
+      .map((item) => {
+        const inner = item.content ? renderAdfChildren(item.content, { listPrefix: "  " }) : "";
+        return `- ${inner}`;
+      })
+      .join("\n");
+  }
+
+  if (node.type === "orderedList" && node.content) {
+    return node.content
+      .map((item, idx) => {
+        const inner = item.content ? renderAdfChildren(item.content, { listPrefix: "  " }) : "";
+        return `${idx + 1}. ${inner}`;
+      })
+      .join("\n");
+  }
+
+  if (node.type === "codeBlock") {
+    const lang = (node.attrs?.language as string) ?? "";
+    const code = node.content ? node.content.map(renderAdfInlineText).join("") : "";
+    return `\`\`\`${lang}\n${code}\n\`\`\``;
+  }
+
+  if (node.type === "blockquote" && node.content) {
+    return renderAdfChildren(node.content)
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+  }
+
+  if (node.type === "panel" && node.content) {
+    const inner = renderAdfChildren(node.content);
+    return `> ${inner.split("\n").join("\n> ")}`;
+  }
+
+  if (node.type === "rule") {
+    return "---";
+  }
+
+  if (node.type === "mediaSingle" || node.type === "mediaGroup") {
+    if (!node.content) return "";
+    return node.content
+      .map((media) => {
+        if (media.type === "media") {
+          const alt = (media.attrs?.alt as string) ?? (media.attrs?.id as string) ?? "attachment";
+          const filename = alt;
+          const ctx = adfRenderContext;
+          const att = ctx?.attachmentsByFilename.get(filename);
+          if (att && att.mimeType.startsWith("image/") && ctx) {
+            const proxyUrl = `http://localhost:${ctx.serverPort}/api/jira/attachment/${att.id}?cloudId=${encodeURIComponent(ctx.cloudId)}`;
+            return `![${filename}](${proxyUrl})`;
+          }
+          return `[📎 ${filename}]`;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (node.type === "table" && node.content) {
+    const rows = node.content.filter((row) => row.type === "tableRow");
+    return rows
+      .map((row, rowIdx) => {
+        const cells = (row.content ?? []).map((cell) =>
+          cell.content ? renderAdfChildren(cell.content).replace(/\n/g, " ") : "",
+        );
+        const line = `| ${cells.join(" | ")} |`;
+        if (rowIdx === 0) {
+          return `${line}\n| ${cells.map(() => "---").join(" | ")} |`;
+        }
+        return line;
+      })
+      .join("\n");
+  }
+
+  if (node.content) {
+    return renderAdfChildren(node.content, context);
+  }
+
+  return "";
+}
+
+interface AdfRenderContext {
+  readonly attachmentsByFilename: ReadonlyMap<string, { id: string; mimeType: string }>;
+  readonly cloudId: string;
+  readonly serverPort: number;
+}
+
+let adfRenderContext: AdfRenderContext | undefined;
+
+function renderAdfToMarkdown(node: unknown): string {
   if (node === null || node === undefined) return "";
   if (typeof node === "string") return node;
   if (typeof node !== "object") return String(node);
 
-  const obj = node as Record<string, unknown>;
-  if (obj.type === "text" && typeof obj.text === "string") return obj.text;
-  if (Array.isArray(obj.content)) {
-    return (obj.content as unknown[])
-      .map(renderAdfToPlainText)
-      .join(obj.type === "paragraph" ? "\n" : "");
+  const adf = node as AdfNode;
+  if (adf.type === "doc" && adf.content) {
+    return renderAdfChildren(adf.content);
+  }
+  if (adf.content) {
+    return renderAdfChildren(adf.content);
+  }
+  if (adf.type === "text" && typeof adf.text === "string") {
+    return adf.text;
   }
   return "";
 }
 
 const mapRawIssue =
-  (cloudId: string, siteUrlByCloudId: Map<string, string>) => (raw: JiraApiIssueRaw) => ({
-    key: raw.key,
-    summary: raw.fields.summary,
-    status: raw.fields.status.name,
-    issueType: raw.fields.issuetype.name,
-    ...(raw.fields.priority ? { priority: raw.fields.priority.name } : {}),
-    ...(raw.fields.assignee
-      ? {
-          assignee: {
-            accountId: raw.fields.assignee.accountId,
-            displayName: raw.fields.assignee.displayName,
-            ...(raw.fields.assignee.avatarUrls?.["48x48"]
-              ? { avatarUrl: raw.fields.assignee.avatarUrls["48x48"] }
-              : {}),
-          },
-        }
-      : {}),
-    description: renderAdfToPlainText(raw.fields.description),
-    labels: raw.fields.labels ?? [],
-    attachments: (raw.fields.attachment ?? []).map((att) => ({
-      id: att.id,
-      filename: att.filename,
-      mimeType: att.mimeType,
-      size: att.size,
-    })),
-    url: siteUrlByCloudId.has(cloudId)
-      ? `${siteUrlByCloudId.get(cloudId)}/browse/${raw.key}`
-      : `https://api.atlassian.com/ex/jira/${cloudId}/browse/${raw.key}`,
-    createdAt: raw.fields.created,
-    updatedAt: raw.fields.updated,
-  });
+  (cloudId: string, siteUrlByCloudId: Map<string, string>, serverPort: number) =>
+  (raw: JiraApiIssueRaw) => {
+    const attachmentsByFilename = new Map(
+      (raw.fields.attachment ?? []).map((att) => [
+        att.filename,
+        { id: att.id, mimeType: att.mimeType },
+      ]),
+    );
+    adfRenderContext = { attachmentsByFilename, cloudId, serverPort };
+    const description = renderAdfToMarkdown(raw.fields.description);
+    adfRenderContext = undefined;
+    return {
+      key: raw.key,
+      summary: raw.fields.summary,
+      status: raw.fields.status.name,
+      issueType: raw.fields.issuetype.name,
+      ...(raw.fields.priority ? { priority: raw.fields.priority.name } : {}),
+      ...(raw.fields.assignee
+        ? {
+            assignee: {
+              accountId: raw.fields.assignee.accountId,
+              displayName: raw.fields.assignee.displayName,
+              ...(raw.fields.assignee.avatarUrls?.["48x48"]
+                ? { avatarUrl: raw.fields.assignee.avatarUrls["48x48"] }
+                : {}),
+            },
+          }
+        : {}),
+      description,
+      labels: raw.fields.labels ?? [],
+      attachments: (raw.fields.attachment ?? []).map((att) => ({
+        id: att.id,
+        filename: att.filename,
+        mimeType: att.mimeType,
+        size: att.size,
+      })),
+      url: siteUrlByCloudId.has(cloudId)
+        ? `${siteUrlByCloudId.get(cloudId)}/browse/${raw.key}`
+        : `https://api.atlassian.com/ex/jira/${cloudId}/browse/${raw.key}`,
+      createdAt: raw.fields.created,
+      updatedAt: raw.fields.updated,
+    };
+  };

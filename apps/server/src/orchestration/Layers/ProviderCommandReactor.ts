@@ -1,4 +1,3 @@
-import path from "node:path";
 import {
   type ChatAttachment,
   CommandId,
@@ -73,37 +72,6 @@ const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const WORKTREE_BRANCH_PREFIX = "marcode";
-
-const ADD_DIR_LINE_PATTERN = /^\/add-dir\s+(\S+)/;
-
-interface ParsedAddDirResult {
-  readonly directories: string[];
-  readonly strippedText: string;
-}
-
-function parseAddDirCommands(messageText: string, cwd: string | null): ParsedAddDirResult {
-  const lines = messageText.split("\n");
-  const directories: string[] = [];
-  const remainingLines: string[] = [];
-
-  for (const line of lines) {
-    const match = ADD_DIR_LINE_PATTERN.exec(line.trim());
-    if (match) {
-      const rawPath = match[1]!;
-      const resolvedPath = cwd ? path.resolve(cwd, rawPath) : rawPath;
-      if (!directories.includes(resolvedPath)) {
-        directories.push(resolvedPath);
-      }
-    } else {
-      remainingLines.push(line);
-    }
-  }
-
-  return {
-    directories,
-    strippedText: remainingLines.join("\n").trim(),
-  };
-}
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}\\/[0-9a-f]{8}$`);
 const DEFAULT_THREAD_TITLE = "New thread";
 
@@ -197,7 +165,7 @@ const make = Effect.gen(function* () {
     );
 
   const threadModelSelections = new Map<string, ModelSelection>();
-  const threadAdditionalDirectories = new Map<string, string[]>();
+  const threadSessionStartDirectories = new Map<string, string[]>();
 
   const appendProviderFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -294,11 +262,7 @@ const make = Effect.gen(function* () {
         .listSessions()
         .pipe(Effect.map((sessions) => sessions.find((session) => session.threadId === threadId)));
 
-    const accumulatedDirs = threadAdditionalDirectories.get(threadId) ?? [];
-    const effectiveAdditionalDirs =
-      options?.additionalDirectories !== undefined
-        ? [...new Set([...accumulatedDirs, ...options.additionalDirectories])]
-        : accumulatedDirs;
+    const effectiveAdditionalDirs = thread.additionalDirectories;
 
     const startProviderSession = (input?: {
       readonly resumeCursor?: unknown;
@@ -353,10 +317,10 @@ const make = Effect.gen(function* () {
         currentProvider === "claudeAgent" &&
         requestedModelSelection !== undefined &&
         !Equal.equals(previousModelSelection, requestedModelSelection);
-      const previousAdditionalDirs = threadAdditionalDirectories.get(threadId) ?? [];
+      const sessionStartedDirectories = threadSessionStartDirectories.get(threadId) ?? [];
       const shouldRestartForAdditionalDirs =
-        effectiveAdditionalDirs.length !== previousAdditionalDirs.length ||
-        effectiveAdditionalDirs.some((dir) => !previousAdditionalDirs.includes(dir));
+        effectiveAdditionalDirs.length !== sessionStartedDirectories.length ||
+        effectiveAdditionalDirs.some((dir) => !sessionStartedDirectories.includes(dir));
 
       if (
         !runtimeModeChanged &&
@@ -397,11 +361,13 @@ const make = Effect.gen(function* () {
         runtimeMode: restartedSession.runtimeMode,
       });
       yield* bindSessionToThread(restartedSession);
+      threadSessionStartDirectories.set(threadId, [...effectiveAdditionalDirs]);
       return restartedSession.threadId;
     }
 
     const startedSession = yield* startProviderSession(undefined);
     yield* bindSessionToThread(startedSession);
+    threadSessionStartDirectories.set(threadId, [...effectiveAdditionalDirs]);
     return startedSession.threadId;
   });
 
@@ -418,30 +384,19 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const readModel = yield* orchestrationEngine.getReadModel();
-    const effectiveCwd = resolveThreadWorkspaceCwd({
-      thread,
-      projects: readModel.projects,
-    });
-    const parsed = parseAddDirCommands(input.messageText, effectiveCwd ?? null);
-    if (parsed.directories.length > 0) {
-      const existing = threadAdditionalDirectories.get(input.threadId) ?? [];
-      const merged = [...new Set([...existing, ...parsed.directories])];
-      threadAdditionalDirectories.set(input.threadId, merged);
-    }
-    const currentDirs = threadAdditionalDirectories.get(input.threadId) ?? [];
-
     yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
-      ...(currentDirs.length > 0 ? { additionalDirectories: currentDirs } : {}),
     });
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const effectiveMessageText =
-      parsed.directories.length > 0 ? parsed.strippedText : input.messageText;
-    const normalizedInput = toNonEmptyProviderInput(effectiveMessageText);
+    const normalizedInput = toNonEmptyProviderInput(input.messageText);
     const normalizedAttachments = input.attachments ?? [];
+
+    if (!normalizedInput && normalizedAttachments.length === 0) {
+      return;
+    }
+
     const activeSession = yield* providerService
       .listSessions()
       .pipe(

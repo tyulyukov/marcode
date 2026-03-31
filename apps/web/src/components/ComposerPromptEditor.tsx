@@ -256,6 +256,8 @@ function ComposerJiraTaskDecorator(props: { task: JiraTaskDraft }) {
     <JiraTaskInlineChip
       label={props.task.issueKey}
       tooltipText={`${props.task.issueKey}: ${props.task.summary} [${props.task.status}]`}
+      detailHeader={undefined}
+      detailBody={undefined}
     />
   );
 }

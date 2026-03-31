@@ -460,6 +460,44 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           if (handled) return;
         }
 
+        if (url.pathname.startsWith("/api/jira/attachment/")) {
+          const attachmentId = url.pathname.slice("/api/jira/attachment/".length);
+          const cloudId = url.searchParams.get("cloudId");
+          if (attachmentId && cloudId) {
+            yield* Effect.gen(function* () {
+              const jiraClient = yield* JiraApiClient;
+              const result = yield* jiraClient.getAttachment({
+                cloudId,
+                attachmentId,
+              } as never);
+              if (typeof result.content === "string" && result.content.startsWith("data:")) {
+                const commaIndex = result.content.indexOf(",");
+                const mimeType = result.mimeType || "application/octet-stream";
+                const base64 =
+                  commaIndex >= 0 ? result.content.slice(commaIndex + 1) : result.content;
+                res.writeHead(200, {
+                  "Content-Type": mimeType,
+                  "Cache-Control": "private, max-age=3600",
+                });
+                res.end(Buffer.from(base64, "base64"));
+              } else {
+                res.writeHead(200, {
+                  "Content-Type": result.mimeType || "application/octet-stream",
+                });
+                res.end(result.content);
+              }
+            }).pipe(
+              Effect.catch(() =>
+                Effect.sync(() => {
+                  res.writeHead(404, { "Content-Type": "text/plain" });
+                  res.end("Attachment not found");
+                }),
+              ),
+            );
+            return;
+          }
+        }
+
         if (url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX)) {
           const rawRelativePath = url.pathname.slice(ATTACHMENTS_ROUTE_PREFIX.length);
           const normalizedRelativePath = normalizeAttachmentRelativePath(rawRelativePath);

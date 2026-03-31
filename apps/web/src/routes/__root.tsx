@@ -212,6 +212,7 @@ function EventRouter() {
       "thread.session-set",
       "thread.turn-diff-completed",
       "thread.proposed-plan-upserted",
+      "thread.meta-updated",
     ] as const);
 
     let deferredReconciliationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -297,6 +298,21 @@ function EventRouter() {
           useStore
             .getState()
             .applyProposedPlanUpserted(p.threadId, p.proposedPlan, event.occurredAt);
+          return true;
+        }
+        case "thread.meta-updated": {
+          const p = event.payload;
+          if (!threadExists(p.threadId)) return false;
+          useStore.getState().applyThreadMetaUpdated(p.threadId, {
+            ...(p.title !== undefined ? { title: p.title } : {}),
+            ...(p.modelSelection !== undefined ? { modelSelection: p.modelSelection } : {}),
+            ...(p.branch !== undefined ? { branch: p.branch } : {}),
+            ...(p.worktreePath !== undefined ? { worktreePath: p.worktreePath } : {}),
+            ...(p.additionalDirectories !== undefined
+              ? { additionalDirectories: [...p.additionalDirectories] }
+              : {}),
+            updatedAt: p.updatedAt,
+          });
           return true;
         }
         default:

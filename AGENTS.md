@@ -128,6 +128,22 @@ The same applies to `py-*` vs `pt-*`/`pb-*`.
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
 
+## Additional Directories (Thread Context)
+
+Directories can be added to agent context at the thread level via a toolbar popover (`DirectoryPickerPopover`). They persist as `additionalDirectories` on `OrchestrationThread` metadata (survive server restart).
+
+### Architecture
+
+- **Server**: `additionalDirectories` is a field on `OrchestrationThread` schema (`packages/contracts/src/orchestration.ts`), persisted via `thread.meta.update` / `thread.meta-updated` events. The `ProviderCommandReactor` reads directories from the thread read model (not in-memory state) and triggers session restart when directories change.
+- **Web**: `DirectoryPickerPopover` (`apps/web/src/components/chat/DirectoryPickerPopover.tsx`) renders in the composer footer toolbar. On add/remove it dispatches `thread.meta.update` with the merged `additionalDirectories` array. The `Thread` type in `types.ts` has `additionalDirectories: string[]`.
+- **Persistence**: SQLite column `additional_directories_json` on projection threads table (migration 020).
+
+### Key Patterns
+
+- Directories are **thread-level persistent context**, NOT per-message inline chips. There is no inline placeholder or draft store infrastructure for directories.
+- The popover reuses `projectBrowseDirectoriesQueryOptions` for search.
+- Session restart comparison uses `threadSessionStartDirectories` Map to track what directories the last session was started with.
+
 ## Jira Integration
 
 MarCode supports read-only Jira Cloud integration via OAuth 2.0 (3LO) with PKCE.

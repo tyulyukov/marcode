@@ -2,8 +2,8 @@ import { splitPromptIntoComposerSegments } from "./composer-editor-mentions";
 import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 import { INLINE_JIRA_CONTEXT_PLACEHOLDER } from "./lib/jiraContext";
 
-export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "slash-add-dir";
-export const SLASH_COMMANDS = ["model", "plan", "default", "add-dir", "compact"] as const;
+export type ComposerTriggerKind = "path" | "slash-command" | "slash-model";
+export const SLASH_COMMANDS = ["model", "plan", "default", "compact"] as const;
 
 export type ComposerSlashCommand = (typeof SLASH_COMMANDS)[number];
 
@@ -231,16 +231,6 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
       return {
         kind: "slash-model",
         query: (modelMatch[1] ?? "").trim(),
-        rangeStart: lineStart,
-        rangeEnd: cursor,
-      };
-    }
-
-    const addDirMatch = /^\/add-dir\s+(.*)$/.exec(linePrefix);
-    if (addDirMatch) {
-      return {
-        kind: "slash-add-dir",
-        query: (addDirMatch[1] ?? "").trim(),
         rangeStart: lineStart,
         rangeEnd: cursor,
       };
