@@ -1,6 +1,6 @@
 {
   "name": "@marcode/contracts",
-  "version": "1.0.0-alpha.3",
+  "version": "1.0.0",
   "private": true,
   "files": [
     "dist"
