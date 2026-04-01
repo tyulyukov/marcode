@@ -24,7 +24,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN cd apps/landing && bun --bun run build
 
-FROM oven/bun:1.3.9-slim AS runner
+FROM oven/bun:1.3.9 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -32,17 +32,14 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+COPY --from=builder --chown=bun:bun /app/apps/landing/public ./apps/landing/public
 
-COPY --from=builder --chown=nextjs:nodejs /app/apps/landing/public ./apps/landing/public
+RUN mkdir -p apps/landing/.next && chown bun:bun apps/landing/.next
 
-RUN mkdir -p apps/landing/.next && chown nextjs:nodejs apps/landing/.next
+COPY --from=builder --chown=bun:bun /app/apps/landing/.next/standalone ./
+COPY --from=builder --chown=bun:bun /app/apps/landing/.next/static ./apps/landing/.next/static
 
-COPY --from=builder --chown=nextjs:nodejs /app/apps/landing/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/landing/.next/static ./apps/landing/.next/static
-
-USER nextjs
+USER bun
 
 EXPOSE 3000
 
