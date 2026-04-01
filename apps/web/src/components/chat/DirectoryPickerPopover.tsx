@@ -17,6 +17,7 @@ interface DirectoryPickerPopoverProps {
   projectCwd: string | null;
   additionalDirectories: readonly string[];
   disabled: boolean;
+  onLocalDirectoriesChange?: ((directories: string[]) => void) | undefined;
 }
 
 const BROWSE_DEBOUNCE_MS = 200;
@@ -40,6 +41,7 @@ export function DirectoryPickerPopover({
   projectCwd,
   additionalDirectories,
   disabled,
+  onLocalDirectoriesChange,
 }: DirectoryPickerPopoverProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -73,6 +75,10 @@ export function DirectoryPickerPopover({
 
   const dispatchMetaUpdate = useCallback(
     async (nextDirs: string[]) => {
+      if (onLocalDirectoriesChange) {
+        onLocalDirectoriesChange(nextDirs);
+        return;
+      }
       const api = readNativeApi();
       if (!api) return;
       await api.orchestration.dispatchCommand({
@@ -82,7 +88,7 @@ export function DirectoryPickerPopover({
         additionalDirectories: nextDirs,
       });
     },
-    [threadId],
+    [threadId, onLocalDirectoriesChange],
   );
 
   const addDirectory = useCallback(

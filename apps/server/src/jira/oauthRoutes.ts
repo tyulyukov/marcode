@@ -7,7 +7,7 @@ import type { JiraTokenServiceShape, JiraTokenSet } from "./Services/JiraTokenSe
 import { JiraOAuthError, JiraTokenError } from "./Errors";
 
 const ATLASSIAN_AUTHORIZE_URL = "https://auth.atlassian.com/authorize";
-const ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token";
+
 const OAUTH_SCOPES = "read:jira-work read:jira-user offline_access read:me";
 const STATE_TTL_MS = 5 * 60 * 1000;
 const OAUTH_CALLBACK_PORT = 19571;
@@ -94,6 +94,17 @@ function startCallbackServer(config: ServerConfigShape): Promise<void> {
   });
 }
 
+async function fetchJiraClientId(proxyUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${proxyUrl}/api/jira/config`);
+    if (!response.ok) return null;
+    const data = (await response.json()) as { clientId?: string };
+    return data.clientId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function tryHandleJiraAuthRequest(
   url: URL,
   _req: IncomingMessage,
@@ -102,9 +113,9 @@ export function tryHandleJiraAuthRequest(
 ): boolean {
   if (url.pathname !== "/api/jira/auth") return false;
 
-  if (!config.jiraClientId) {
+  if (!config.jiraTokenProxyUrl) {
     res.writeHead(500, { "Content-Type": "text/plain" });
-    res.end("MARCODE_JIRA_CLIENT_ID is not configured");
+    res.end("MARCODE_JIRA_TOKEN_PROXY_URL is not configured");
     return true;
   }
 
@@ -116,6 +127,7 @@ export function tryHandleJiraAuthRequest(
   pendingStates.set(state, { codeVerifier, createdAt: Date.now() });
 
   const redirectUri = getRedirectUri(config);
+  const proxyUrl = config.jiraTokenProxyUrl;
 
   const doAuth = async () => {
     try {
@@ -130,9 +142,16 @@ export function tryHandleJiraAuthRequest(
       return;
     }
 
+    const clientId = await fetchJiraClientId(proxyUrl);
+    if (!clientId) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Failed to fetch Jira client ID from token proxy");
+      return;
+    }
+
     const params = new URLSearchParams({
       audience: "api.atlassian.com",
-      client_id: config.jiraClientId!,
+      client_id: clientId,
       scope: OAUTH_SCOPES,
       redirect_uri: redirectUri,
       state,
@@ -229,29 +248,45 @@ function handleJiraCallback(
       return true;
     }
 
-    if (!config.jiraClientId) {
+    if (!config.jiraTokenProxyUrl) {
       sendResultPage(
         res,
         "\u274C",
         "Jira connection failed",
-        "MARCODE_JIRA_CLIENT_ID is not configured.",
+        "MARCODE_JIRA_TOKEN_PROXY_URL is not configured.",
       );
       return true;
     }
 
+    const clientId = yield* Effect.tryPromise({
+      try: () => fetchJiraClientId(config.jiraTokenProxyUrl!),
+      catch: () =>
+        new JiraOAuthError({
+          operation: "fetchClientId",
+          detail: "Failed to fetch Jira client ID from token proxy",
+        }),
+    });
+
+    if (!clientId) {
+      sendResultPage(res, "\u274C", "Jira connection failed", "Failed to resolve Jira client ID.");
+      return true;
+    }
+
+    const tokenUrl = `${config.jiraTokenProxyUrl}/api/jira/token-exchange`;
+    const tokenBody: Record<string, string> = {
+      grant_type: "authorization_code",
+      client_id: clientId,
+      code,
+      redirect_uri: getRedirectUri(config),
+      code_verifier: pkceState.codeVerifier,
+    };
+
     const tokenResponse = yield* Effect.tryPromise({
       try: () =>
-        fetch(ATLASSIAN_TOKEN_URL, {
+        fetch(tokenUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            grant_type: "authorization_code",
-            client_id: config.jiraClientId,
-            ...(config.jiraClientSecret ? { client_secret: config.jiraClientSecret } : {}),
-            code,
-            redirect_uri: getRedirectUri(config),
-            code_verifier: pkceState.codeVerifier,
-          }),
+          body: JSON.stringify(tokenBody),
         }),
       catch: (cause) =>
         new JiraOAuthError({

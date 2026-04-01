@@ -43,6 +43,7 @@ export interface GitHostCliShape {
     readonly headSelector: string;
     readonly state: "open" | "all";
     readonly limit?: number;
+    readonly repo?: string;
   }) => Effect.Effect<ReadonlyArray<HostPullRequestSummary>, GitHostCliError>;
 
   readonly getPullRequest: (input: {

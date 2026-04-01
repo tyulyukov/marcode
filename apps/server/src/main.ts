@@ -132,15 +132,11 @@ const CliEnvConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  jiraClientId: Config.string("MARCODE_JIRA_CLIENT_ID").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
-  jiraClientSecret: Config.string("MARCODE_JIRA_CLIENT_SECRET").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
   jiraRedirectUri: Config.string("MARCODE_JIRA_REDIRECT_URI").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
+  jiraTokenProxyUrl: Config.string("MARCODE_JIRA_TOKEN_PROXY_URL").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
@@ -293,9 +289,8 @@ const ServerConfigLive = (input: CliInput) =>
         authToken: Option.getOrUndefined(authToken),
         autoBootstrapProjectFromCwd,
         logWebSocketEvents,
-        jiraClientId: env.jiraClientId,
-        jiraClientSecret: env.jiraClientSecret,
         jiraRedirectUri: env.jiraRedirectUri,
+        jiraTokenProxyUrl: env.jiraTokenProxyUrl,
       } satisfies ServerConfigShape;
 
       return config;

@@ -87,6 +87,7 @@ interface BranchHeadContext {
   remoteName: string | null;
   headRepositoryNameWithOwner: string | null;
   headRepositoryOwnerLogin: string | null;
+  originRepositoryNameWithOwner: string | null;
   isCrossRepository: boolean;
 }
 
@@ -574,6 +575,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       remoteName,
       headRepositoryNameWithOwner: remoteRepository.repositoryNameWithOwner,
       headRepositoryOwnerLogin: remoteRepository.ownerLogin,
+      originRepositoryNameWithOwner: originRepository.repositoryNameWithOwner,
       isCrossRepository,
     } satisfies BranchHeadContext;
   });
@@ -581,6 +583,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const findOpenPr = Effect.fn("findOpenPr")(function* (
     cwd: string,
     headSelectors: ReadonlyArray<string>,
+    originRepo?: string | null,
   ) {
     for (const headSelector of headSelectors) {
       const pullRequests = yield* gitHostCli.listPullRequests({
@@ -588,6 +591,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         headSelector,
         state: "open",
         limit: 1,
+        ...(originRepo ? { repo: originRepo } : {}),
       });
 
       const [firstPullRequest] = pullRequests;
@@ -613,6 +617,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   ) {
     const headContext = yield* resolveBranchHeadContext(cwd, details);
     const parsedByNumber = new Map<number, PullRequestInfo>();
+    const originRepo = headContext.originRepositoryNameWithOwner;
 
     for (const headSelector of headContext.headSelectors) {
       const pullRequests = yield* gitHostCli.listPullRequests({
@@ -620,6 +625,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         headSelector,
         state: "all",
         limit: 20,
+        ...(originRepo ? { repo: originRepo } : {}),
       });
 
       for (const pr of pullRequests) {
@@ -860,7 +866,11 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       upstreamRef: details.upstreamRef,
     });
 
-    const existing = yield* findOpenPr(cwd, headContext.headSelectors);
+    const existing = yield* findOpenPr(
+      cwd,
+      headContext.headSelectors,
+      headContext.originRepositoryNameWithOwner,
+    );
     if (existing) {
       return {
         status: "opened_existing" as const,
@@ -901,7 +911,11 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         }),
       );
 
-    const created = yield* findOpenPr(cwd, headContext.headSelectors);
+    const created = yield* findOpenPr(
+      cwd,
+      headContext.headSelectors,
+      headContext.originRepositoryNameWithOwner,
+    );
     if (!created) {
       return {
         status: "created" as const,

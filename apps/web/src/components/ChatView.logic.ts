@@ -20,6 +20,7 @@ export function buildLocalDraftThread(
   draftThread: DraftThreadState,
   fallbackModelSelection: ModelSelection,
   error: string | null,
+  additionalDirectories: readonly string[] = [],
 ): Thread {
   return {
     id: threadId,
@@ -38,7 +39,7 @@ export function buildLocalDraftThread(
     lastVisitedAt: draftThread.createdAt,
     branch: draftThread.branch,
     worktreePath: draftThread.worktreePath,
-    additionalDirectories: [],
+    additionalDirectories: [...additionalDirectories],
     turnDiffSummaries: [],
     activities: [],
     proposedPlans: [],

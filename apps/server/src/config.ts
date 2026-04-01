@@ -46,9 +46,8 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly authToken: string | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
-  readonly jiraClientId: string | undefined;
-  readonly jiraClientSecret: string | undefined;
   readonly jiraRedirectUri: string | undefined;
+  readonly jiraTokenProxyUrl: string | undefined;
 }
 
 export const deriveServerPaths = Effect.fn(function* (
@@ -114,9 +113,8 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
           staticDir: undefined,
           devUrl,
           noBrowser: false,
-          jiraClientId: undefined,
-          jiraClientSecret: undefined,
           jiraRedirectUri: undefined,
+          jiraTokenProxyUrl: undefined,
         } satisfies ServerConfigShape;
       }),
     );

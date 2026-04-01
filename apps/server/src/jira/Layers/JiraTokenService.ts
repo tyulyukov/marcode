@@ -8,7 +8,6 @@ import {
 } from "../Services/JiraTokenService";
 import { decryptTokens, deriveKey, encryptTokens } from "../crypto";
 
-const ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token";
 const REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 export const JiraTokenServiceLive = Layer.effect(
@@ -77,24 +76,47 @@ export const JiraTokenServiceLive = Layer.effect(
 
     const refreshAccessToken = (tokens: JiraTokenSet) =>
       Effect.gen(function* () {
-        if (!config.jiraClientId) {
+        if (!config.jiraTokenProxyUrl) {
           return yield* new JiraTokenError({
             operation: "refreshToken",
-            detail: "MARCODE_JIRA_CLIENT_ID is not configured",
+            detail: "MARCODE_JIRA_TOKEN_PROXY_URL is not configured",
           });
         }
 
+        const clientId = yield* Effect.tryPromise({
+          try: async () => {
+            const response = await fetch(`${config.jiraTokenProxyUrl}/api/jira/config`);
+            if (!response.ok) return null;
+            const data = (await response.json()) as { clientId?: string };
+            return data.clientId ?? null;
+          },
+          catch: () =>
+            new JiraTokenError({
+              operation: "refreshToken",
+              detail: "Failed to fetch Jira client ID from token proxy",
+            }),
+        });
+
+        if (!clientId) {
+          return yield* new JiraTokenError({
+            operation: "refreshToken",
+            detail: "Failed to resolve Jira client ID",
+          });
+        }
+
+        const refreshTokenUrl = `${config.jiraTokenProxyUrl}/api/jira/token-exchange`;
+        const refreshBody: Record<string, string> = {
+          grant_type: "refresh_token",
+          client_id: clientId,
+          refresh_token: tokens.refreshToken,
+        };
+
         const response = yield* Effect.tryPromise({
           try: () =>
-            fetch(ATLASSIAN_TOKEN_URL, {
+            fetch(refreshTokenUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                grant_type: "refresh_token",
-                client_id: config.jiraClientId,
-                ...(config.jiraClientSecret ? { client_secret: config.jiraClientSecret } : {}),
-                refresh_token: tokens.refreshToken,
-              }),
+              body: JSON.stringify(refreshBody),
             }),
           catch: (cause) =>
             new JiraTokenError({

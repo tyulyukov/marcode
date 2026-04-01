@@ -4,6 +4,8 @@ import {
   ShellEnvironmentReader,
 } from "@marcode/shared/shell";
 
+const JIRA_ENV_VARS = ["MARCODE_JIRA_REDIRECT_URI", "MARCODE_JIRA_TOKEN_PROXY_URL"] as const;
+
 export function syncShellEnvironment(
   env: NodeJS.ProcessEnv = process.env,
   options: {
@@ -21,6 +23,7 @@ export function syncShellEnvironment(
     const shellEnvironment = (options.readEnvironment ?? readEnvironmentFromLoginShell)(shell, [
       "PATH",
       "SSH_AUTH_SOCK",
+      ...JIRA_ENV_VARS,
     ]);
 
     if (shellEnvironment.PATH) {
@@ -29,6 +32,12 @@ export function syncShellEnvironment(
 
     if (!env.SSH_AUTH_SOCK && shellEnvironment.SSH_AUTH_SOCK) {
       env.SSH_AUTH_SOCK = shellEnvironment.SSH_AUTH_SOCK;
+    }
+
+    for (const name of JIRA_ENV_VARS) {
+      if (!env[name] && shellEnvironment[name]) {
+        env[name] = shellEnvironment[name];
+      }
     }
   } catch {
     // Keep inherited environment if shell lookup fails.

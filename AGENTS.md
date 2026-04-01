@@ -162,8 +162,25 @@ MarCode supports read-only Jira Cloud integration via OAuth 2.0 (3LO) with PKCE.
 
 ### Configuration
 
-- `MARCODE_JIRA_CLIENT_ID` env var — Atlassian OAuth app client ID (required to enable Jira)
-- Board selection stored per project via `jiraBoard` field on `OrchestrationProject`
+Jira integration requires OAuth 2.0 credentials from Atlassian. Set these environment variables to enable Jira:
+
+- `MARCODE_JIRA_CLIENT_ID` — Atlassian OAuth app client ID (required to enable Jira)
+- `MARCODE_JIRA_CLIENT_SECRET` — OAuth app client secret (required for token exchange)
+- `MARCODE_JIRA_REDIRECT_URI` — OAuth redirect URI (defaults to `http://localhost:{port}/api/jira/callback` if not set)
+
+**Setup Steps:**
+
+1. Create an OAuth app at [Atlassian Developer Console](https://developer.atlassian.com/console/myapps/)
+2. Configure the app with:
+   - Redirect URL: `http://localhost:PORT/api/jira/callback` (for development) or your production domain
+   - Scopes: `read:jira-work`, `read:jira-user`, `read:account` (read-only access)
+3. Copy the Client ID and Client Secret and set them as environment variables
+4. In the released desktop app, set environment variables via:
+   - **macOS/Linux:** Set in shell profile (`.zshrc`, `.bashrc`) before launching the app
+   - **Windows:** Set via System Properties > Environment Variables
+   - **Or:** Create a `.env` file in the MarCode state directory (`~/.marcode/.env` on Unix, `%APPDATA%\marcode\.env` on Windows)
+
+Board selection stored per project via `jiraBoard` field on `OrchestrationProject`
 
 ### Composer Integration
 

@@ -1,6 +1,7 @@
 import {
   type ApprovalRequestId,
   DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_PROVIDER_KIND,
   type ClaudeCodeEffort,
   type MessageId,
   type ModelSelection,
@@ -440,6 +441,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const planSidebarOpenOnNextThreadRef = useRef(false);
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [composerHighlightedItemId, setComposerHighlightedItemId] = useState<string | null>(null);
+  const [draftAdditionalDirectories, setDraftAdditionalDirectories] = useState<string[]>([]);
   const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
   const [pendingPullRequestSetupRequest, setPendingPullRequestSetupRequest] =
@@ -587,13 +589,20 @@ export default function ChatView({ threadId }: ChatViewProps) {
             threadId,
             draftThread,
             fallbackDraftProject?.defaultModelSelection ?? {
-              provider: "codex",
-              model: DEFAULT_MODEL_BY_PROVIDER.codex,
+              provider: DEFAULT_PROVIDER_KIND,
+              model: DEFAULT_MODEL_BY_PROVIDER[DEFAULT_PROVIDER_KIND],
             },
             localDraftError,
+            draftAdditionalDirectories,
           )
         : undefined,
-    [draftThread, fallbackDraftProject?.defaultModelSelection, localDraftError, threadId],
+    [
+      draftAdditionalDirectories,
+      draftThread,
+      fallbackDraftProject?.defaultModelSelection,
+      localDraftError,
+      threadId,
+    ],
   );
   const activeThread = serverThread ?? localDraftThread;
   // Keep stream-heavy timeline rendering at deferred priority so the composer
@@ -2979,7 +2988,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         model:
           selectedModel ||
           activeProject.defaultModelSelection?.model ||
-          DEFAULT_MODEL_BY_PROVIDER.codex,
+          DEFAULT_MODEL_BY_PROVIDER[selectedProvider],
         ...(selectedModelSelection.options ? { options: selectedModelSelection.options } : {}),
       };
 
@@ -2998,6 +3007,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
           createdAt: activeThread.createdAt,
         });
         createdServerThreadForLocalDraft = true;
+
+        if (draftAdditionalDirectories.length > 0) {
+          await api.orchestration.dispatchCommand({
+            type: "thread.meta.update",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            additionalDirectories: draftAdditionalDirectories,
+          });
+          setDraftAdditionalDirectories([]);
+        }
       }
 
       let setupScript: ProjectScript | null = null;
@@ -4266,7 +4285,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                           "flex min-w-0 flex-1 items-center",
                           isComposerFooterCompact
                             ? "gap-1 overflow-hidden"
-                            : "gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:min-w-max sm:overflow-visible",
+                            : "gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                         )}
                       >
                         {/* Provider/model picker */}
@@ -4300,14 +4319,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               onTogglePlanSidebar={togglePlanSidebar}
                               onToggleRuntimeMode={toggleRuntimeMode}
                             />
-                            {isServerThread ? (
-                              <DirectoryPickerPopover
-                                threadId={activeThread.id}
-                                projectCwd={gitCwd}
-                                additionalDirectories={activeThread.additionalDirectories}
-                                disabled={isConnecting}
-                              />
-                            ) : null}
+                            <DirectoryPickerPopover
+                              threadId={activeThread.id}
+                              projectCwd={gitCwd}
+                              additionalDirectories={activeThread.additionalDirectories}
+                              disabled={isConnecting}
+                              onLocalDirectoriesChange={
+                                isLocalDraftThread ? setDraftAdditionalDirectories : undefined
+                              }
+                            />
                           </>
                         ) : (
                           <>
@@ -4400,20 +4420,19 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               </>
                             ) : null}
 
-                            {isServerThread ? (
-                              <>
-                                <Separator
-                                  orientation="vertical"
-                                  className="mx-0.5 hidden h-4 sm:block"
-                                />
-                                <DirectoryPickerPopover
-                                  threadId={activeThread.id}
-                                  projectCwd={gitCwd}
-                                  additionalDirectories={activeThread.additionalDirectories}
-                                  disabled={isConnecting}
-                                />
-                              </>
-                            ) : null}
+                            <Separator
+                              orientation="vertical"
+                              className="mx-0.5 hidden h-4 sm:block"
+                            />
+                            <DirectoryPickerPopover
+                              threadId={activeThread.id}
+                              projectCwd={gitCwd}
+                              additionalDirectories={activeThread.additionalDirectories}
+                              disabled={isConnecting}
+                              onLocalDirectoriesChange={
+                                isLocalDraftThread ? setDraftAdditionalDirectories : undefined
+                              }
+                            />
                           </>
                         )}
                       </div>

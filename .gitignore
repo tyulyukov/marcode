@@ -21,3 +21,8 @@ apps/web/src/components/__screenshots__
 .vitest-*
 __screenshots__/
 .tanstack
+
+# Next.js
+.next
+out
+next-env.d.ts

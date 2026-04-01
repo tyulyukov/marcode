@@ -12,14 +12,14 @@
     "MARCODE_HOME",
     "MARCODE_AUTH_TOKEN",
     "MARCODE_DESKTOP_WS_URL",
-    "MARCODE_JIRA_CLIENT_ID",
-    "MARCODE_JIRA_CLIENT_SECRET",
-    "MARCODE_JIRA_REDIRECT_URI"
+    "MARCODE_JIRA_REDIRECT_URI",
+    "MARCODE_JIRA_TOKEN_PROXY_URL",
+    "JIRA_CLIENT_SECRET"
   ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "dist-electron/**"]
+      "outputs": ["dist/**", "dist-electron/**", ".next/**"]
     },
     "dev": {
       "dependsOn": ["@marcode/contracts#build"],

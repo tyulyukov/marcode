@@ -220,20 +220,24 @@ function listPullRequestsViaGh(
       input.state === "all"
         ? "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt"
         : "number,title,url,baseRefName,headRefName";
+    const args = [
+      "pr",
+      "list",
+      "--head",
+      input.headSelector,
+      "--state",
+      input.state === "all" ? "all" : "open",
+      "--limit",
+      String(input.limit ?? 1),
+      "--json",
+      jsonFields,
+    ];
+    if (input.repo) {
+      args.push("--repo", input.repo);
+    }
     return run({
       cwd: input.cwd,
-      args: [
-        "pr",
-        "list",
-        "--head",
-        input.headSelector,
-        "--state",
-        input.state === "all" ? "all" : "open",
-        "--limit",
-        String(input.limit ?? 1),
-        "--json",
-        jsonFields,
-      ],
+      args,
     }).pipe(
       Effect.map((result) => result.stdout.trim()),
       Effect.flatMap((raw) =>

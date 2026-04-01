@@ -142,20 +142,24 @@ function normalizeMrSummary(
 }
 
 export function makeGitLabCliShape(): GitHostCliShape {
-  const listPullRequests: GitHostCliShape["listPullRequests"] = (input) =>
-    executeGlab({
+  const listPullRequests: GitHostCliShape["listPullRequests"] = (input) => {
+    const args = [
+      "mr",
+      "list",
+      "--source-branch",
+      input.headSelector,
+      ...(input.state === "all" ? ["--all"] : []),
+      "--per-page",
+      String(input.limit ?? 20),
+      "-F",
+      "json",
+    ];
+    if (input.repo) {
+      args.push("--repo", input.repo);
+    }
+    return executeGlab({
       cwd: input.cwd,
-      args: [
-        "mr",
-        "list",
-        "--source-branch",
-        input.headSelector,
-        ...(input.state === "all" ? ["--all"] : []),
-        "--per-page",
-        String(input.limit ?? 20),
-        "-F",
-        "json",
-      ],
+      args,
     }).pipe(
       Effect.map((result) => result.stdout.trim()),
       Effect.flatMap((raw) => {
@@ -171,6 +175,7 @@ export function makeGitLabCliShape(): GitHostCliShape {
       }),
       Effect.map((mergeRequests) => mergeRequests.map(normalizeMrSummary)),
     );
+  };
 
   const getPullRequest: GitHostCliShape["getPullRequest"] = (input) =>
     executeGlab({
