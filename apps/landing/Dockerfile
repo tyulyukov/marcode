@@ -16,14 +16,14 @@ FROM oven/bun:1.3.9 AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/landing/node_modules ./apps/landing/node_modules
 COPY apps/landing ./apps/landing
-COPY package.json ./
+COPY package.json tsconfig.base.json ./
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-ENV PATH="/app/node_modules/.bin:$PATH"
-RUN cd apps/landing && next build
+RUN cd apps/landing && ./node_modules/.bin/next build
 
 FROM oven/bun:1.3.9 AS runner
 WORKDIR /app
