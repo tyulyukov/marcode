@@ -1234,39 +1234,12 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       }
 
       const hasNoLocalDelta = details.aheadCount === 0 && details.behindCount === 0;
-      if (hasNoLocalDelta) {
-        if (details.hasUpstream) {
-          return {
-            status: "skipped_up_to_date" as const,
-            branch,
-            ...(details.upstreamRef ? { upstreamBranch: details.upstreamRef } : {}),
-          };
-        }
-
-        const comparableBaseBranch = yield* resolveBaseBranchForNoUpstream(cwd, branch).pipe(
-          Effect.catch(() => Effect.succeed(null)),
-        );
-        if (comparableBaseBranch) {
-          const publishRemoteName = yield* resolvePushRemoteName(cwd, branch).pipe(
-            Effect.catch(() => Effect.succeed(null)),
-          );
-          if (!publishRemoteName) {
-            return {
-              status: "skipped_up_to_date" as const,
-              branch,
-            };
-          }
-
-          const hasRemoteBranch = yield* remoteBranchExists(cwd, publishRemoteName, branch).pipe(
-            Effect.catch(() => Effect.succeed(false)),
-          );
-          if (hasRemoteBranch) {
-            return {
-              status: "skipped_up_to_date" as const,
-              branch,
-            };
-          }
-        }
+      if (hasNoLocalDelta && details.hasUpstream) {
+        return {
+          status: "skipped_up_to_date" as const,
+          branch,
+          ...(details.upstreamRef ? { upstreamBranch: details.upstreamRef } : {}),
+        };
       }
 
       if (!details.hasUpstream) {
