@@ -1,12 +1,6 @@
 # Contributing
 
-## Read This First
-
-We are not actively accepting contributions right now.
-
-You can still open an issue or PR, but please do so knowing there is a high chance we close it, defer it forever, or never look at it.
-
-If that sounds annoying, that is because it is. This project is still early and we are trying to keep scope, quality, and direction under control.
+We welcome contributions! MarCode is still early, so please read the guidelines below to keep things smooth.
 
 PRs are automatically labeled with a `vouch:*` trust status and a `size:*` diff size based on changed lines.
 
@@ -16,31 +10,25 @@ If you are an external contributor, expect `vouch:unvouched` until we explicitly
 
 Small, focused bug fixes.
 
-Small reliability fixes.
-
-Small performance improvements.
+Reliability and performance improvements.
 
 Tightly scoped maintenance work that clearly improves the project without changing its direction.
 
+New integrations or features that align with the project's goals (discuss in an issue first).
+
 ## What We Are Least Likely To Accept
 
-Large PRs.
+Large, unfocused PRs that mix unrelated changes.
 
-Drive-by feature work.
-
-Opinionated rewrites.
+Opinionated rewrites without prior discussion.
 
 Anything that expands product scope without us asking for it first.
 
-If you open a 1,000+ line PR full of new features, we will probably close it quickly and remember that you ignored the clearly written instructions.
+## Opening A PR
 
-## If You Still Want To Open A PR
+Keep it small and focused.
 
-Keep it small.
-
-Explain exactly what changed.
-
-Explain exactly why the change should exist.
+Explain exactly what changed and why the change should exist.
 
 Do not mix unrelated fixes together.
 
@@ -54,12 +42,8 @@ If we have to guess what changed, we are much less likely to review it.
 
 If you are thinking about a non-trivial change, open an issue first.
 
-That still does not mean we will want the PR, but it gives you a chance to avoid wasting your time.
+This gives you a chance to align with the project direction before investing time.
 
 ## Be Realistic
 
-Opening a PR does not create an obligation on our side.
-
-We may close it. We may ignore it. We may ask you to shrink it. We may reimplement the idea ourselves later.
-
-If you are fine with that, proceed.
+We may close, defer, or ask you to rework a PR. We may also reimplement the idea ourselves later. That's the nature of early-stage projects — please don't take it personally.

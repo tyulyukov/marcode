@@ -13,7 +13,7 @@ Methods mirror the `NativeApi` interface defined in `@marcode/contracts`:
 - `providers.respondToRequest`, `providers.stopSession`
 - `shell.openInEditor`, `server.getConfig`
 
-Codex is the only implemented provider. `claudeCode` is reserved in contracts/UI.
+Claude Code is the default provider. Codex is also supported as an alternative provider.
 
 ## Client transport
 
