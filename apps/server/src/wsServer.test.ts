@@ -744,8 +744,8 @@ describe("WebSocket Server", () => {
           workspaceRoot: "/test/bootstrap-workspace",
           title: "bootstrap-workspace",
           defaultModelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
+            provider: "claudeAgent",
+            model: "claude-opus-4-6",
           },
         }),
       ]),
@@ -757,8 +757,8 @@ describe("WebSocket Server", () => {
           projectId: bootstrapProjectId,
           title: "New thread",
           modelSelection: {
-            provider: "codex",
-            model: "gpt-5-codex",
+            provider: "claudeAgent",
+            model: "claude-opus-4-6",
           },
           branch: null,
           worktreePath: null,
