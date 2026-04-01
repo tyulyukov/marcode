@@ -22,7 +22,8 @@ COPY package.json ./
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN cd apps/landing && bun --bun run build
+ENV PATH="/app/node_modules/.bin:$PATH"
+RUN cd apps/landing && next build
 
 FROM oven/bun:1.3.9 AS runner
 WORKDIR /app
