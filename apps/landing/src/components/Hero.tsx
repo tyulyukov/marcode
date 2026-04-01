@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { DetectedOS } from "~/lib/detectOS";
 import { DownloadButton } from "./DownloadButton";
 
@@ -10,6 +11,15 @@ export function Hero({ os }: { os: DetectedOS }) {
       <div className="pointer-events-none absolute left-1/2 top-1/3 size-72 -translate-x-1/2 rounded-full bg-dream-shift/5 blur-3xl" />
 
       <div className="relative z-10 flex max-w-3xl flex-col items-center gap-8 text-center">
+        <Image
+          src="/marcode-logo.png"
+          alt="MarCode"
+          width={80}
+          height={80}
+          className="rounded-2xl"
+          priority
+        />
+
         <h1
           className="text-5xl font-medium tracking-tight sm:text-6xl lg:text-7xl"
           style={{ letterSpacing: "-0.02em" }}
