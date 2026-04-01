@@ -394,12 +394,17 @@ const TimelineRowContent = memo(function TimelineRowContent({
         })()}
 
       {row.kind === "proposed-plan" && (
-        <div className="min-w-0 px-1 py-0.5">
+        <div className="group min-w-0 px-1 py-0.5">
           <ProposedPlanCard
             planMarkdown={row.proposedPlan.planMarkdown}
             cwd={markdownCwd}
             workspaceRoot={workspaceRoot}
           />
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+              <MessageCopyButton text={row.proposedPlan.planMarkdown} />
+            </div>
+          </div>
         </div>
       )}
 
