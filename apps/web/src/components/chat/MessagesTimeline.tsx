@@ -306,7 +306,7 @@ const TimelineRowContent = memo(function TimelineRowContent({
                   <span className="h-px flex-1 bg-border" />
                 </div>
               )}
-              <div className="min-w-0 px-1 py-0.5">
+              <div className="group min-w-0 px-1 py-0.5">
                 <ChatMarkdown
                   text={messageText}
                   cwd={markdownCwd}
@@ -368,33 +368,43 @@ const TimelineRowContent = memo(function TimelineRowContent({
                     </div>
                   );
                 })()}
-                <p className="mt-1.5 text-[10px] text-muted-foreground/30">
-                  {row.message.streaming ? (
-                    <StreamingMessageMeta
-                      createdAt={row.message.createdAt}
-                      durationStart={row.durationStart}
-                      timestampFormat={timestampFormat}
-                    />
-                  ) : (
-                    formatMessageMeta(
-                      row.message.createdAt,
-                      formatElapsed(row.durationStart, row.message.completedAt),
-                      timestampFormat,
-                    )
-                  )}
-                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+                    <MessageCopyButton text={messageText} />
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/30">
+                    {row.message.streaming ? (
+                      <StreamingMessageMeta
+                        createdAt={row.message.createdAt}
+                        durationStart={row.durationStart}
+                        timestampFormat={timestampFormat}
+                      />
+                    ) : (
+                      formatMessageMeta(
+                        row.message.createdAt,
+                        formatElapsed(row.durationStart, row.message.completedAt),
+                        timestampFormat,
+                      )
+                    )}
+                  </p>
+                </div>
               </div>
             </>
           );
         })()}
 
       {row.kind === "proposed-plan" && (
-        <div className="min-w-0 px-1 py-0.5">
+        <div className="group min-w-0 px-1 py-0.5">
           <ProposedPlanCard
             planMarkdown={row.proposedPlan.planMarkdown}
             cwd={markdownCwd}
             workspaceRoot={workspaceRoot}
           />
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+              <MessageCopyButton text={row.proposedPlan.planMarkdown} />
+            </div>
+          </div>
         </div>
       )}
 
