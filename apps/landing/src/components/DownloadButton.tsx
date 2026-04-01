@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { type DetectedOS, OS_LABELS, detectOS } from "~/lib/detectOS";
-import { getDownloadUrl, RELEASES_URL } from "~/lib/github";
+import { fetchLatestRelease, findAssetUrl, RELEASES_URL } from "~/lib/github";
 
 function OSIcon({ os }: { os: DetectedOS }) {
   switch (os) {
@@ -18,6 +18,8 @@ function OSIcon({ os }: { os: DetectedOS }) {
 
 export function DownloadButton({ serverOS }: { serverOS: DetectedOS }) {
   const [os, setOS] = useState<DetectedOS>(serverOS);
+  const [downloadUrl, setDownloadUrl] = useState<string>(RELEASES_URL);
+  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     const clientOS = detectOS(navigator.userAgent);
@@ -26,7 +28,31 @@ export function DownloadButton({ serverOS }: { serverOS: DetectedOS }) {
     }
   }, []);
 
-  const downloadUrl = getDownloadUrl(os);
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchLatestRelease()
+      .then((release) => {
+        if (cancelled) return;
+
+        if (release.tag_name) {
+          setVersion(release.tag_name);
+        }
+
+        const url = findAssetUrl(release, os);
+        setDownloadUrl(url ?? RELEASES_URL);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDownloadUrl(RELEASES_URL);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [os]);
+
   const label = OS_LABELS[os];
 
   return (
@@ -45,6 +71,12 @@ export function DownloadButton({ serverOS }: { serverOS: DetectedOS }) {
         <Badge variant="outline" className="text-xs">
           Free &amp; Open Source
         </Badge>
+        {version && (
+          <>
+            <span>&middot;</span>
+            <span className="text-xs">{version}</span>
+          </>
+        )}
         <span>&middot;</span>
         <a href={RELEASES_URL} className="underline-offset-4 hover:text-foreground hover:underline">
           All platforms
