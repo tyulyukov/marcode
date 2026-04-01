@@ -861,6 +861,23 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       );
     }
 
+    yield* gitCore
+      .execute({
+        operation: "runPrStep.verifyRemoteBranch",
+        cwd,
+        args: ["ls-remote", "--heads", "origin", branch],
+        timeoutMs: 10_000,
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.flatMap((result) => {
+          if (result.code === 0 && result.stdout.includes(branch)) {
+            return Effect.void;
+          }
+          return gitCore.pushCurrentBranch(cwd, branch).pipe(Effect.asVoid);
+        }),
+      );
+
     const headContext = yield* resolveBranchHeadContext(cwd, {
       branch,
       upstreamRef: details.upstreamRef,
@@ -894,6 +911,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       diffPatch: limitContext(rangeContext.diffPatch, 60_000),
       modelSelection,
     });
+
+    // Add delay before first attempt to allow GitHub backend to sync after push
+    yield* Effect.sleep(Duration.millis(500));
 
     yield* gitHostCli
       .createPullRequest({
