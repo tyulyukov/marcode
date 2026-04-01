@@ -9,7 +9,12 @@ COPY apps/landing/package.json ./apps/landing/package.json
 # Stub every other workspace package.json so the lockfile resolves.
 # --ignore-scripts avoids building native add-ons (node-pty in apps/server).
 RUN mkdir -p apps/server apps/web apps/desktop packages/contracts packages/shared scripts \
-    && echo '{"name":"marcode","private":true}' | tee apps/server/package.json apps/web/package.json apps/desktop/package.json packages/contracts/package.json packages/shared/package.json scripts/package.json > /dev/null \
+    && echo '{"name":"marcode","private":true}' > apps/server/package.json \
+    && echo '{"name":"@marcode/web","private":true}' > apps/web/package.json \
+    && echo '{"name":"@marcode/desktop","private":true}' > apps/desktop/package.json \
+    && echo '{"name":"@marcode/contracts","private":true}' > packages/contracts/package.json \
+    && echo '{"name":"@marcode/shared","private":true}' > packages/shared/package.json \
+    && echo '{"name":"@marcode/scripts","private":true}' > scripts/package.json \
     && bun install --frozen-lockfile --ignore-scripts
 
 FROM base AS builder
