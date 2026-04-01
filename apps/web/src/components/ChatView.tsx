@@ -2848,7 +2848,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const imageAttachments = composerJiraTaskContextsSnapshot.flatMap((task) =>
         task.attachments
           .filter((att) => att.mimeType.startsWith("image/"))
-          .map((att) => ({ ...att, taskKey: task.issueKey })),
+          .map((att) => Object.assign(att, { taskKey: task.issueKey })),
       );
       if (imageAttachments.length === 0) return [];
       const origin = getServerHttpOrigin();
@@ -2867,8 +2867,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
               sizeBytes: att.size,
               dataUrl: await new Promise<string>((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result as string);
-                reader.onerror = () => reject(reader.error);
+                reader.addEventListener("load", () => resolve(reader.result as string));
+                reader.addEventListener("error", () => reject(reader.error));
                 reader.readAsDataURL(blob);
               }),
             };

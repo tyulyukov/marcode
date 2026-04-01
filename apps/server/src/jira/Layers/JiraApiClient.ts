@@ -2,15 +2,10 @@ import { Effect, Layer, Option } from "effect";
 import { ServerConfig } from "../../config";
 import type {
   JiraConnectionStatus,
-  JiraGetAttachmentInput,
   JiraGetAttachmentResult,
-  JiraGetIssueInput,
   JiraIssue,
-  JiraListBoardsInput,
   JiraListBoardsResult,
-  JiraListIssuesInput,
   JiraListIssuesResult,
-  JiraListSprintsInput,
   JiraListSprintsResult,
   JiraSite,
   JiraUser,
@@ -126,12 +121,15 @@ export const JiraApiClientLive = Layer.effect(
         >(response, "getAccessibleResources");
         return data.map((site) => {
           siteUrlByCloudId.set(site.id, site.url);
-          return {
+          const result: Record<string, string> = {
             cloudId: site.id,
             name: site.name,
             url: site.url,
-            ...(site.avatarUrl ? { avatarUrl: site.avatarUrl } : {}),
-          } as unknown as JiraSite;
+          };
+          if (site.avatarUrl) {
+            result.avatarUrl = site.avatarUrl;
+          }
+          return result as unknown as JiraSite;
         });
       },
     );

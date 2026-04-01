@@ -46,7 +46,7 @@ export function UserMessageJiraContextLabel({
       {expanded && (
         <div className="bg-muted/50 mt-1 rounded-md border p-2 text-xs">
           {contexts.map((ctx, idx) => (
-            <div key={idx} className={idx > 0 ? "border-t pt-2 mt-2" : ""}>
+            <div key={ctx.header} className={idx > 0 ? "border-t pt-2 mt-2" : ""}>
               <div className="font-medium">{ctx.header}</div>
               {ctx.body && (
                 <pre className="text-muted-foreground mt-1 whitespace-pre-wrap">{ctx.body}</pre>
