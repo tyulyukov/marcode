@@ -861,7 +861,31 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       );
     }
 
-    yield* gitCore.pushCurrentBranch(cwd, branch).pipe(Effect.asVoid);
+    const pushResult = yield* gitCore.pushCurrentBranch(cwd, branch);
+
+    if (pushResult.status === "skipped_up_to_date") {
+      yield* Effect.gen(function* () {
+        const lsRemote = yield* gitCore.execute({
+          operation: "runPrStep.verifyRemoteBranch",
+          cwd,
+          args: ["ls-remote", "--heads", "origin", branch],
+          timeoutMs: 10_000,
+          allowNonZeroExit: true,
+        });
+
+        if (lsRemote.code !== 0 || !lsRemote.stdout.includes(branch)) {
+          yield* gitCore
+            .execute({
+              operation: "runPrStep.pushMissingBranch",
+              cwd,
+              args: ["push", "origin", `HEAD:refs/heads/${branch}`],
+              timeoutMs: 30_000,
+            })
+            .pipe(Effect.asVoid);
+          yield* Effect.sleep(Duration.seconds(2));
+        }
+      }).pipe(Effect.ignoreCause({ log: true }));
+    }
 
     const headContext = yield* resolveBranchHeadContext(cwd, {
       branch,

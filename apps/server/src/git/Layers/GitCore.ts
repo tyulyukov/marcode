@@ -532,6 +532,18 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
       const truncateOutputAtMaxBytes = input.truncateOutputAtMaxBytes ?? false;
 
+      yield* fileSystem.access(commandInput.cwd).pipe(
+        Effect.mapError(
+          () =>
+            new GitCommandError({
+              operation: commandInput.operation,
+              command: quoteGitCommand(commandInput.args),
+              cwd: commandInput.cwd,
+              detail: `Working directory does not exist: ${commandInput.cwd}`,
+            }),
+        ),
+      );
+
       const runGitCommand = Effect.fn("runGitCommand")(function* () {
         const trace2Monitor = yield* createTrace2Monitor(commandInput, input.progress).pipe(
           Effect.provideService(Path.Path, path),
