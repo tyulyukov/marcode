@@ -1269,6 +1269,12 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       if (!details.hasUpstream) {
         const publishRemoteName = yield* resolvePushRemoteName(cwd, branch);
         if (!publishRemoteName) {
+          if (hasNoLocalDelta) {
+            return {
+              status: "skipped_up_to_date" as const,
+              branch,
+            };
+          }
           return yield* createGitCommandError(
             "GitCore.pushCurrentBranch",
             cwd,

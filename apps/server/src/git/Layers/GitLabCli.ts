@@ -203,23 +203,28 @@ export function makeGitLabCliShape(): GitHostCliShape {
       }),
     ) as Effect.Effect<HostRepositoryCloneUrls, GitHostCliError>;
 
-  const createPullRequest: GitHostCliShape["createPullRequest"] = (input) =>
-    executeGlab({
+  const createPullRequest: GitHostCliShape["createPullRequest"] = (input) => {
+    const args = [
+      "mr",
+      "create",
+      "--target-branch",
+      input.baseBranch,
+      "--source-branch",
+      input.headSelector,
+      "--title",
+      input.title,
+      "--description",
+      input.body,
+      "--no-editor",
+    ];
+    if (input.repo) {
+      args.push("--repo", input.repo);
+    }
+    return executeGlab({
       cwd: input.cwd,
-      args: [
-        "mr",
-        "create",
-        "--target-branch",
-        input.baseBranch,
-        "--source-branch",
-        input.headSelector,
-        "--title",
-        input.title,
-        "--description",
-        input.body,
-        "--no-editor",
-      ],
+      args,
     }).pipe(Effect.asVoid);
+  };
 
   const getDefaultBranch: GitHostCliShape["getDefaultBranch"] = (input) =>
     executeGlab({

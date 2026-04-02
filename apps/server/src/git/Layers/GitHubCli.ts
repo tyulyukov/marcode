@@ -307,22 +307,27 @@ const makeGitHubCli = Effect.sync(() => {
         ),
         Effect.map(normalizeRepositoryCloneUrls),
       ),
-    createPullRequest: (input) =>
-      executeGh({
+    createPullRequest: (input) => {
+      const args = [
+        "pr",
+        "create",
+        "--base",
+        input.baseBranch,
+        "--head",
+        input.headSelector,
+        "--title",
+        input.title,
+        "--body-file",
+        input.bodyFile,
+      ];
+      if (input.repo) {
+        args.push("--repo", input.repo);
+      }
+      return executeGh({
         cwd: input.cwd,
-        args: [
-          "pr",
-          "create",
-          "--base",
-          input.baseBranch,
-          "--head",
-          input.headSelector,
-          "--title",
-          input.title,
-          "--body-file",
-          input.bodyFile,
-        ],
-      }).pipe(Effect.asVoid),
+        args,
+      }).pipe(Effect.asVoid);
+    },
     getDefaultBranch: (input) =>
       executeGh({
         cwd: input.cwd,
@@ -353,14 +358,16 @@ export function toGitHostCliShape(github: GitHubCliShape): GitHostCliShape {
     getRepositoryCloneUrls: (input) => github.getRepositoryCloneUrls(input),
     createPullRequest: (input) => {
       const bodyFile = writeTempBodyFile(input.body);
+      const ghInput = {
+        cwd: input.cwd,
+        baseBranch: input.baseBranch,
+        headSelector: input.headSelector,
+        title: input.title,
+        bodyFile,
+        ...(input.repo ? { repo: input.repo } : {}),
+      };
       return github
-        .createPullRequest({
-          cwd: input.cwd,
-          baseBranch: input.baseBranch,
-          headSelector: input.headSelector,
-          title: input.title,
-          bodyFile,
-        })
+        .createPullRequest(ghInput)
         .pipe(Effect.ensuring(Effect.sync(() => removeTempBodyFile(bodyFile))));
     },
     getDefaultBranch: (input) => github.getDefaultBranch(input),

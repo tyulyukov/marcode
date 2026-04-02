@@ -493,6 +493,25 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const readConfigValueNullable = (cwd: string, key: string) =>
     gitCore.readConfigValue(cwd, key).pipe(Effect.catch(() => Effect.succeed(null)));
 
+  const resolveRemoteUrl = (cwd: string, remoteName: string) =>
+    readConfigValueNullable(cwd, `remote.${remoteName}.url`).pipe(
+      Effect.flatMap((url) => {
+        if (url) return Effect.succeed(url);
+        return gitCore
+          .execute({
+            operation: "resolveRemoteUrl.getUrl",
+            cwd,
+            args: ["remote", "get-url", remoteName],
+            allowNonZeroExit: true,
+            timeoutMs: 5_000,
+          })
+          .pipe(
+            Effect.map((r) => (r.code === 0 ? r.stdout.trim() || null : null)),
+            Effect.catch(() => Effect.succeed(null)),
+          );
+      }),
+    );
+
   const resolveRemoteRepositoryContext = Effect.fn("resolveRemoteRepositoryContext")(function* (
     cwd: string,
     remoteName: string | null,
@@ -504,7 +523,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       };
     }
 
-    const remoteUrl = yield* readConfigValueNullable(cwd, `remote.${remoteName}.url`);
+    const remoteUrl = yield* resolveRemoteUrl(cwd, remoteName);
     const repositoryNameWithOwner = parseRepositoryNameWithOwnerFromRemoteUrl(remoteUrl);
     return {
       repositoryNameWithOwner,
@@ -841,6 +860,30 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     };
   });
 
+  const verifyRemoteBranchExists = Effect.fn("verifyRemoteBranchExists")(function* (
+    cwd: string,
+    branch: string,
+  ) {
+    const lsRemote = yield* gitCore.execute({
+      operation: "verifyRemoteBranchExists.lsRemote",
+      cwd,
+      args: ["ls-remote", "--heads", "origin", branch],
+      timeoutMs: 10_000,
+      allowNonZeroExit: true,
+    });
+
+    if (lsRemote.code !== 0 || !lsRemote.stdout.includes(branch)) {
+      yield* gitCore
+        .execute({
+          operation: "verifyRemoteBranchExists.push",
+          cwd,
+          args: ["push", "origin", `HEAD:refs/heads/${branch}`],
+          timeoutMs: 30_000,
+        })
+        .pipe(Effect.asVoid);
+    }
+  });
+
   const runPrStep = Effect.fn("runPrStep")(function* (
     modelSelection: ModelSelection,
     cwd: string,
@@ -864,27 +907,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     const pushResult = yield* gitCore.pushCurrentBranch(cwd, branch);
 
     if (pushResult.status === "skipped_up_to_date") {
-      yield* Effect.gen(function* () {
-        const lsRemote = yield* gitCore.execute({
-          operation: "runPrStep.verifyRemoteBranch",
-          cwd,
-          args: ["ls-remote", "--heads", "origin", branch],
-          timeoutMs: 10_000,
-          allowNonZeroExit: true,
-        });
-
-        if (lsRemote.code !== 0 || !lsRemote.stdout.includes(branch)) {
-          yield* gitCore
-            .execute({
-              operation: "runPrStep.pushMissingBranch",
-              cwd,
-              args: ["push", "origin", `HEAD:refs/heads/${branch}`],
-              timeoutMs: 30_000,
-            })
-            .pipe(Effect.asVoid);
-          yield* Effect.sleep(Duration.seconds(2));
-        }
-      }).pipe(Effect.ignoreCause({ log: true }));
+      yield* verifyRemoteBranchExists(cwd, branch).pipe(Effect.ignoreCause({ log: true }));
     }
 
     const headContext = yield* resolveBranchHeadContext(cwd, {
@@ -892,11 +915,15 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       upstreamRef: details.upstreamRef,
     });
 
-    const existing = yield* findOpenPr(
-      cwd,
-      headContext.headSelectors,
-      headContext.originRepositoryNameWithOwner,
-    );
+    let originRepo = headContext.originRepositoryNameWithOwner;
+    if (!originRepo) {
+      const fallbackUrl = yield* resolveRemoteUrl(cwd, "origin").pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      );
+      originRepo = parseRepositoryNameWithOwnerFromRemoteUrl(fallbackUrl);
+    }
+
+    const existing = yield* findOpenPr(cwd, headContext.headSelectors, originRepo);
     if (existing) {
       return {
         status: "opened_existing" as const,
@@ -928,9 +955,6 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       modelSelection,
     });
 
-    // Add delay before first attempt to allow GitHub backend to sync after push
-    yield* Effect.sleep(Duration.millis(500));
-
     yield* gitHostCli
       .createPullRequest({
         cwd,
@@ -938,6 +962,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         headSelector: headContext.preferredHeadSelector,
         title: generated.title,
         body: generated.body,
+        ...(originRepo ? { repo: originRepo } : {}),
       })
       .pipe(
         Effect.retry({
@@ -947,11 +972,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         }),
       );
 
-    const created = yield* findOpenPr(
-      cwd,
-      headContext.headSelectors,
-      headContext.originRepositoryNameWithOwner,
-    );
+    const created = yield* findOpenPr(cwd, headContext.headSelectors, originRepo);
     if (!created) {
       return {
         status: "created" as const,

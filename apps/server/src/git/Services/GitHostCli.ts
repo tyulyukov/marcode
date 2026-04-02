@@ -62,6 +62,7 @@ export interface GitHostCliShape {
     readonly headSelector: string;
     readonly title: string;
     readonly body: string;
+    readonly repo?: string;
   }) => Effect.Effect<void, GitHostCliError>;
 
   readonly getDefaultBranch: (input: {
