@@ -61,6 +61,7 @@ import {
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
 import { InlineDiffPreview } from "./InlineDiffPreview";
+import { FileChangeCard } from "./FileChangeCard";
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 
@@ -71,6 +72,7 @@ const DIFF_PREVIEW_LINE_HEIGHT = 18;
 const DIFF_PREVIEW_MAX_HEIGHT = 260;
 const DIFF_HUNK_SPACING = 8;
 const AGENT_GROUP_HEADER_HEIGHT = 32;
+const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
@@ -96,6 +98,12 @@ type TimelineRow =
       id: string;
       createdAt: string;
       proposedPlan: TimelineProposedPlan;
+    }
+  | {
+      kind: "file-change";
+      id: string;
+      createdAt: string;
+      entry: TimelineWorkEntry;
     }
   | { kind: "working"; id: string; createdAt: string | null };
 
@@ -202,6 +210,8 @@ const TimelineRowContent = memo(function TimelineRowContent({
             </div>
           );
         })()}
+
+      {row.kind === "file-change" && <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} />}
 
       {row.kind === "message" &&
         row.message.role === "user" &&
@@ -551,20 +561,51 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       }
 
       if (timelineEntry.kind === "work") {
-        const groupedEntries = [timelineEntry.entry];
-        let cursor = index + 1;
+        let pendingWork: TimelineWorkEntry[] = [];
+        let pendingWorkFirstId: string | null = null;
+        let pendingWorkFirstCreatedAt: string | null = null;
+        let cursor = index;
+
+        const flushPendingWork = () => {
+          if (pendingWork.length > 0) {
+            nextRows.push({
+              kind: "work",
+              id: pendingWorkFirstId!,
+              createdAt: pendingWorkFirstCreatedAt!,
+              groupedEntries: pendingWork,
+            });
+            pendingWork = [];
+            pendingWorkFirstId = null;
+            pendingWorkFirstCreatedAt = null;
+          }
+        };
+
         while (cursor < timelineEntries.length) {
-          const nextEntry = timelineEntries[cursor];
-          if (!nextEntry || nextEntry.kind !== "work") break;
-          groupedEntries.push(nextEntry.entry);
+          const current = timelineEntries[cursor];
+          if (!current || current.kind !== "work") break;
+
+          const isFileChange =
+            current.entry.itemType === "file_change" &&
+            (current.entry.diffPreviews?.length ?? 0) > 0;
+
+          if (isFileChange) {
+            flushPendingWork();
+            nextRows.push({
+              kind: "file-change",
+              id: current.id,
+              createdAt: current.createdAt,
+              entry: current.entry,
+            });
+          } else {
+            if (pendingWork.length === 0) {
+              pendingWorkFirstId = current.id;
+              pendingWorkFirstCreatedAt = current.createdAt;
+            }
+            pendingWork.push(current.entry);
+          }
           cursor += 1;
         }
-        nextRows.push({
-          kind: "work",
-          id: timelineEntry.id,
-          createdAt: timelineEntry.createdAt,
-          groupedEntries,
-        });
+        flushPendingWork();
         index = cursor - 1;
         continue;
       }
@@ -677,6 +718,7 @@ function estimateRowHeight(
   if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries, showInlineDiffs);
   if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
   if (row.kind === "working") return 40;
+  if (row.kind === "file-change") return FILE_CHANGE_CARD_COLLAPSED_HEIGHT;
   return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
 }
 
