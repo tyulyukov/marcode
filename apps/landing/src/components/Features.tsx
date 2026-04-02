@@ -153,7 +153,7 @@ function FeatureCard({ feature, isHero }: { feature: Feature; isHero: boolean })
 
 export function Features() {
   return (
-    <section className="mx-auto max-w-5xl pr-6 pl-6 pt-24 pb-24">
+    <section className="mx-auto max-w-5xl px-6 pt-24 pb-24">
       <h2
         className="mb-12 text-center text-3xl font-medium tracking-tight sm:text-4xl"
         style={{ letterSpacing: "-0.02em" }}
@@ -161,18 +161,7 @@ export function Features() {
         Everything you need, <span className="text-muted-foreground">nothing you don&apos;t</span>
       </h2>
 
-      <div
-        className="grid gap-4"
-        style={{
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gridTemplateRows: "auto auto auto",
-          gridTemplateAreas: `
-            "hero hero git"
-            "hero hero term"
-            "fast safe jira"
-          `,
-        }}
-      >
+      <div className="bento-grid">
         {FEATURES.map((feature) => (
           <FeatureCard key={feature.title} feature={feature} isHero={feature.gridArea === "hero"} />
         ))}
