@@ -62,6 +62,7 @@ import {
 } from "./userMessageTerminalContexts";
 import { InlineDiffPreview } from "./InlineDiffPreview";
 import { FileChangeCard } from "./FileChangeCard";
+import { ExplorationCard } from "./ExplorationCard";
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 
@@ -73,6 +74,7 @@ const DIFF_PREVIEW_MAX_HEIGHT = 260;
 const DIFF_HUNK_SPACING = 8;
 const AGENT_GROUP_HEADER_HEIGHT = 32;
 const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
+const EXPLORATION_CARD_COLLAPSED_HEIGHT = 36;
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
@@ -104,6 +106,13 @@ type TimelineRow =
       id: string;
       createdAt: string;
       entry: TimelineWorkEntry;
+    }
+  | {
+      kind: "exploration";
+      id: string;
+      createdAt: string;
+      entries: TimelineWorkEntry[];
+      isLive: boolean;
     }
   | { kind: "working"; id: string; createdAt: string | null };
 
@@ -212,6 +221,8 @@ const TimelineRowContent = memo(function TimelineRowContent({
         })()}
 
       {row.kind === "file-change" && <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} />}
+
+      {row.kind === "exploration" && <ExplorationCard entries={row.entries} isLive={row.isLive} />}
 
       {row.kind === "message" &&
         row.message.role === "user" &&
@@ -564,6 +575,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         let pendingWork: TimelineWorkEntry[] = [];
         let pendingWorkFirstId: string | null = null;
         let pendingWorkFirstCreatedAt: string | null = null;
+        let pendingExploration: TimelineWorkEntry[] = [];
+        let pendingExplorationFirstId: string | null = null;
+        let pendingExplorationFirstCreatedAt: string | null = null;
         let cursor = index;
 
         const flushPendingWork = () => {
@@ -580,6 +594,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           }
         };
 
+        const flushPendingExploration = () => {
+          if (pendingExploration.length > 0) {
+            nextRows.push({
+              kind: "exploration",
+              id: pendingExplorationFirstId!,
+              createdAt: pendingExplorationFirstCreatedAt!,
+              entries: pendingExploration,
+              isLive: false,
+            });
+            pendingExploration = [];
+            pendingExplorationFirstId = null;
+            pendingExplorationFirstCreatedAt = null;
+          }
+        };
+
         while (cursor < timelineEntries.length) {
           const current = timelineEntries[cursor];
           if (!current || current.kind !== "work") break;
@@ -590,13 +619,22 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
           if (isFileChange) {
             flushPendingWork();
+            flushPendingExploration();
             nextRows.push({
               kind: "file-change",
               id: current.id,
               createdAt: current.createdAt,
               entry: current.entry,
             });
+          } else if (isExplorationEntry(current.entry)) {
+            flushPendingWork();
+            if (pendingExploration.length === 0) {
+              pendingExplorationFirstId = current.id;
+              pendingExplorationFirstCreatedAt = current.createdAt;
+            }
+            pendingExploration.push(current.entry);
           } else {
+            flushPendingExploration();
             if (pendingWork.length === 0) {
               pendingWorkFirstId = current.id;
               pendingWorkFirstCreatedAt = current.createdAt;
@@ -606,6 +644,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           cursor += 1;
         }
         flushPendingWork();
+        flushPendingExploration();
         index = cursor - 1;
         continue;
       }
@@ -634,6 +673,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
 
     if (isWorking) {
+      for (let i = nextRows.length - 1; i >= 0; i--) {
+        const r = nextRows[i];
+        if (!r) break;
+        if (r.kind === "exploration") {
+          nextRows[i] = { ...r, isLive: true };
+          break;
+        }
+        if (r.kind === "message" || r.kind === "proposed-plan") break;
+      }
+
       nextRows.push({
         kind: "working",
         id: "working-indicator-row",
@@ -719,6 +768,7 @@ function estimateRowHeight(
   if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
   if (row.kind === "working") return 40;
   if (row.kind === "file-change") return FILE_CHANGE_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "exploration") return EXPLORATION_CARD_COLLAPSED_HEIGHT;
   return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
 }
 
@@ -952,6 +1002,28 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
     icon: ZapIcon,
     className: "text-foreground/92",
   };
+}
+
+const EXPLORATION_LABEL_RE =
+  /^(Read|Search(ed)?|Glob(bed)?|Grep(ped)?|List(ed)?|Find|Found|View(ed)?|Inspect(ed)?)\b/i;
+
+function isExplorationEntry(entry: TimelineWorkEntry): boolean {
+  if (entry.requestKind === "file-change" || entry.requestKind === "command") return false;
+  if (
+    entry.itemType === "file_change" ||
+    entry.itemType === "command_execution" ||
+    entry.itemType === "web_search"
+  )
+    return false;
+  if (entry.command) return false;
+  if ((entry.diffPreviews?.length ?? 0) > 0) return false;
+  if (entry.agentGroup) return false;
+
+  if (entry.requestKind === "file-read") return true;
+  if (entry.itemType === "image_view") return true;
+
+  const heading = (entry.toolTitle ?? entry.label).trim();
+  return EXPLORATION_LABEL_RE.test(heading);
 }
 
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {

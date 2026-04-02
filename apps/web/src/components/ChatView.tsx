@@ -1987,7 +1987,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
       );
       if (!trigger || !scrollContainer.contains(trigger)) return;
       if (trigger.closest("[data-scroll-anchor-ignore]")) {
-        trigger = trigger.parentElement?.closest<HTMLElement>("[data-scroll-anchor-target]") ?? null;
+        trigger =
+          trigger.parentElement?.closest<HTMLElement>("[data-scroll-anchor-target]") ?? null;
         if (!trigger || !scrollContainer.contains(trigger)) return;
       }
 
