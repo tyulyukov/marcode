@@ -1053,6 +1053,18 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
   });
 
   const statusDetails: GitCoreShape["statusDetails"] = Effect.fn("statusDetails")(function* (cwd) {
+    yield* fileSystem.access(cwd).pipe(
+      Effect.mapError(
+        () =>
+          new GitCommandError({
+            operation: "GitCore.statusDetails",
+            command: "statusDetails",
+            cwd,
+            detail: `Working directory does not exist: ${cwd}`,
+          }),
+      ),
+    );
+
     yield* refreshStatusUpstreamIfStale(cwd).pipe(Effect.ignoreCause({ log: true }));
 
     const [statusStdout, unstagedNumstatStdout, stagedNumstatStdout] = yield* Effect.all(

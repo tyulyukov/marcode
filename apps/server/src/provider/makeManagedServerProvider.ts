@@ -51,7 +51,7 @@ export function makeManagedServerProvider<Settings>(input: {
     ).pipe(Effect.forkScoped);
 
     yield* Effect.forever(
-      Effect.sleep(input.refreshInterval ?? "60 seconds").pipe(
+      Effect.sleep(input.refreshInterval ?? "1 hours").pipe(
         Effect.flatMap(() => refreshSnapshot),
         Effect.ignoreCause({ log: true }),
       ),

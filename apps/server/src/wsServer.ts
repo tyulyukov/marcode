@@ -83,6 +83,14 @@ import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@marcode/shared/schemaJson";
+import { GitCommandError } from "./git/Errors.ts";
+
+function isWorktreeDirectoryMissingError(error: unknown): error is GitCommandError {
+  return (
+    Schema.is(GitCommandError)(error) &&
+    error.detail.startsWith("Working directory does not exist:")
+  );
+}
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -676,6 +684,30 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const orchestrationReactor = yield* OrchestrationReactor;
   const { openInEditor } = yield* Open;
 
+  const archiveThreadForMissingWorktree = Effect.fnUntraced(function* (cwd: string) {
+    const readModel = yield* orchestrationEngine.getReadModel();
+    const thread = readModel.threads.find(
+      (t) =>
+        t.worktreePath !== null &&
+        t.worktreePath === cwd &&
+        t.archivedAt === null &&
+        t.deletedAt === null,
+    );
+    if (!thread) return;
+
+    yield* Effect.logInfo("auto-archiving thread whose worktree directory no longer exists", {
+      threadId: thread.id,
+      worktreePath: cwd,
+    });
+    yield* orchestrationEngine
+      .dispatch({
+        type: "thread.archive",
+        commandId: CommandId.makeUnsafe(crypto.randomUUID()),
+        threadId: thread.id,
+      })
+      .pipe(Effect.ignoreCause({ log: true }));
+  });
+
   const subscriptionsScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(subscriptionsScope, Exit.void));
 
@@ -891,23 +923,41 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
       case WS_METHODS.gitStatus: {
         const body = stripRequestTag(request.body);
-        return yield* gitManager.status(body);
+        return yield* gitManager
+          .status(body)
+          .pipe(
+            Effect.catchIf(isWorktreeDirectoryMissingError, (error) =>
+              Effect.flatMap(archiveThreadForMissingWorktree(error.cwd), () => Effect.fail(error)),
+            ),
+          );
       }
 
       case WS_METHODS.gitPull: {
         const body = stripRequestTag(request.body);
-        return yield* git.pullCurrentBranch(body.cwd);
+        return yield* git
+          .pullCurrentBranch(body.cwd)
+          .pipe(
+            Effect.catchIf(isWorktreeDirectoryMissingError, (error) =>
+              Effect.flatMap(archiveThreadForMissingWorktree(error.cwd), () => Effect.fail(error)),
+            ),
+          );
       }
 
       case WS_METHODS.gitRunStackedAction: {
         const body = stripRequestTag(request.body);
-        return yield* gitManager.runStackedAction(body, {
-          actionId: body.actionId,
-          progressReporter: {
-            publish: (event) =>
-              pushBus.publishClient(ws, WS_CHANNELS.gitActionProgress, event).pipe(Effect.asVoid),
-          },
-        });
+        return yield* gitManager
+          .runStackedAction(body, {
+            actionId: body.actionId,
+            progressReporter: {
+              publish: (event) =>
+                pushBus.publishClient(ws, WS_CHANNELS.gitActionProgress, event).pipe(Effect.asVoid),
+            },
+          })
+          .pipe(
+            Effect.catchIf(isWorktreeDirectoryMissingError, (error) =>
+              Effect.flatMap(archiveThreadForMissingWorktree(error.cwd), () => Effect.fail(error)),
+            ),
+          );
       }
 
       case WS_METHODS.gitResolvePullRequest: {

@@ -26,6 +26,18 @@ export function invalidateGitQueries(queryClient: QueryClient) {
   return queryClient.invalidateQueries({ queryKey: gitQueryKeys.all });
 }
 
+function isDirectoryMissingError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message.includes("Working directory does not exist");
+  }
+  if (typeof error === "object" && error !== null && "detail" in error) {
+    return String((error as { detail: unknown }).detail).includes(
+      "Working directory does not exist",
+    );
+  }
+  return false;
+}
+
 export function gitStatusQueryOptions(cwd: string | null) {
   return queryOptions({
     queryKey: gitQueryKeys.status(cwd),
@@ -39,6 +51,10 @@ export function gitStatusQueryOptions(cwd: string | null) {
     refetchOnWindowFocus: "always",
     refetchOnReconnect: "always",
     refetchInterval: GIT_STATUS_REFETCH_INTERVAL_MS,
+    retry: (failureCount, error) => {
+      if (isDirectoryMissingError(error)) return false;
+      return failureCount < 3;
+    },
   });
 }
 
@@ -55,6 +71,10 @@ export function gitBranchesQueryOptions(cwd: string | null) {
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     refetchInterval: GIT_BRANCHES_REFETCH_INTERVAL_MS,
+    retry: (failureCount, error) => {
+      if (isDirectoryMissingError(error)) return false;
+      return failureCount < 3;
+    },
   });
 }
 

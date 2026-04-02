@@ -14,6 +14,8 @@ import {
 import { Cache, Cause, Duration, Effect, Equal, Layer, Option, Schema, Stream } from "effect";
 import { makeDrainableWorker } from "@marcode/shared/DrainableWorker";
 
+import { existsSync } from "node:fs";
+
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { GitCore } from "../../git/Services/GitCore.ts";
 import { ProviderAdapterRequestError, ProviderServiceError } from "../../provider/Errors.ts";
@@ -256,6 +258,25 @@ const make = Effect.gen(function* () {
       thread,
       projects: readModel.projects,
     });
+
+    if (thread.worktreePath !== null && !existsSync(thread.worktreePath)) {
+      yield* Effect.logInfo(
+        "auto-archiving thread whose worktree directory no longer exists during session start",
+        { threadId, worktreePath: thread.worktreePath },
+      );
+      yield* orchestrationEngine
+        .dispatch({
+          type: "thread.archive",
+          commandId: serverCommandId("worktree-missing-archive"),
+          threadId,
+        })
+        .pipe(Effect.ignoreCause({ log: true }));
+      return yield* new ProviderAdapterRequestError({
+        provider: thread.modelSelection.provider,
+        method: "ensureSessionForThread",
+        detail: `Worktree directory no longer exists: ${thread.worktreePath}. Thread has been archived.`,
+      });
+    }
 
     const resolveActiveSession = (threadId: ThreadId) =>
       providerService
