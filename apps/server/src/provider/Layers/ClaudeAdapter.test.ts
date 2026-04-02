@@ -919,7 +919,7 @@ describe("ClaudeAdapterLive", () => {
       const toolStarted = runtimeEvents.find((event) => event.type === "item.started");
       assert.equal(toolStarted?.type, "item.started");
       if (toolStarted?.type === "item.started") {
-        assert.equal(toolStarted.payload.itemType, "dynamic_tool_call");
+        assert.equal(toolStarted.payload.itemType, "file_read");
       }
 
       const toolInputUpdated = runtimeEvents.find(

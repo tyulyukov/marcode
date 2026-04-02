@@ -418,12 +418,28 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
   if (
     normalized.includes("edit") ||
     normalized.includes("write") ||
-    normalized.includes("file") ||
     normalized.includes("patch") ||
     normalized.includes("replace") ||
     normalized.includes("create") ||
-    normalized.includes("delete")
+    normalized.includes("delete") ||
+    normalized.includes("notebookedit")
   ) {
+    return "file_change";
+  }
+  if (
+    normalized === "read" ||
+    normalized.includes("glob") ||
+    normalized.includes("grep") ||
+    normalized.includes("search") ||
+    normalized.includes("list") ||
+    normalized.includes("find") ||
+    normalized.includes("view") ||
+    normalized.includes("ls") ||
+    normalized.includes("cat")
+  ) {
+    return "file_read";
+  }
+  if (normalized.includes("file")) {
     return "file_change";
   }
   if (normalized.includes("mcp")) {
@@ -476,12 +492,14 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
   return `${toolName}: ${serialized.slice(0, 397)}...`;
 }
 
-function titleForTool(itemType: CanonicalItemType): string {
+function titleForTool(itemType: CanonicalItemType, toolName?: string): string {
   switch (itemType) {
     case "command_execution":
       return "Command run";
     case "file_change":
       return "File change";
+    case "file_read":
+      return titleForReadTool(toolName);
     case "mcp_tool_call":
       return "MCP tool call";
     case "collab_agent_tool_call":
@@ -495,6 +513,19 @@ function titleForTool(itemType: CanonicalItemType): string {
     default:
       return "Item";
   }
+}
+
+function titleForReadTool(toolName?: string): string {
+  if (!toolName) return "Read";
+  const normalized = toolName.toLowerCase();
+  if (normalized === "read") return "Read file";
+  if (normalized.includes("glob")) return "Glob search";
+  if (normalized.includes("grep")) return "Grep search";
+  if (normalized.includes("search")) return "Search";
+  if (normalized.includes("list") || normalized.includes("ls")) return "List files";
+  if (normalized.includes("find")) return "Find files";
+  if (normalized.includes("view")) return "View file";
+  return "Read";
 }
 
 const SUPPORTED_CLAUDE_IMAGE_MIME_TYPES = new Set([
@@ -1652,7 +1683,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         itemId,
         itemType,
         toolName,
-        title: titleForTool(itemType),
+        title: titleForTool(itemType, toolName),
         detail,
         input: toolInput,
         partialInputJson: "",

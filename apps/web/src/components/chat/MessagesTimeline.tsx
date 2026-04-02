@@ -1020,6 +1020,7 @@ function isExplorationEntry(entry: TimelineWorkEntry): boolean {
   if (entry.agentGroup) return false;
 
   if (entry.requestKind === "file-read") return true;
+  if (entry.itemType === "file_read") return true;
   if (entry.itemType === "image_view") return true;
 
   const heading = (entry.toolTitle ?? entry.label).trim();
@@ -1057,6 +1058,7 @@ function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
   if (workEntry.itemType === "file_change" || (workEntry.changedFiles?.length ?? 0) > 0) {
     return SquarePenIcon;
   }
+  if (workEntry.itemType === "file_read") return EyeIcon;
   if (workEntry.itemType === "web_search") return GlobeIcon;
   if (workEntry.itemType === "image_view") return EyeIcon;
 

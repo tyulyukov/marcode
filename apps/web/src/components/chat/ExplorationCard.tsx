@@ -11,7 +11,11 @@ interface ExplorationCardProps {
 const READ_LABEL_RE = /^Read\b/i;
 
 function isReadEntry(entry: WorkLogEntry): boolean {
-  return entry.requestKind === "file-read" || READ_LABEL_RE.test(entry.toolTitle ?? entry.label);
+  return (
+    entry.requestKind === "file-read" ||
+    entry.itemType === "file_read" ||
+    READ_LABEL_RE.test(entry.toolTitle ?? entry.label)
+  );
 }
 
 function explorationEntryHeading(entry: WorkLogEntry): string {
