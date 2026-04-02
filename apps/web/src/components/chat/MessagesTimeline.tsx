@@ -9,22 +9,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  deriveTimelineEntries,
-  formatElapsed,
-  formatTokenCount,
-  formatToolUseCount,
-  type AgentGroup,
-  type AgentTaskSummary,
-} from "../../session-logic";
+import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
 import { type TurnDiffSummary } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
@@ -62,6 +53,8 @@ import {
 } from "./userMessageTerminalContexts";
 import { InlineDiffPreview } from "./InlineDiffPreview";
 import { FileChangeCard } from "./FileChangeCard";
+import { AgentGroupCard } from "./AgentGroupCard";
+import { CommandExecutionCard } from "./CommandExecutionCard";
 import { ExplorationCard } from "./ExplorationCard";
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
@@ -72,9 +65,10 @@ const DIFF_PREVIEW_HEADER_HEIGHT = 32;
 const DIFF_PREVIEW_LINE_HEIGHT = 18;
 const DIFF_PREVIEW_MAX_HEIGHT = 260;
 const DIFF_HUNK_SPACING = 8;
-const AGENT_GROUP_HEADER_HEIGHT = 32;
 const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
 const EXPLORATION_CARD_COLLAPSED_HEIGHT = 36;
+const AGENT_GROUP_CARD_COLLAPSED_HEIGHT = 40;
+const COMMAND_CARD_COLLAPSED_HEIGHT = 64;
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
@@ -114,6 +108,20 @@ type TimelineRow =
       entries: TimelineWorkEntry[];
       isLive: boolean;
     }
+  | {
+      kind: "agent-group";
+      id: string;
+      createdAt: string;
+      entry: TimelineWorkEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "command";
+      id: string;
+      createdAt: string;
+      entry: TimelineWorkEntry;
+      isLive: boolean;
+    }
   | { kind: "working"; id: string; createdAt: string | null };
 
 interface TimelineRowContentProps {
@@ -134,7 +142,6 @@ interface TimelineRowContentProps {
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
-  showInlineDiffs: boolean;
   workspaceRoot: string | undefined;
 }
 
@@ -156,7 +163,6 @@ const TimelineRowContent = memo(function TimelineRowContent({
   markdownCwd,
   resolvedTheme,
   timestampFormat,
-  showInlineDiffs,
   workspaceRoot,
 }: TimelineRowContentProps) {
   return (
@@ -200,21 +206,9 @@ const TimelineRowContent = memo(function TimelineRowContent({
                 </div>
               )}
               <div className="space-y-0.5">
-                {visibleEntries.map((workEntry) =>
-                  workEntry.agentGroup ? (
-                    <AgentGroupRow
-                      key={workEntry.id}
-                      agentGroup={workEntry.agentGroup}
-                      label={workEntry.label}
-                    />
-                  ) : (
-                    <SimpleWorkEntryRow
-                      key={`work-row:${workEntry.id}`}
-                      workEntry={workEntry}
-                      showInlineDiffs={showInlineDiffs}
-                    />
-                  ),
-                )}
+                {visibleEntries.map((workEntry) => (
+                  <SimpleWorkEntryRow key={`work-row:${workEntry.id}`} workEntry={workEntry} />
+                ))}
               </div>
             </div>
           );
@@ -223,6 +217,16 @@ const TimelineRowContent = memo(function TimelineRowContent({
       {row.kind === "file-change" && <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} />}
 
       {row.kind === "exploration" && <ExplorationCard entries={row.entries} isLive={row.isLive} />}
+
+      {row.kind === "agent-group" && row.entry.agentGroup && (
+        <AgentGroupCard
+          agentGroup={row.entry.agentGroup}
+          label={row.entry.label}
+          isLive={row.isLive}
+        />
+      )}
+
+      {row.kind === "command" && <CommandExecutionCard entry={row.entry} isLive={row.isLive} />}
 
       {row.kind === "message" &&
         row.message.role === "user" &&
@@ -453,10 +457,7 @@ const TimelineRowContent = memo(function TimelineRowContent({
   );
 });
 
-function estimateWorkRowHeight(
-  groupedEntries: ReadonlyArray<TimelineWorkEntry>,
-  showInlineDiffs: boolean,
-): number {
+function estimateWorkRowHeight(groupedEntries: ReadonlyArray<TimelineWorkEntry>): number {
   const visibleCount = Math.min(groupedEntries.length, MAX_VISIBLE_WORK_LOG_ENTRIES);
   const baseHeight = WORK_GROUP_OVERHEAD_HEIGHT + visibleCount * WORK_ENTRY_HEIGHT;
 
@@ -467,11 +468,6 @@ function estimateWorkRowHeight(
       : groupedEntries;
 
   for (const entry of visibleEntries) {
-    if (entry.agentGroup) {
-      extraHeight += AGENT_GROUP_HEADER_HEIGHT;
-      continue;
-    }
-    if (!showInlineDiffs) continue;
     const previews = entry.diffPreviews;
     if (!previews || previews.length === 0) continue;
     for (const hunk of previews) {
@@ -505,7 +501,6 @@ interface MessagesTimelineProps {
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
-  showInlineDiffs: boolean;
   workspaceRoot: string | undefined;
 }
 
@@ -528,7 +523,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   markdownCwd,
   resolvedTheme,
   timestampFormat,
-  showInlineDiffs,
   workspaceRoot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -613,11 +607,30 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           const current = timelineEntries[cursor];
           if (!current || current.kind !== "work") break;
 
-          const isFileChange =
+          if (current.entry.agentGroup) {
+            flushPendingWork();
+            flushPendingExploration();
+            nextRows.push({
+              kind: "agent-group",
+              id: current.id,
+              createdAt: current.createdAt,
+              entry: current.entry,
+              isLive: false,
+            });
+          } else if (isCommandEntry(current.entry)) {
+            flushPendingWork();
+            flushPendingExploration();
+            nextRows.push({
+              kind: "command",
+              id: current.id,
+              createdAt: current.createdAt,
+              entry: current.entry,
+              isLive: false,
+            });
+          } else if (
             current.entry.itemType === "file_change" &&
-            (current.entry.diffPreviews?.length ?? 0) > 0;
-
-          if (isFileChange) {
+            (current.entry.diffPreviews?.length ?? 0) > 0
+          ) {
             flushPendingWork();
             flushPendingExploration();
             nextRows.push({
@@ -676,7 +689,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       for (let i = nextRows.length - 1; i >= 0; i--) {
         const r = nextRows[i];
         if (!r) break;
-        if (r.kind === "exploration") {
+        if (r.kind === "exploration" || r.kind === "agent-group" || r.kind === "command") {
           nextRows[i] = { ...r, isLive: true };
           break;
         }
@@ -724,7 +737,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           key={row.id}
           style={{
             contentVisibility: "auto",
-            containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,
+            containIntrinsicBlockSize: `auto ${estimateRowHeight(row, timelineWidthPx)}px`,
           }}
         >
           <TimelineRowContent
@@ -745,7 +758,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             markdownCwd={markdownCwd}
             resolvedTheme={resolvedTheme}
             timestampFormat={timestampFormat}
-            showInlineDiffs={showInlineDiffs}
             workspaceRoot={workspaceRoot}
           />
         </div>
@@ -759,16 +771,14 @@ function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan):
   return 120 + Math.min(estimatedLines * 22, 880);
 }
 
-function estimateRowHeight(
-  row: TimelineRow,
-  showInlineDiffs: boolean,
-  timelineWidthPx: number | null,
-): number {
-  if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries, showInlineDiffs);
+function estimateRowHeight(row: TimelineRow, timelineWidthPx: number | null): number {
+  if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries);
   if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
   if (row.kind === "working") return 40;
   if (row.kind === "file-change") return FILE_CHANGE_CARD_COLLAPSED_HEIGHT;
   if (row.kind === "exploration") return EXPLORATION_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "agent-group") return AGENT_GROUP_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "command") return COMMAND_CARD_COLLAPSED_HEIGHT;
   return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
 }
 
@@ -1026,6 +1036,12 @@ function isExplorationEntry(entry: TimelineWorkEntry): boolean {
   return EXPLORATION_LABEL_RE.test(heading);
 }
 
+function isCommandEntry(entry: TimelineWorkEntry): boolean {
+  return (
+    entry.requestKind === "command" || entry.itemType === "command_execution" || !!entry.command
+  );
+}
+
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "error") return "text-rose-300/50 dark:text-rose-300/50";
   if (tone === "tool") return "text-muted-foreground/70";
@@ -1086,171 +1102,10 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
   return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
 
-function formatAgentTaskType(taskType: string | null): string | null {
-  if (!taskType) return null;
-  const normalized = taskType.trim().toLowerCase();
-  if (normalized === "default" || normalized.length === 0) return null;
-  return normalized
-    .split("-")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function agentTaskStatusAccent(status: AgentTaskSummary["status"]): string {
-  switch (status) {
-    case "running":
-      return "border-l-amber-400/70";
-    case "failed":
-      return "border-l-rose-400/70";
-    case "completed":
-      return "border-l-emerald-500/70";
-    case "stopped":
-      return "border-l-muted-foreground/40";
-  }
-}
-
-function agentTaskActivityLine(task: AgentTaskSummary): string | null {
-  if (task.status === "completed") return null;
-  if (task.status === "failed") return "Failed";
-  if (task.status === "stopped") return "Stopped";
-  if (task.progressSummary) return task.progressSummary;
-  if (task.lastToolName) return `Using ${normalizeCompactToolLabel(task.lastToolName)}`;
-  return "Starting…";
-}
-
-function agentTaskMeta(task: AgentTaskSummary): string {
-  const parts: string[] = [];
-  if (task.toolUses !== null) parts.push(formatToolUseCount(task.toolUses));
-  if (task.totalTokens !== null) parts.push(formatTokenCount(task.totalTokens));
-  return parts.join(" · ");
-}
-
-const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary }) {
-  const { task } = props;
-  const typeLabel = formatAgentTaskType(task.agentType);
-  const isRunning = task.status === "running";
-  const activityLine = agentTaskActivityLine(task);
-  const meta = agentTaskMeta(task);
-
-  return (
-    <div
-      className={cn("rounded-md border-l-2 py-1 pl-2.5 pr-1.5", agentTaskStatusAccent(task.status))}
-    >
-      <div className="flex items-center gap-1.5">
-        {typeLabel && (
-          <span className="shrink-0 rounded bg-muted/50 px-1 py-px text-[10px] text-muted-foreground/60">
-            {typeLabel}
-          </span>
-        )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
-                {task.description}
-              </span>
-            }
-          />
-          <TooltipPopup
-            side="top"
-            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
-          >
-            {task.description}
-          </TooltipPopup>
-        </Tooltip>
-        {meta && <span className="shrink-0 text-[10px] text-muted-foreground/40">{meta}</span>}
-      </div>
-      {activityLine && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <p
-                className={cn(
-                  "truncate text-[10px] leading-4",
-                  isRunning ? "text-amber-400/70" : "text-muted-foreground/50",
-                )}
-              >
-                {isRunning && (
-                  <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-amber-400/80 align-middle" />
-                )}
-                {activityLine}
-              </p>
-            }
-          />
-          <TooltipPopup
-            side="top"
-            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
-          >
-            {activityLine}
-          </TooltipPopup>
-        </Tooltip>
-      )}
-    </div>
-  );
-});
-
-const AgentGroupRow = memo(function AgentGroupRow(props: {
-  agentGroup: AgentGroup;
-  label: string;
-}) {
-  const { agentGroup, label } = props;
-  const [expanded, setExpanded] = useState(false);
-  const tasks = agentGroup.tasks;
-  const allSettled = tasks.every(
-    (t) => t.status === "completed" || t.status === "failed" || t.status === "stopped",
-  );
-
-  const ExpandIcon = expanded ? ChevronDownIcon : ChevronRightIcon;
-
-  return (
-    <div className="rounded-lg px-1 py-1">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-2 text-left transition-colors duration-150 hover:bg-muted/20"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        <span className="flex size-5 shrink-0 items-center justify-center">
-          {allSettled ? (
-            <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
-          ) : (
-            <span className="size-2 animate-pulse rounded-full bg-amber-400" aria-hidden="true" />
-          )}
-          <span className="sr-only">{allSettled ? "Finished" : "In progress"}</span>
-        </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span className="flex-1 truncate text-[11px] leading-5 text-foreground/80">
-                {label}
-              </span>
-            }
-          />
-          <TooltipPopup
-            side="top"
-            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
-          >
-            {label}
-          </TooltipPopup>
-        </Tooltip>
-        <ExpandIcon className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
-      </button>
-
-      {expanded && (
-        <div className="mt-1.5 space-y-1 pl-5">
-          {tasks.map((task) => (
-            <AgentTaskRow key={task.taskId} task={task} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-});
-
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
-  showInlineDiffs: boolean;
 }) {
-  const { workEntry, showInlineDiffs } = props;
+  const { workEntry } = props;
   const iconConfig = workToneIcon(workEntry.tone);
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
@@ -1260,7 +1115,6 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
 
   const hasDiffPreviews = (workEntry.diffPreviews?.length ?? 0) > 0;
-  const shouldShowDiffs = showInlineDiffs && hasDiffPreviews;
 
   return (
     <div className="rounded-lg px-1 py-1">
@@ -1297,7 +1151,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           </Tooltip>
         </div>
       </div>
-      {shouldShowDiffs ? (
+      {hasDiffPreviews ? (
         <div className="mt-0.5 pl-5">
           {(workEntry.diffPreviews ?? []).map((hunk) => (
             <InlineDiffPreview key={`${workEntry.id}:diff:${hunk.filePath}`} hunk={hunk} />

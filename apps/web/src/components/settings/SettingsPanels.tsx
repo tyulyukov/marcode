@@ -959,30 +959,6 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
-          title="Inline diff previews"
-          description="Show inline diff previews for file changes in the chat timeline."
-          resetAction={
-            settings.showInlineDiffs !== DEFAULT_UNIFIED_SETTINGS.showInlineDiffs ? (
-              <SettingResetButton
-                label="inline diff previews"
-                onClick={() =>
-                  updateSettings({
-                    showInlineDiffs: DEFAULT_UNIFIED_SETTINGS.showInlineDiffs,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.showInlineDiffs}
-              onCheckedChange={(checked) => updateSettings({ showInlineDiffs: Boolean(checked) })}
-              aria-label="Show inline diff previews"
-            />
-          }
-        />
-
-        <SettingsRow
           title="Todo checklist in composer"
           description="Show agent task checklists in the composer area."
           resetAction={
