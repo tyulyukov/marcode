@@ -60,6 +60,7 @@ export interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
+  toolName?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   diffPreviews?: ReadonlyArray<InlineDiffHunk>;
@@ -839,8 +840,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
   }
+  const toolName = extractToolName(payload);
   if (title) {
     entry.toolTitle = title;
+  }
+  if (toolName) {
+    entry.toolName = toolName;
   }
   if (itemType) {
     entry.itemType = itemType;
@@ -899,6 +904,7 @@ function mergeDerivedWorkLogEntries(
   const command = next.command ?? previous.command;
   const exitCode = next.exitCode ?? previous.exitCode;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
+  const toolName = next.toolName ?? previous.toolName;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
@@ -914,6 +920,7 @@ function mergeDerivedWorkLogEntries(
     ...(exitCode !== undefined ? { exitCode } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
+    ...(toolName ? { toolName } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
@@ -1003,6 +1010,11 @@ function extractToolCommand(payload: Record<string, unknown> | null): string | n
 
 function extractToolTitle(payload: Record<string, unknown> | null): string | null {
   return asTrimmedString(payload?.title);
+}
+
+function extractToolName(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  return asTrimmedString(data?.toolName);
 }
 
 function stripTrailingExitCode(value: string): {

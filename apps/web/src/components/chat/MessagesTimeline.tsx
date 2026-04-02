@@ -67,7 +67,8 @@ const DIFF_PREVIEW_MAX_HEIGHT = 260;
 const DIFF_HUNK_SPACING = 8;
 const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
 const EXPLORATION_CARD_COLLAPSED_HEIGHT = 36;
-const AGENT_GROUP_CARD_COLLAPSED_HEIGHT = 40;
+const AGENT_GROUP_HEADER_HEIGHT = 32;
+const AGENT_TASK_ROW_HEIGHT = 36;
 const COMMAND_CARD_COLLAPSED_HEIGHT = 64;
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
@@ -777,7 +778,10 @@ function estimateRowHeight(row: TimelineRow, timelineWidthPx: number | null): nu
   if (row.kind === "working") return 40;
   if (row.kind === "file-change") return FILE_CHANGE_CARD_COLLAPSED_HEIGHT;
   if (row.kind === "exploration") return EXPLORATION_CARD_COLLAPSED_HEIGHT;
-  if (row.kind === "agent-group") return AGENT_GROUP_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "agent-group") {
+    const taskCount = row.entry.agentGroup?.tasks.length ?? 1;
+    return AGENT_GROUP_HEADER_HEIGHT + taskCount * AGENT_TASK_ROW_HEIGHT + 12;
+  }
   if (row.kind === "command") return COMMAND_CARD_COLLAPSED_HEIGHT;
   return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
 }
@@ -1017,6 +1021,25 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
 const EXPLORATION_LABEL_RE =
   /^(Read|Search(ed)?|Glob(bed)?|Grep(ped)?|List(ed)?|Find|Found|View(ed)?|Inspect(ed)?)\b/i;
 
+const EXPLORATION_TOOL_NAMES = new Set([
+  "read",
+  "grep",
+  "glob",
+  "search",
+  "find",
+  "list",
+  "view",
+  "ls",
+  "cat",
+  "head",
+  "tail",
+]);
+
+function isExplorationToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase());
+}
+
 function isExplorationEntry(entry: TimelineWorkEntry): boolean {
   if (entry.requestKind === "file-change" || entry.requestKind === "command") return false;
   if (
@@ -1032,6 +1055,7 @@ function isExplorationEntry(entry: TimelineWorkEntry): boolean {
   if (entry.requestKind === "file-read") return true;
   if (entry.itemType === "file_read") return true;
   if (entry.itemType === "image_view") return true;
+  if (isExplorationToolName(entry.toolName)) return true;
 
   const heading = (entry.toolTitle ?? entry.label).trim();
   return EXPLORATION_LABEL_RE.test(heading);
@@ -1051,16 +1075,61 @@ function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
 }
 
 function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
+  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "toolName">,
 ) {
   if (workEntry.command) return workEntry.command;
-  if (workEntry.detail) return workEntry.detail;
+  if (workEntry.detail) return cleanToolDetail(workEntry.detail, workEntry.toolName);
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
   if (!firstPath) return null;
   return workEntry.changedFiles!.length === 1
     ? firstPath
     : `${firstPath} +${workEntry.changedFiles!.length - 1} more`;
+}
+
+const TOOL_DETAIL_PREFIX_RE = /^[A-Za-z_]+:\s*/;
+const JSON_OBJECT_RE = /^\{.*\}$/s;
+
+function cleanToolDetail(detail: string, toolName: string | undefined): string {
+  let cleaned = detail;
+  if (toolName && cleaned.startsWith(`${toolName}:`)) {
+    cleaned = cleaned.slice(toolName.length + 1).trim();
+  } else if (TOOL_DETAIL_PREFIX_RE.test(cleaned)) {
+    cleaned = cleaned.replace(TOOL_DETAIL_PREFIX_RE, "").trim();
+  }
+  if (JSON_OBJECT_RE.test(cleaned)) {
+    const friendly = friendlyJsonDetail(cleaned);
+    if (friendly) return friendly;
+  }
+  return cleaned;
+}
+
+function friendlyJsonDetail(jsonStr: string): string | null {
+  try {
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+    const filePath =
+      typeof parsed.file_path === "string"
+        ? parsed.file_path
+        : typeof parsed.filePath === "string"
+          ? parsed.filePath
+          : typeof parsed.path === "string"
+            ? parsed.path
+            : null;
+    if (filePath) {
+      const parts = filePath.split("/");
+      return parts.length > 3 ? parts.slice(-3).join("/") : filePath;
+    }
+    const pattern = typeof parsed.pattern === "string" ? parsed.pattern : null;
+    const path = typeof parsed.path === "string" ? parsed.path : null;
+    if (pattern && path) {
+      const shortPath = path.split("/").slice(-3).join("/");
+      return `"${pattern}" in ${shortPath}`;
+    }
+    if (pattern) return `"${pattern}"`;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
@@ -1074,7 +1143,8 @@ function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
   if (workEntry.itemType === "file_change" || (workEntry.changedFiles?.length ?? 0) > 0) {
     return SquarePenIcon;
   }
-  if (workEntry.itemType === "file_read") return EyeIcon;
+  if (workEntry.itemType === "file_read" || isExplorationToolName(workEntry.toolName))
+    return EyeIcon;
   if (workEntry.itemType === "web_search") return GlobeIcon;
   if (workEntry.itemType === "image_view") return EyeIcon;
 
@@ -1098,10 +1168,49 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
-  if (!workEntry.toolTitle) {
-    return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
+  const raw = workEntry.toolTitle ?? workEntry.label;
+  const normalized = normalizeCompactToolLabel(raw);
+  if (isGenericToolLabel(normalized) && workEntry.toolName) {
+    return friendlyToolHeading(workEntry.toolName);
   }
-  return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
+  return capitalizePhrase(normalized);
+}
+
+function isGenericToolLabel(label: string): boolean {
+  const lower = label.toLowerCase().trim();
+  return (
+    lower === "tool call" ||
+    lower === "tool" ||
+    lower === "tool updated" ||
+    lower === "tool started" ||
+    lower === "item"
+  );
+}
+
+function friendlyToolHeading(toolName: string): string {
+  const lower = toolName.toLowerCase();
+  switch (lower) {
+    case "read":
+      return "Read file";
+    case "edit":
+      return "Edit file";
+    case "write":
+      return "Write file";
+    case "grep":
+      return "Grep search";
+    case "glob":
+      return "Glob search";
+    case "bash":
+      return "Run command";
+    case "webfetch":
+    case "web_fetch":
+      return "Fetch URL";
+    case "websearch":
+    case "web_search":
+      return "Web search";
+    default:
+      return capitalizePhrase(toolName);
+  }
 }
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {

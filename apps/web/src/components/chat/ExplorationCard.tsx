@@ -8,20 +8,129 @@ interface ExplorationCardProps {
   isLive: boolean;
 }
 
-const READ_LABEL_RE = /^Read\b/i;
+const READ_TOOL_NAMES = new Set(["read", "cat", "head", "tail", "view"]);
+const SEARCH_TOOL_NAMES = new Set(["grep", "glob", "search", "find", "list", "ls"]);
 
 function isReadEntry(entry: WorkLogEntry): boolean {
-  return (
-    entry.requestKind === "file-read" ||
-    entry.itemType === "file_read" ||
-    READ_LABEL_RE.test(entry.toolTitle ?? entry.label)
-  );
+  if (entry.requestKind === "file-read") return true;
+  if (entry.itemType === "file_read" && !isSearchToolName(entry.toolName)) return true;
+  if (entry.toolName && READ_TOOL_NAMES.has(entry.toolName.toLowerCase())) return true;
+  const heading = (entry.toolTitle ?? entry.label).trim().toLowerCase();
+  return heading.startsWith("read");
+}
+
+function isSearchToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return SEARCH_TOOL_NAMES.has(toolName.toLowerCase());
 }
 
 function explorationEntryHeading(entry: WorkLogEntry): string {
+  if (entry.toolName) {
+    const lower = entry.toolName.toLowerCase();
+    if (lower === "read") return `Read ${extractFileName(entry.detail)}`;
+    if (lower === "grep") return `Searched for ${extractSearchSummary(entry.detail)}`;
+    if (lower === "glob") return `Glob ${extractSearchSummary(entry.detail)}`;
+    if (lower === "list" || lower === "ls") return `Listed ${extractPathSummary(entry.detail)}`;
+    if (lower === "find") return `Found ${extractPathSummary(entry.detail)}`;
+  }
+
   const raw = (entry.toolTitle ?? entry.label).trim();
+  if (isGenericLabel(raw) && entry.detail) {
+    return cleanDetailAsHeading(entry.detail);
+  }
   if (raw.length === 0) return "Explored";
   return `${raw.charAt(0).toUpperCase()}${raw.slice(1)}`;
+}
+
+function isGenericLabel(label: string): boolean {
+  const lower = label.toLowerCase();
+  return (
+    lower === "tool call" ||
+    lower === "tool" ||
+    lower === "tool call completed" ||
+    lower === "tool call started" ||
+    lower === "tool updated" ||
+    lower === "item"
+  );
+}
+
+function extractFileName(detail: string | undefined): string {
+  if (!detail) return "";
+  const cleaned = stripToolPrefix(detail);
+  const filePath = extractFilePathFromValue(cleaned);
+  if (filePath) {
+    const parts = filePath.split("/");
+    return parts[parts.length - 1] ?? filePath;
+  }
+  return "";
+}
+
+function extractSearchSummary(detail: string | undefined): string {
+  if (!detail) return "";
+  const cleaned = stripToolPrefix(detail);
+  const parsed = tryParseJson(cleaned);
+  if (parsed) {
+    const pattern = typeof parsed.pattern === "string" ? parsed.pattern : null;
+    const path = typeof parsed.path === "string" ? parsed.path : null;
+    if (pattern && path) {
+      const shortPath = path.split("/").pop() ?? path;
+      return `${pattern} in ${shortPath}`;
+    }
+    if (pattern) return pattern;
+  }
+  return cleaned.slice(0, 120);
+}
+
+function extractPathSummary(detail: string | undefined): string {
+  if (!detail) return "";
+  const cleaned = stripToolPrefix(detail);
+  const filePath = extractFilePathFromValue(cleaned);
+  if (filePath) {
+    const parts = filePath.split("/");
+    return parts.slice(-2).join("/");
+  }
+  return cleaned.slice(0, 120);
+}
+
+function stripToolPrefix(value: string): string {
+  return value.replace(/^[A-Za-z_]+:\s*/, "").trim();
+}
+
+function extractFilePathFromValue(value: string): string | null {
+  const parsed = tryParseJson(value);
+  if (parsed) {
+    const path =
+      typeof parsed.file_path === "string"
+        ? parsed.file_path
+        : typeof parsed.filePath === "string"
+          ? parsed.filePath
+          : typeof parsed.path === "string"
+            ? parsed.path
+            : null;
+    return path;
+  }
+  if (value.includes("/")) return value.trim();
+  return null;
+}
+
+function tryParseJson(value: string): Record<string, unknown> | null {
+  if (!value.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cleanDetailAsHeading(detail: string): string {
+  const cleaned = stripToolPrefix(detail);
+  const filePath = extractFilePathFromValue(cleaned);
+  if (filePath) {
+    const fileName = filePath.split("/").pop() ?? filePath;
+    return `Read ${fileName}`;
+  }
+  return cleaned.slice(0, 80);
 }
 
 function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
@@ -29,7 +138,6 @@ function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
   const isRead = isReadEntry(entry);
   const Icon = isRead ? EyeIcon : SearchIcon;
   const heading = explorationEntryHeading(entry);
-  const preview = entry.detail;
 
   return (
     <div className="flex items-center gap-2 rounded-lg px-1 py-0.5">
@@ -38,7 +146,6 @@ function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
       </span>
       <p className="min-w-0 flex-1 truncate text-[11px] leading-5 text-muted-foreground/70">
         <span className="text-foreground/70">{heading}</span>
-        {preview && <span className="text-muted-foreground/45"> — {preview}</span>}
       </p>
     </div>
   );

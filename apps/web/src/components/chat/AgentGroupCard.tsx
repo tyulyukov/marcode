@@ -1,5 +1,5 @@
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { memo, useState } from "react";
+import { BotIcon } from "lucide-react";
+import { memo } from "react";
 import {
   formatTokenCount,
   formatToolUseCount,
@@ -120,13 +120,7 @@ const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary 
 
 export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCardProps) {
   const { agentGroup, label, isLive } = props;
-  const [expanded, setExpanded] = useState(false);
   const tasks = agentGroup.tasks;
-  const allSettled = tasks.every(
-    (t) => t.status === "completed" || t.status === "failed" || t.status === "stopped",
-  );
-
-  const ExpandIcon = expanded ? ChevronDownIcon : ChevronRightIcon;
 
   return (
     <div
@@ -136,44 +130,18 @@ export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCard
         isLive ? "border-l-violet-400/40" : "border-l-violet-400/20",
       )}
     >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-100 hover:bg-muted/20"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        <ExpandIcon className="size-3 shrink-0 text-muted-foreground/50" />
-        <span className="flex size-4 shrink-0 items-center justify-center">
-          {allSettled ? (
-            <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
-          ) : (
-            <span className="size-2 animate-pulse rounded-full bg-amber-400" aria-hidden="true" />
-          )}
+      <div className="flex items-center gap-2 px-3 py-1.5">
+        <BotIcon className="size-3.5 shrink-0 text-violet-400/60" />
+        <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
+          {label}
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
-                {label}
-              </span>
-            }
-          />
-          <TooltipPopup
-            side="top"
-            className="max-w-lg break-words whitespace-pre-wrap leading-tight"
-          >
-            {label}
-          </TooltipPopup>
-        </Tooltip>
-      </button>
+      </div>
 
-      {expanded && (
-        <div className="space-y-1 border-t border-border/20 px-2 py-1.5">
-          {tasks.map((task) => (
-            <AgentTaskRow key={task.taskId} task={task} />
-          ))}
-        </div>
-      )}
+      <div className="space-y-1 border-t border-border/20 px-2 py-1.5">
+        {tasks.map((task) => (
+          <AgentTaskRow key={task.taskId} task={task} />
+        ))}
+      </div>
     </div>
   );
 });

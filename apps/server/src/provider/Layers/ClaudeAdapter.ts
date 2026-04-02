@@ -482,14 +482,80 @@ function summarizeToolRequest(toolName: string, input: Record<string, unknown>):
   const commandValue = input.command ?? input.cmd;
   const command = typeof commandValue === "string" ? commandValue : undefined;
   if (command && command.trim().length > 0) {
-    return `${toolName}: ${command.trim().slice(0, 400)}`;
+    return command.trim().slice(0, 400);
   }
+
+  const friendly = friendlyToolSummary(toolName, input);
+  if (friendly) return friendly;
 
   const serialized = JSON.stringify(input);
   if (serialized.length <= 400) {
     return `${toolName}: ${serialized}`;
   }
   return `${toolName}: ${serialized.slice(0, 397)}...`;
+}
+
+function friendlyToolSummary(toolName: string, input: Record<string, unknown>): string | undefined {
+  const normalized = toolName.toLowerCase();
+
+  if (normalized === "read") {
+    const filePath = trimStr(input.file_path ?? input.filePath ?? input.path);
+    return filePath ? shortenPath(filePath) : undefined;
+  }
+
+  if (normalized === "edit") {
+    const filePath = trimStr(input.file_path ?? input.filePath ?? input.path);
+    return filePath ? shortenPath(filePath) : undefined;
+  }
+
+  if (normalized === "write") {
+    const filePath = trimStr(input.file_path ?? input.filePath ?? input.path);
+    return filePath ? shortenPath(filePath) : undefined;
+  }
+
+  if (normalized === "grep") {
+    const pattern = trimStr(input.pattern);
+    const path = trimStr(input.path);
+    if (pattern && path) return `"${pattern}" in ${shortenPath(path)}`;
+    if (pattern) return `"${pattern}"`;
+    return undefined;
+  }
+
+  if (normalized === "glob") {
+    const pattern = trimStr(input.pattern);
+    const path = trimStr(input.path);
+    if (pattern && path) return `${pattern} in ${shortenPath(path)}`;
+    if (pattern) return pattern;
+    return undefined;
+  }
+
+  if (normalized === "bash") {
+    const cmd = trimStr(input.command ?? input.cmd ?? input.script);
+    return cmd ? cmd.slice(0, 400) : undefined;
+  }
+
+  if (normalized === "webfetch" || normalized === "web_fetch") {
+    return trimStr(input.url) ?? undefined;
+  }
+
+  if (normalized === "websearch" || normalized === "web_search") {
+    const query = trimStr(input.query ?? input.q);
+    return query ? `"${query}"` : undefined;
+  }
+
+  return undefined;
+}
+
+function trimStr(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function shortenPath(fullPath: string): string {
+  const parts = fullPath.split("/");
+  if (parts.length <= 3) return fullPath;
+  return parts.slice(-3).join("/");
 }
 
 function titleForTool(itemType: CanonicalItemType, toolName?: string): string {
@@ -509,10 +575,16 @@ function titleForTool(itemType: CanonicalItemType, toolName?: string): string {
     case "image_view":
       return "Image view";
     case "dynamic_tool_call":
-      return "Tool call";
+      return toolName ? capitalizeToolName(toolName) : "Tool call";
     default:
       return "Item";
   }
+}
+
+function capitalizeToolName(toolName: string): string {
+  const trimmed = toolName.trim();
+  if (trimmed.length === 0) return "Tool call";
+  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
 }
 
 function titleForReadTool(toolName?: string): string {
