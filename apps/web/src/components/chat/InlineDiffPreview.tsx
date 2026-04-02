@@ -113,7 +113,7 @@ function extractLineHtmls(fullHtml: string): string[] {
   });
 }
 
-function shortenPath(filePath: string): string {
+export function shortenPath(filePath: string): string {
   const parts = filePath.split("/");
   if (parts.length <= 3) return filePath;
   return `.../${parts.slice(-2).join("/")}`;
@@ -129,12 +129,12 @@ function buildLineKeys(lines: ReadonlyArray<DiffLine>): string[] {
   });
 }
 
-const OPERATION_LABELS: Record<InlineDiffHunk["operation"], string> = {
+export const OPERATION_LABELS: Record<InlineDiffHunk["operation"], string> = {
   edit: "Edit",
   write: "Write",
 };
 
-function DiffStatSummary(props: { additions: number; deletions: number }) {
+export function DiffStatSummary(props: { additions: number; deletions: number }) {
   const { additions, deletions } = props;
   if (additions === 0 && deletions === 0) return null;
 
@@ -175,31 +175,37 @@ const MARKER_CHAR: Record<DiffLine["type"], string> = {
   separator: " ",
 };
 
-export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: InlineDiffHunk }) {
-  const { hunk } = props;
-  const [collapsed, setCollapsed] = useState(false);
+interface DiffLinesBlockProps {
+  filePath: string;
+  lines: ReadonlyArray<DiffLine>;
+  truncated: boolean;
+  maxHeight?: string;
+  showBottomFade?: boolean;
+}
+
+export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlockProps) {
+  const { filePath, lines, truncated, maxHeight = "260px", showBottomFade = true } = props;
   const { resolvedTheme } = useTheme();
 
   const keyedLines = useMemo(() => {
-    const keys = buildLineKeys(hunk.lines);
-    return hunk.lines.map((line, i) => ({ ...line, key: keys[i]! }));
-  }, [hunk.lines]);
+    const keys = buildLineKeys(lines);
+    return lines.map((line, i) => ({ ...line, key: keys[i]! }));
+  }, [lines]);
 
   const [lineHtmls, setLineHtmls] = useState<string[] | null>(null);
   const highlightVersionRef = useRef(0);
 
   useEffect(() => {
-    if (collapsed) return;
     const version = ++highlightVersionRef.current;
-    const language = resolveLanguageFromPath(hunk.filePath);
+    const language = resolveLanguageFromPath(filePath);
     if (language === "text") return;
 
     const codeLineIndices: number[] = [];
     const codeFragments: string[] = [];
-    for (let i = 0; i < hunk.lines.length; i++) {
-      if (hunk.lines[i]!.type !== "separator") {
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i]!.type !== "separator") {
         codeLineIndices.push(i);
-        codeFragments.push(hunk.lines[i]!.content);
+        codeFragments.push(lines[i]!.content);
       }
     }
     if (codeFragments.length === 0) return;
@@ -215,10 +221,7 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
             const html = highlighter.codeToHtml(code, { lang: language, theme: themeName });
             const extracted = extractLineHtmls(html);
             if (extracted.length === codeFragments.length) {
-              const mapped: (string | null)[] = Array(hunk.lines.length).fill(null) as (
-                | string
-                | null
-              )[];
+              const mapped: (string | null)[] = Array(lines.length).fill(null) as (string | null)[];
               for (let i = 0; i < codeLineIndices.length; i++) {
                 mapped[codeLineIndices[i]!] = extracted[i]!;
               }
@@ -232,7 +235,60 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
     }, 150);
 
     return () => clearTimeout(timerId);
-  }, [collapsed, hunk.filePath, hunk.lines, resolvedTheme]);
+  }, [filePath, lines, resolvedTheme]);
+
+  return (
+    <div className="relative overflow-hidden border-t border-border/30" style={{ maxHeight }}>
+      <div className="overflow-x-auto overflow-y-hidden">
+        <pre className="m-0 p-0 text-[11px] leading-[18px]">
+          {keyedLines.map((line, idx) => {
+            if (line.type === "separator") {
+              return (
+                <div key={line.key} className="py-0.5 pl-1 text-center text-muted-foreground/30">
+                  ···
+                </div>
+              );
+            }
+            const highlighted = lineHtmls?.[idx];
+            return (
+              <div
+                key={line.key}
+                className={cn(
+                  "pr-3 pl-1",
+                  LINE_BG[line.type],
+                  !highlighted && LINE_TEXT_PLAIN[line.type],
+                )}
+              >
+                <span className="mr-2 inline-block w-3 select-none text-center text-muted-foreground/40">
+                  {MARKER_CHAR[line.type]}
+                </span>
+                {highlighted ? (
+                  <span dangerouslySetInnerHTML={{ __html: highlighted }} />
+                ) : (
+                  line.content
+                )}
+              </div>
+            );
+          })}
+        </pre>
+      </div>
+
+      {truncated && (
+        <div className="border-t border-border/30 px-2 py-0.5 text-center font-mono text-[10px] text-muted-foreground/40">
+          ... diff truncated
+        </div>
+      )}
+
+      {showBottomFade && !truncated && lines.length > 14 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background/80 to-transparent" />
+      )}
+    </div>
+  );
+});
+
+export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: InlineDiffHunk }) {
+  const { hunk } = props;
+  const [collapsed, setCollapsed] = useState(false);
 
   const CollapseIcon = collapsed ? ChevronRightIcon : ChevronDownIcon;
 
@@ -251,54 +307,7 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
       </button>
 
       {!collapsed && (
-        <div className="relative overflow-hidden border-t border-border/30 max-h-[260px]">
-          <div className="overflow-x-auto overflow-y-hidden">
-            <pre className="m-0 p-0 text-[11px] leading-[18px]">
-              {keyedLines.map((line, idx) => {
-                if (line.type === "separator") {
-                  return (
-                    <div
-                      key={line.key}
-                      className="py-0.5 pl-1 text-center text-muted-foreground/30"
-                    >
-                      ···
-                    </div>
-                  );
-                }
-                const highlighted = lineHtmls?.[idx];
-                return (
-                  <div
-                    key={line.key}
-                    className={cn(
-                      "pr-3 pl-1",
-                      LINE_BG[line.type],
-                      !highlighted && LINE_TEXT_PLAIN[line.type],
-                    )}
-                  >
-                    <span className="mr-2 inline-block w-3 select-none text-center text-muted-foreground/40">
-                      {MARKER_CHAR[line.type]}
-                    </span>
-                    {highlighted ? (
-                      <span dangerouslySetInnerHTML={{ __html: highlighted }} />
-                    ) : (
-                      line.content
-                    )}
-                  </div>
-                );
-              })}
-            </pre>
-          </div>
-
-          {hunk.truncated && (
-            <div className="border-t border-border/30 px-2 py-0.5 text-center font-mono text-[10px] text-muted-foreground/40">
-              ... diff truncated
-            </div>
-          )}
-
-          {!hunk.truncated && hunk.lines.length > 14 && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background/80 to-transparent" />
-          )}
-        </div>
+        <DiffLinesBlock filePath={hunk.filePath} lines={hunk.lines} truncated={hunk.truncated} />
       )}
     </div>
   );
