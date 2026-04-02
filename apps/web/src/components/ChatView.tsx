@@ -1982,11 +1982,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const scrollContainer = messagesScrollRef.current;
       if (!scrollContainer || !(event.target instanceof Element)) return;
 
-      const trigger = event.target.closest<HTMLElement>(
+      let trigger = event.target.closest<HTMLElement>(
         "button, summary, [role='button'], [data-scroll-anchor-target]",
       );
       if (!trigger || !scrollContainer.contains(trigger)) return;
-      if (trigger.closest("[data-scroll-anchor-ignore]")) return;
+      if (trigger.closest("[data-scroll-anchor-ignore]")) {
+        trigger = trigger.parentElement?.closest<HTMLElement>("[data-scroll-anchor-target]") ?? null;
+        if (!trigger || !scrollContainer.contains(trigger)) return;
+      }
 
       pendingInteractionAnchorRef.current = {
         element: trigger,

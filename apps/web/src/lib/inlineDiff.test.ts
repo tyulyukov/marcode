@@ -174,6 +174,7 @@ describe("extractDiffPreviews", () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0]!.lines.length).toBeLessThanOrEqual(40);
+    expect(result[0]!.fullLines.length).toBeGreaterThan(40);
     expect(result[0]!.truncated).toBe(true);
   });
 
@@ -195,6 +196,7 @@ describe("mergeDiffPreviews", () => {
     filePath: "a.ts",
     operation: "edit",
     lines: [{ type: "context", content: "a" }],
+    fullLines: [{ type: "context", content: "a" }],
     truncated: false,
     stats: { additions: 0, deletions: 0 },
   };
@@ -202,6 +204,7 @@ describe("mergeDiffPreviews", () => {
     filePath: "b.ts",
     operation: "write",
     lines: [{ type: "addition", content: "b" }],
+    fullLines: [{ type: "addition", content: "b" }],
     truncated: false,
     stats: { additions: 1, deletions: 0 },
   };
@@ -209,6 +212,7 @@ describe("mergeDiffPreviews", () => {
     filePath: "a.ts",
     operation: "edit",
     lines: [{ type: "addition", content: "updated" }],
+    fullLines: [{ type: "addition", content: "updated" }],
     truncated: false,
     stats: { additions: 1, deletions: 0 },
   };

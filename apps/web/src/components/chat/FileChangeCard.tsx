@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon, SquarePenIcon } from "lucide-react";
-import { memo, useState } from "react";
+import { memo, useLayoutEffect, useRef, useState } from "react";
 import { type InlineDiffHunk } from "~/lib/inlineDiff";
 import {
   DiffLinesBlock,
@@ -7,6 +7,8 @@ import {
   OPERATION_LABELS,
   shortenPath,
 } from "./InlineDiffPreview";
+
+const PREVIEW_MAX_HEIGHT = "120px";
 
 interface FileChangeCardProps {
   diffPreviews: ReadonlyArray<InlineDiffHunk>;
@@ -31,6 +33,20 @@ function HunkHeader(props: { hunk: InlineDiffHunk }) {
 export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCardProps) {
   const { diffPreviews } = props;
   const [expanded, setExpanded] = useState(false);
+  const [previewOverflows, setPreviewOverflows] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  const hasMoreContent =
+    expanded ||
+    diffPreviews.some((h) => h.truncated) ||
+    previewOverflows ||
+    diffPreviews.length > 1;
+
+  useLayoutEffect(() => {
+    const el = previewRef.current;
+    if (!el || expanded) return;
+    setPreviewOverflows(el.scrollHeight > el.clientHeight + 1);
+  }, [expanded, diffPreviews]);
 
   if (diffPreviews.length === 0) return null;
 
@@ -41,7 +57,10 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   const ExpandIcon = expanded ? ChevronUpIcon : ChevronDownIcon;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border/40 border-l-2 border-l-primary/25 bg-card/25">
+    <div
+      data-scroll-anchor-target
+      className="overflow-hidden rounded-xl border border-border/40 border-l-2 border-l-primary/25 bg-card/25"
+    >
       {isSingleHunk ? (
         <HunkHeader hunk={diffPreviews[0]!} />
       ) : (
@@ -54,17 +73,35 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
         </div>
       )}
 
-      {!isSingleHunk && !expanded && (
-        <div className="border-t border-border/20 px-3 py-1">
-          {diffPreviews.map((hunk, idx) => (
-            <div key={`${hunk.filePath}:${idx}`} className="flex items-center gap-1.5 py-0.5">
-              <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/60">
-                {shortenPath(hunk.filePath)}
-              </span>
-              <DiffStatSummary additions={hunk.stats.additions} deletions={hunk.stats.deletions} />
+      {!expanded && (
+        <>
+          {!isSingleHunk && (
+            <div className="border-t border-border/20 px-3 py-1">
+              {diffPreviews.map((hunk, idx) => (
+                <div key={`${hunk.filePath}:${idx}`} className="flex items-center gap-1.5 py-0.5">
+                  <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/60">
+                    {shortenPath(hunk.filePath)}
+                  </span>
+                  <DiffStatSummary
+                    additions={hunk.stats.additions}
+                    deletions={hunk.stats.deletions}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          )}
+          {isSingleHunk && (
+            <div ref={previewRef} style={{ maxHeight: PREVIEW_MAX_HEIGHT, overflow: "hidden" }}>
+              <DiffLinesBlock
+                filePath={diffPreviews[0]!.filePath}
+                lines={diffPreviews[0]!.lines}
+                truncated={false}
+                maxHeight="none"
+                showBottomFade={previewOverflows}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {expanded &&
@@ -79,22 +116,25 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
             )}
             <DiffLinesBlock
               filePath={hunk.filePath}
-              lines={hunk.lines}
-              truncated={hunk.truncated}
+              lines={hunk.fullLines}
+              truncated={false}
               maxHeight="none"
               showBottomFade={false}
             />
           </div>
         ))}
 
-      <button
-        type="button"
-        className="flex w-full items-center justify-center gap-1.5 border-t border-border/30 py-1.5 text-[10px] text-muted-foreground/50 transition-colors hover:bg-muted/20 hover:text-muted-foreground/70"
-        onClick={() => setExpanded((prev) => !prev)}
-      >
-        <ExpandIcon className="size-3" />
-        <span>{expanded ? "Hide diff" : "Show diff"}</span>
-      </button>
+      {hasMoreContent && (
+        <button
+          type="button"
+          data-scroll-anchor-ignore
+          className="flex w-full items-center justify-center gap-1.5 border-t border-border/30 py-1.5 text-[10px] text-muted-foreground/50 transition-colors hover:bg-muted/20 hover:text-muted-foreground/70"
+          onClick={() => setExpanded((prev) => !prev)}
+        >
+          <ExpandIcon className="size-3" />
+          <span>{expanded ? "Hide diff" : "Show full diff"}</span>
+        </button>
+      )}
     </div>
   );
 });

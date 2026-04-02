@@ -12,6 +12,7 @@ export interface InlineDiffHunk {
   filePath: string;
   operation: "edit" | "write";
   lines: ReadonlyArray<DiffLine>;
+  fullLines: ReadonlyArray<DiffLine>;
   truncated: boolean;
   stats: DiffStats;
 }
@@ -167,7 +168,7 @@ function trimContext(lines: DiffLine[]): DiffLine[] {
   for (let i = 0; i < lines.length; i++) {
     if (keep.has(i)) {
       if (lastKept !== -1 && i - lastKept > 1) {
-        result.push({ type: "separator", content: "" });
+        result.push({ type: "separator", content: String(i - lastKept - 1) });
       }
       result.push(lines[i]!);
       lastKept = i;
@@ -179,12 +180,13 @@ function trimContext(lines: DiffLine[]): DiffLine[] {
 
 function truncateDiffLines(lines: DiffLine[]): {
   lines: ReadonlyArray<DiffLine>;
+  fullLines: ReadonlyArray<DiffLine>;
   truncated: boolean;
 } {
   if (lines.length <= MAX_DIFF_LINES) {
-    return { lines, truncated: false };
+    return { lines, fullLines: lines, truncated: false };
   }
-  return { lines: lines.slice(0, MAX_DIFF_LINES), truncated: true };
+  return { lines: lines.slice(0, MAX_DIFF_LINES), fullLines: lines, truncated: true };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -208,9 +210,9 @@ function extractEditHunk(input: Record<string, unknown>): InlineDiffHunk | null 
   const rawLines = computeLineDiff(oldString, newString);
   const stats = diffStats(rawLines);
   const trimmed = trimContext(rawLines);
-  const { lines, truncated } = truncateDiffLines(trimmed);
+  const { lines, fullLines, truncated } = truncateDiffLines(trimmed);
 
-  return { filePath, operation: "edit", lines, truncated, stats };
+  return { filePath, operation: "edit", lines, fullLines, truncated, stats };
 }
 
 function extractWriteHunk(input: Record<string, unknown>): InlineDiffHunk | null {
@@ -225,9 +227,9 @@ function extractWriteHunk(input: Record<string, unknown>): InlineDiffHunk | null
     content: line,
   }));
   const stats: DiffStats = { additions: rawLines.length, deletions: 0 };
-  const { lines, truncated } = truncateDiffLines(rawLines);
+  const { lines, fullLines, truncated } = truncateDiffLines(rawLines);
 
-  return { filePath, operation: "write", lines, truncated, stats };
+  return { filePath, operation: "write", lines, fullLines, truncated, stats };
 }
 
 export function extractDiffPreviews(payload: Record<string, unknown> | null): InlineDiffHunk[] {

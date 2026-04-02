@@ -243,9 +243,13 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
         <pre className="m-0 p-0 text-[11px] leading-[18px]">
           {keyedLines.map((line, idx) => {
             if (line.type === "separator") {
+              const hiddenCount = parseInt(line.content, 10);
               return (
-                <div key={line.key} className="py-0.5 pl-1 text-center text-muted-foreground/30">
-                  ···
+                <div
+                  key={line.key}
+                  className="py-0.5 pl-1 text-center font-mono text-muted-foreground/30"
+                >
+                  ··· {hiddenCount > 0 ? `${hiddenCount} lines hidden` : "···"} ···
                 </div>
               );
             }
