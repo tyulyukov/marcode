@@ -887,6 +887,13 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext);
     const rangeContext = yield* gitCore.readRangeContext(cwd, baseBranch);
 
+    if (rangeContext.commitSummary.trim().length === 0) {
+      return yield* gitManagerError(
+        "runPrStep",
+        `No commits between ${baseBranch} and ${branch}. Make commits before creating a PR.`,
+      );
+    }
+
     const generated = yield* textGeneration.generatePrContent({
       cwd,
       baseBranch,
