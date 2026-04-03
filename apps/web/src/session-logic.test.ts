@@ -656,7 +656,7 @@ describe("deriveWorkLogEntries", () => {
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.agentGroup!.tasks).toHaveLength(2);
-    expect(entries[0]!.label).toBe("2 agents finished");
+    expect(entries[0]!.label).toBe("2 parallel agents finished");
     expect(entries[0]!.agentGroup!.tasks[0]!.taskId).toBe("t1");
     expect(entries[0]!.agentGroup!.tasks[1]!.taskId).toBe("t2");
   });
@@ -875,7 +875,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]!.agentGroup!.tasks[1]!.taskId).toBe("t2");
     expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
     expect(entries[0]!.agentGroup!.tasks[1]!.status).toBe("completed");
-    expect(entries[0]!.label).toBe("2 agents finished");
+    expect(entries[0]!.label).toBe("2 parallel agents finished");
 
     expect(entries[1]!.id).toBe("tool-after");
   });
@@ -1072,7 +1072,7 @@ describe("deriveWorkLogEntries", () => {
     ];
 
     const entries = deriveWorkLogEntries(activities, undefined);
-    expect(entries[0]!.label).toBe("2 agents (1 running)");
+    expect(entries[0]!.label).toBe("2 parallel agents (1 running)");
   });
 
   it("handles task.progress without preceding task.started", () => {
