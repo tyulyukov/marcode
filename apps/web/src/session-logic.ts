@@ -777,16 +777,17 @@ function buildAgentGroupLabel(tasks: ReadonlyArray<AgentTaskSummary>): string {
   const total = tasks.length;
   const runningCount = tasks.filter((t) => t.status === "running").length;
   const failedCount = tasks.filter((t) => t.status === "failed").length;
+  const parallel = total > 1 ? "parallel " : "";
   const noun = total === 1 ? "agent" : "agents";
 
   if (runningCount > 0) {
-    if (runningCount === total) return `${total} ${noun} running`;
-    return `${total} ${noun} (${runningCount} running)`;
+    if (runningCount === total) return `${total} ${parallel}${noun} running`;
+    return `${total} ${parallel}${noun} (${runningCount} running)`;
   }
   if (failedCount > 0) {
-    return `${total} ${noun} finished (${failedCount} failed)`;
+    return `${total} ${parallel}${noun} finished (${failedCount} failed)`;
   }
-  return `${total} ${noun} finished`;
+  return `${total} ${parallel}${noun} finished`;
 }
 
 function buildAgentGroupEntry(
