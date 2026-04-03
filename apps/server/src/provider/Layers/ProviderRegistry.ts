@@ -18,7 +18,7 @@ const loadProviders = (
   codexProvider: CodexProviderShape,
   claudeProvider: ClaudeProviderShape,
 ): Effect.Effect<readonly [ServerProvider, ServerProvider]> =>
-  Effect.all([codexProvider.getSnapshot, claudeProvider.getSnapshot], {
+  Effect.all([claudeProvider.getSnapshot, codexProvider.getSnapshot], {
     concurrency: "unbounded",
   });
 
