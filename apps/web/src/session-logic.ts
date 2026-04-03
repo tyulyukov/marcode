@@ -1135,14 +1135,15 @@ function extractToolResultText(payload: Record<string, unknown> | null): string 
   return null;
 }
 
+const EXIT_CODE_RE =
+  /^(?<output>[\s\S]*?)(?:\s*<?(?:exited with (?:exit )?code|Exited with code) (?<code>\d+)>?)\s*$/i;
+
 function stripTrailingExitCode(value: string): {
   output: string | null;
   exitCode?: number | undefined;
 } {
   const trimmed = value.trim();
-  const match = /^(?<output>[\s\S]*?)(?:\s*<exited with exit code (?<code>\d+)>)\s*$/i.exec(
-    trimmed,
-  );
+  const match = EXIT_CODE_RE.exec(trimmed);
   if (!match?.groups) {
     return {
       output: trimmed.length > 0 ? trimmed : null,

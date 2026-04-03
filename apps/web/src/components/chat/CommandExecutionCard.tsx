@@ -16,10 +16,12 @@ const PREVIEW_MAX_HEIGHT_PX = 120;
 const MIN_OVERFLOW_PX = 24;
 
 function deriveCommandStatus(entry: WorkLogEntry, isLive: boolean): CommandStatus {
-  if (!entry.toolCompleted && entry.exitCode === undefined) return "running";
-  if (isLive && entry.exitCode === undefined) return "running";
-  if (entry.tone === "error" || (entry.exitCode !== undefined && entry.exitCode !== 0))
-    return "error";
+  if (entry.toolCompleted || entry.exitCode !== undefined) {
+    if (entry.tone === "error" || (entry.exitCode !== undefined && entry.exitCode !== 0))
+      return "error";
+    return "success";
+  }
+  if (isLive) return "running";
   return "success";
 }
 
