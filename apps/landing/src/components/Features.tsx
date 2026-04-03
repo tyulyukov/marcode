@@ -5,6 +5,7 @@ import {
   ZapIcon,
   ShieldCheckIcon,
   LayoutGridIcon,
+  LayersIcon,
 } from "lucide-react";
 
 interface Feature {
@@ -18,9 +19,9 @@ interface Feature {
 
 const FEATURES: Feature[] = [
   {
-    title: "Claude-First",
+    title: "One GUI for Your Agents",
     description:
-      "Built from the ground up for Claude Code. Opus, Sonnet, Haiku — pick your model and go.",
+      "Claude Code, Codex — one interface for every coding agent. Pick your CLI, pick your model, and go.",
     icon: <BrainCircuitIcon className="size-7" />,
     accent: "fresh-syntax",
     accentGlow: "rgba(119,230,233,0.12)",
@@ -44,9 +45,18 @@ const FEATURES: Feature[] = [
     gridArea: "term",
   },
   {
+    title: "Rich Tool Display",
+    description:
+      "Every tool call, subagent spawn, file edit, and shell command — rendered with a purpose-built UI, not raw JSON.",
+    icon: <LayersIcon className="size-6" />,
+    accent: "dream-shift",
+    accentGlow: "rgba(195,156,255,0.12)",
+    gridArea: "tools",
+  },
+  {
     title: "Fast by Default",
     description:
-      "Incremental event streaming, structural sharing, fine-grained selectors. No jank under load.",
+      "Incremental streaming, structural sharing, fine-grained selectors, and dozens of optimizations under the hood. Zero jank, even under heavy load.",
     icon: <ZapIcon className="size-6" />,
     accent: "sunbyte",
     accentGlow: "rgba(249,214,71,0.12)",
@@ -56,8 +66,8 @@ const FEATURES: Feature[] = [
     title: "Secure Worktrees",
     description: "Agents work in isolated git worktrees. Revert any checkpoint with one click.",
     icon: <ShieldCheckIcon className="size-6" />,
-    accent: "dream-shift",
-    accentGlow: "rgba(195,156,255,0.12)",
+    accent: "fresh-syntax",
+    accentGlow: "rgba(119,230,233,0.12)",
     gridArea: "safe",
   },
   {
