@@ -1,11 +1,11 @@
 "use client";
 
 import { DownloadIcon, AppleIcon, MonitorIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { type DetectedOS, OS_LABELS, detectOS } from "~/lib/detectOS";
-import { fetchLatestRelease, findAssetUrl, RELEASES_URL } from "~/lib/github";
+import { type Release, findAssetUrl, RELEASES_URL } from "~/lib/github";
 
 function OSIcon({ os }: { os: DetectedOS }) {
   switch (os) {
@@ -16,10 +16,14 @@ function OSIcon({ os }: { os: DetectedOS }) {
   }
 }
 
-export function DownloadButton({ serverOS }: { serverOS: DetectedOS }) {
+export function DownloadButton({
+  serverOS,
+  serverRelease,
+}: {
+  serverOS: DetectedOS;
+  serverRelease: Release | null;
+}) {
   const [os, setOS] = useState<DetectedOS>(serverOS);
-  const [downloadUrl, setDownloadUrl] = useState<string>(RELEASES_URL);
-  const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
     const clientOS = detectOS(navigator.userAgent);
@@ -28,31 +32,12 @@ export function DownloadButton({ serverOS }: { serverOS: DetectedOS }) {
     }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const downloadUrl = useMemo(() => {
+    if (!serverRelease) return RELEASES_URL;
+    return findAssetUrl(serverRelease, os) ?? RELEASES_URL;
+  }, [serverRelease, os]);
 
-    fetchLatestRelease()
-      .then((release) => {
-        if (cancelled) return;
-
-        if (release.tag_name) {
-          setVersion(release.tag_name);
-        }
-
-        const url = findAssetUrl(release, os);
-        setDownloadUrl(url ?? RELEASES_URL);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDownloadUrl(RELEASES_URL);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [os]);
-
+  const version = serverRelease?.tag_name ?? null;
   const label = OS_LABELS[os];
 
   return (

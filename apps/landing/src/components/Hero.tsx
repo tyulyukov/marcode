@@ -1,8 +1,9 @@
 import Image from "next/image";
 import type { DetectedOS } from "~/lib/detectOS";
+import type { Release } from "~/lib/github";
 import { DownloadButton } from "./DownloadButton";
 
-export function Hero({ os }: { os: DetectedOS }) {
+export function Hero({ os, release }: { os: DetectedOS; release: Release | null }) {
   return (
     <section className="relative flex min-h-[85vh] flex-col items-center justify-center overflow-hidden px-6 py-24">
       {/* Decorative circles (BRAND.md: circle = core element) */}
@@ -35,7 +36,7 @@ export function Hero({ os }: { os: DetectedOS }) {
           who want to get things done.
         </p>
 
-        <DownloadButton serverOS={os} />
+        <DownloadButton serverOS={os} serverRelease={release} />
       </div>
     </section>
   );

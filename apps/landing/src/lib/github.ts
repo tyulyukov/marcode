@@ -3,7 +3,6 @@ const REPO = "tyulyukov/marcode";
 export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
 const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
-const CACHE_KEY = "marcode-latest-release";
 
 export interface ReleaseAsset {
   name: string;
@@ -16,19 +15,12 @@ export interface Release {
   assets: ReleaseAsset[];
 }
 
-export async function fetchLatestRelease(): Promise<Release> {
-  if (typeof sessionStorage !== "undefined") {
-    const cached = sessionStorage.getItem(CACHE_KEY);
-    if (cached) return JSON.parse(cached) as Release;
-  }
+export async function fetchLatestRelease(): Promise<Release | null> {
+  const res = await fetch(API_URL, { next: { revalidate: 300 } });
+  if (!res.ok) return null;
 
-  const data = (await fetch(API_URL).then((r) => r.json())) as Release;
-
-  if (data?.assets && typeof sessionStorage !== "undefined") {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(data));
-  }
-
-  return data;
+  const data = (await res.json()) as Release;
+  return data?.assets ? data : null;
 }
 
 const OS_ASSET_SUFFIXES: Record<string, string> = {
