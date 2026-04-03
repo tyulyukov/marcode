@@ -61,6 +61,8 @@ export interface WorkLogEntry {
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolName?: string;
+  toolInput?: Record<string, unknown>;
+  toolCompleted?: boolean;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   diffPreviews?: ReadonlyArray<InlineDiffHunk>;
@@ -617,7 +619,7 @@ export function deriveWorkLogEntries(
     entries.push(toDerivedWorkLogEntry(activity));
   }
 
-  return collapseDerivedWorkLogEntries(entries).map(
+  return deduplicateToolLifecycleEntries(collapseDerivedWorkLogEntries(entries)).map(
     ({ activityKind: _activityKind, collapseKey: _collapseKey, ...entry }) => entry,
   );
 }
@@ -822,6 +824,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     label: activity.summary,
     tone: activity.tone === "approval" ? "info" : activity.tone,
     activityKind: activity.kind,
+    ...(activity.kind === "tool.completed" ? { toolCompleted: true } : {}),
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
@@ -834,6 +837,18 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.exitCode = exitCode;
     }
   }
+  if (!entry.detail) {
+    const resultText = extractToolResultText(payload);
+    if (resultText) {
+      const { output, exitCode } = stripTrailingExitCode(resultText);
+      if (output) {
+        entry.detail = output;
+      }
+      if (exitCode !== undefined) {
+        entry.exitCode = exitCode;
+      }
+    }
+  }
   if (command) {
     entry.command = command;
   }
@@ -841,11 +856,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     entry.changedFiles = changedFiles;
   }
   const toolName = extractToolName(payload);
+  const toolInput = extractToolInput(payload);
   if (title) {
     entry.toolTitle = title;
   }
   if (toolName) {
     entry.toolName = toolName;
+  }
+  if (toolInput) {
+    entry.toolInput = toolInput;
   }
   if (itemType) {
     entry.itemType = itemType;
@@ -879,14 +898,69 @@ function collapseDerivedWorkLogEntries(
   return collapsed;
 }
 
+function toolDeduplicationKey(entry: DerivedWorkLogEntry): string | null {
+  if (
+    entry.activityKind !== "tool.started" &&
+    entry.activityKind !== "tool.updated" &&
+    entry.activityKind !== "tool.completed"
+  ) {
+    return null;
+  }
+  const fingerprint = entry.toolInput ? stableInputFingerprint(entry.toolInput) : null;
+  if (!fingerprint) return null;
+  const toolName = entry.toolName ?? "";
+  const itemType = entry.itemType ?? "";
+  return `${itemType}\x1f${toolName}\x1f${fingerprint}`;
+}
+
+function deduplicateToolLifecycleEntries(
+  entries: ReadonlyArray<DerivedWorkLogEntry>,
+): DerivedWorkLogEntry[] {
+  const bestByKey = new Map<string, DerivedWorkLogEntry>();
+  const firstIndexByKey = new Map<string, number>();
+  const duplicateIndices = new Set<number>();
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]!;
+    const key = toolDeduplicationKey(entry);
+    if (!key) continue;
+
+    const existing = bestByKey.get(key);
+    if (existing) {
+      bestByKey.set(key, mergeDerivedWorkLogEntries(existing, entry));
+      duplicateIndices.add(i);
+    } else {
+      bestByKey.set(key, entry);
+      firstIndexByKey.set(key, i);
+    }
+  }
+
+  const result: DerivedWorkLogEntry[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    if (duplicateIndices.has(i)) continue;
+    const entry = entries[i]!;
+    const key = toolDeduplicationKey(entry);
+    result.push(key && bestByKey.has(key) ? bestByKey.get(key)! : entry);
+  }
+  return result;
+}
+
 function shouldCollapseToolLifecycleEntries(
   previous: DerivedWorkLogEntry,
   next: DerivedWorkLogEntry,
 ): boolean {
-  if (previous.activityKind !== "tool.updated" && previous.activityKind !== "tool.completed") {
+  if (
+    previous.activityKind !== "tool.started" &&
+    previous.activityKind !== "tool.updated" &&
+    previous.activityKind !== "tool.completed"
+  ) {
     return false;
   }
-  if (next.activityKind !== "tool.updated" && next.activityKind !== "tool.completed") {
+  if (
+    next.activityKind !== "tool.started" &&
+    next.activityKind !== "tool.updated" &&
+    next.activityKind !== "tool.completed"
+  ) {
     return false;
   }
   if (previous.activityKind === "tool.completed") {
@@ -905,6 +979,7 @@ function mergeDerivedWorkLogEntries(
   const exitCode = next.exitCode ?? previous.exitCode;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const toolName = next.toolName ?? previous.toolName;
+  const toolInput = previous.toolInput ?? next.toolInput;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
@@ -921,6 +996,8 @@ function mergeDerivedWorkLogEntries(
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(toolName ? { toolName } : {}),
+    ...(toolInput ? { toolInput } : {}),
+    ...(previous.toolCompleted || next.toolCompleted ? { toolCompleted: true } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { collapseKey } : {}),
@@ -940,16 +1017,30 @@ function mergeChangedFiles(
 }
 
 function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | undefined {
-  if (entry.activityKind !== "tool.updated" && entry.activityKind !== "tool.completed") {
+  if (
+    entry.activityKind !== "tool.started" &&
+    entry.activityKind !== "tool.updated" &&
+    entry.activityKind !== "tool.completed"
+  ) {
     return undefined;
   }
   const normalizedLabel = normalizeCompactToolLabel(entry.toolTitle ?? entry.label);
-  const detail = entry.detail?.trim() ?? "";
   const itemType = entry.itemType ?? "";
-  if (normalizedLabel.length === 0 && detail.length === 0 && itemType.length === 0) {
+  const inputFingerprint = entry.toolInput ? stableInputFingerprint(entry.toolInput) : null;
+  const stableIdentifier = inputFingerprint ?? entry.detail?.trim() ?? "";
+  if (normalizedLabel.length === 0 && stableIdentifier.length === 0 && itemType.length === 0) {
     return undefined;
   }
-  return [itemType, normalizedLabel, detail].join("\u001f");
+  return [itemType, normalizedLabel, stableIdentifier].join("\u001f");
+}
+
+function stableInputFingerprint(input: Record<string, unknown>): string | null {
+  try {
+    const serialized = JSON.stringify(input);
+    return serialized.length > 0 && serialized !== "{}" ? serialized : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeCompactToolLabel(value: string): string {
@@ -999,11 +1090,13 @@ function extractToolCommand(payload: Record<string, unknown> | null): string | n
   const item = asRecord(data?.item);
   const itemResult = asRecord(item?.result);
   const itemInput = asRecord(item?.input);
+  const dataInput = asRecord(data?.input);
   const candidates = [
     normalizeCommandValue(item?.command),
     normalizeCommandValue(itemInput?.command),
     normalizeCommandValue(itemResult?.command),
     normalizeCommandValue(data?.command),
+    normalizeCommandValue(dataInput?.command),
   ];
   return candidates.find((candidate) => candidate !== null) ?? null;
 }
@@ -1015,6 +1108,31 @@ function extractToolTitle(payload: Record<string, unknown> | null): string | nul
 function extractToolName(payload: Record<string, unknown> | null): string | null {
   const data = asRecord(payload?.data);
   return asTrimmedString(data?.toolName);
+}
+
+function extractToolInput(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  const data = asRecord(payload?.data);
+  return asRecord(data?.input);
+}
+
+function extractToolResultText(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  const result = asRecord(data?.result);
+  if (!result) return null;
+  if (typeof result.content === "string" && result.content.length > 0) {
+    return result.content;
+  }
+  if (Array.isArray(result.content)) {
+    const texts = result.content
+      .map((block: unknown) => {
+        if (!block || typeof block !== "object") return "";
+        const b = block as { type?: unknown; text?: unknown };
+        return b.type === "text" && typeof b.text === "string" ? b.text : "";
+      })
+      .filter((text: string) => text.length > 0);
+    return texts.length > 0 ? texts.join("\n") : null;
+  }
+  return null;
 }
 
 function stripTrailingExitCode(value: string): {

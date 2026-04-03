@@ -1886,6 +1886,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
       }
 
+      const completedDetail = toolResult.text.length > 0 ? toolResult.text : tool.detail;
       const completedStamp = yield* makeEventStamp();
       yield* offerRuntimeEvent({
         type: "item.completed",
@@ -1899,7 +1900,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           itemType: tool.itemType,
           status: itemStatus,
           title: tool.title,
-          ...(tool.detail ? { detail: tool.detail } : {}),
+          ...(completedDetail ? { detail: completedDetail } : {}),
           data: toolData,
         },
         providerRefs: nativeProviderRefs(context, { providerItemId: tool.itemId }),

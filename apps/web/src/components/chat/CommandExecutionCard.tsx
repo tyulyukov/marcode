@@ -1,6 +1,7 @@
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleXIcon, TerminalIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
+import { ansiToSpans } from "~/lib/ansiToSpans";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import type { WorkLogEntry } from "../../session-logic";
 
@@ -11,23 +12,28 @@ interface CommandExecutionCardProps {
 
 type CommandStatus = "running" | "error" | "success";
 
-const PREVIEW_MAX_HEIGHT = "120px";
+const PREVIEW_MAX_HEIGHT_PX = 120;
+const MIN_OVERFLOW_PX = 24;
 
 function deriveCommandStatus(entry: WorkLogEntry, isLive: boolean): CommandStatus {
-  if (isLive && !entry.detail && entry.exitCode === undefined) return "running";
+  if (!entry.toolCompleted && entry.exitCode === undefined) return "running";
+  if (isLive && entry.exitCode === undefined) return "running";
   if (entry.tone === "error" || (entry.exitCode !== undefined && entry.exitCode !== 0))
     return "error";
   return "success";
 }
 
-const DETAIL_COMMAND_PREFIX_RE = /^(?:Bash|Shell|Sh):\s*/i;
+const DETAIL_COMMAND_PREFIX_RE = /^(?:Bash|Shell|Sh|Read|Edit|Write|Grep|Glob):\s*/i;
 
 function deriveCommandAndOutput(entry: WorkLogEntry): {
   displayCommand: string | null;
   output: string | null;
 } {
   if (entry.command) {
-    return { displayCommand: entry.command, output: entry.detail ?? null };
+    const output = detailIsDistinctOutput(entry.detail, entry.command)
+      ? (entry.detail ?? null)
+      : null;
+    return { displayCommand: entry.command, output };
   }
   if (entry.detail) {
     const firstNewline = entry.detail.indexOf("\n");
@@ -39,6 +45,14 @@ function deriveCommandAndOutput(entry: WorkLogEntry): {
     }
   }
   return { displayCommand: null, output: entry.detail ?? null };
+}
+
+function detailIsDistinctOutput(detail: string | undefined, command: string): boolean {
+  if (!detail || detail.length === 0) return false;
+  const stripped = detail.replace(DETAIL_COMMAND_PREFIX_RE, "").trim();
+  if (stripped === command.trim()) return false;
+  if (stripped.startsWith("{") && stripped.includes(command.slice(0, 20))) return false;
+  return true;
 }
 
 const STATUS_ACCENT: Record<CommandStatus, string> = {
@@ -86,11 +100,12 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
 
   const status = deriveCommandStatus(entry, isLive);
   const { displayCommand, output } = useMemo(() => deriveCommandAndOutput(entry), [entry]);
+  const renderedOutput = useMemo(() => (output ? ansiToSpans(output) : null), [output]);
 
   useLayoutEffect(() => {
     const el = previewRef.current;
     if (!el || expanded) return;
-    setPreviewOverflows(el.scrollHeight > el.clientHeight + 1);
+    setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
   }, [expanded, output]);
 
   const hasMoreContent = expanded || previewOverflows;
@@ -125,14 +140,14 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
         )}
       </Tooltip>
 
-      {output && !expanded && (
+      {renderedOutput && !expanded && (
         <div
           ref={previewRef}
           className="relative overflow-hidden border-t border-border/20"
-          style={{ maxHeight: PREVIEW_MAX_HEIGHT }}
+          style={{ maxHeight: `${PREVIEW_MAX_HEIGHT_PX}px` }}
         >
           <pre className="whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
-            {output}
+            {renderedOutput}
           </pre>
           {previewOverflows && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card/90 to-transparent" />
@@ -140,10 +155,10 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
         </div>
       )}
 
-      {output && expanded && (
+      {renderedOutput && expanded && (
         <div className="border-t border-border/20">
-          <pre className="max-h-[500px] overflow-y-auto whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
-            {output}
+          <pre className="overflow-y-auto whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
+            {renderedOutput}
           </pre>
         </div>
       )}

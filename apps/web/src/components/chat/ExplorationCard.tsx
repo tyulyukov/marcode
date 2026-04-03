@@ -24,14 +24,84 @@ function isSearchToolName(toolName: string | undefined): boolean {
   return SEARCH_TOOL_NAMES.has(toolName.toLowerCase());
 }
 
+function fileNameFromPath(filePath: string): string {
+  const parts = filePath.split("/");
+  return parts[parts.length - 1] ?? filePath;
+}
+
+function inputStr(input: Record<string, unknown> | undefined, key: string): string | null {
+  if (!input) return null;
+  const value = input[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function inputNum(input: Record<string, unknown> | undefined, key: string): number | null {
+  if (!input) return null;
+  const value = input[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function inputFilePath(input: Record<string, unknown> | undefined): string | null {
+  return inputStr(input, "file_path") ?? inputStr(input, "filePath") ?? inputStr(input, "path");
+}
+
+function formatLineRange(input: Record<string, unknown> | undefined): string | null {
+  if (!input) return null;
+  const offset = inputNum(input, "offset");
+  const limit = inputNum(input, "limit");
+  if (offset !== null && limit !== null) {
+    return `L${offset + 1}–${offset + limit}`;
+  }
+  if (offset !== null) {
+    return `from L${offset + 1}`;
+  }
+  if (limit !== null && limit < 2000) {
+    return `first ${limit} lines`;
+  }
+  return null;
+}
+
 function explorationEntryHeading(entry: WorkLogEntry): string {
-  if (entry.toolName) {
-    const lower = entry.toolName.toLowerCase();
-    if (lower === "read") return `Read ${extractFileName(entry.detail)}`;
-    if (lower === "grep") return `Searched for ${extractSearchSummary(entry.detail)}`;
-    if (lower === "glob") return `Glob ${extractSearchSummary(entry.detail)}`;
-    if (lower === "list" || lower === "ls") return `Listed ${extractPathSummary(entry.detail)}`;
-    if (lower === "find") return `Found ${extractPathSummary(entry.detail)}`;
+  const input = entry.toolInput;
+  const lower = entry.toolName?.toLowerCase();
+
+  if (lower === "read") {
+    const filePath = inputFilePath(input);
+    const fileName = filePath
+      ? fileNameFromPath(filePath)
+      : extractFileNameFromDetail(entry.detail);
+    const lineRange = formatLineRange(input);
+    if (fileName && lineRange) return `Read ${fileName} (${lineRange})`;
+    if (fileName) return `Read ${fileName}`;
+    return "Read file";
+  }
+
+  if (lower === "grep") {
+    const pattern = inputStr(input, "pattern");
+    const path = inputFilePath(input);
+    if (pattern && path) return `Searched for ${pattern} in ${fileNameFromPath(path)}`;
+    if (pattern) return `Searched for ${pattern}`;
+    return `Searched ${extractSearchSummaryFromDetail(entry.detail)}`;
+  }
+
+  if (lower === "glob") {
+    const pattern = inputStr(input, "pattern");
+    const path = inputFilePath(input);
+    if (pattern && path) return `Glob ${pattern} in ${fileNameFromPath(path)}`;
+    if (pattern) return `Glob ${pattern}`;
+    return `Glob ${extractSearchSummaryFromDetail(entry.detail)}`;
+  }
+
+  if (lower === "list" || lower === "ls") {
+    const path = inputFilePath(input);
+    if (path) return `Listed ${fileNameFromPath(path)}`;
+    return `Listed ${extractPathSummaryFromDetail(entry.detail)}`;
+  }
+
+  if (lower === "find") {
+    const path = inputFilePath(input);
+    if (path) return `Found ${fileNameFromPath(path)}`;
+    return `Found ${extractPathSummaryFromDetail(entry.detail)}`;
   }
 
   const raw = (entry.toolTitle ?? entry.label).trim();
@@ -54,46 +124,18 @@ function isGenericLabel(label: string): boolean {
   );
 }
 
-function extractFileName(detail: string | undefined): string {
-  if (!detail) return "";
-  const cleaned = stripToolPrefix(detail);
-  const filePath = extractFilePathFromValue(cleaned);
-  if (filePath) {
-    const parts = filePath.split("/");
-    return parts[parts.length - 1] ?? filePath;
-  }
-  return "";
-}
-
-function extractSearchSummary(detail: string | undefined): string {
-  if (!detail) return "";
-  const cleaned = stripToolPrefix(detail);
-  const parsed = tryParseJson(cleaned);
-  if (parsed) {
-    const pattern = typeof parsed.pattern === "string" ? parsed.pattern : null;
-    const path = typeof parsed.path === "string" ? parsed.path : null;
-    if (pattern && path) {
-      const shortPath = path.split("/").pop() ?? path;
-      return `${pattern} in ${shortPath}`;
-    }
-    if (pattern) return pattern;
-  }
-  return cleaned.slice(0, 120);
-}
-
-function extractPathSummary(detail: string | undefined): string {
-  if (!detail) return "";
-  const cleaned = stripToolPrefix(detail);
-  const filePath = extractFilePathFromValue(cleaned);
-  if (filePath) {
-    const parts = filePath.split("/");
-    return parts.slice(-2).join("/");
-  }
-  return cleaned.slice(0, 120);
-}
-
 function stripToolPrefix(value: string): string {
   return value.replace(/^[A-Za-z_]+:\s*/, "").trim();
+}
+
+function tryParseJson(value: string): Record<string, unknown> | null {
+  if (!value.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function extractFilePathFromValue(value: string): string | null {
@@ -113,23 +155,42 @@ function extractFilePathFromValue(value: string): string | null {
   return null;
 }
 
-function tryParseJson(value: string): Record<string, unknown> | null {
-  if (!value.startsWith("{")) return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
+function extractFileNameFromDetail(detail: string | undefined): string {
+  if (!detail) return "";
+  const cleaned = stripToolPrefix(detail);
+  const filePath = extractFilePathFromValue(cleaned);
+  if (filePath) return fileNameFromPath(filePath);
+  return "";
+}
+
+function extractSearchSummaryFromDetail(detail: string | undefined): string {
+  if (!detail) return "";
+  const cleaned = stripToolPrefix(detail);
+  const parsed = tryParseJson(cleaned);
+  if (parsed) {
+    const pattern = typeof parsed.pattern === "string" ? parsed.pattern : null;
+    const path = typeof parsed.path === "string" ? parsed.path : null;
+    if (pattern && path) return `${pattern} in ${fileNameFromPath(path)}`;
+    if (pattern) return pattern;
   }
+  return cleaned.slice(0, 120);
+}
+
+function extractPathSummaryFromDetail(detail: string | undefined): string {
+  if (!detail) return "";
+  const cleaned = stripToolPrefix(detail);
+  const filePath = extractFilePathFromValue(cleaned);
+  if (filePath) {
+    const parts = filePath.split("/");
+    return parts.slice(-2).join("/");
+  }
+  return cleaned.slice(0, 120);
 }
 
 function cleanDetailAsHeading(detail: string): string {
   const cleaned = stripToolPrefix(detail);
   const filePath = extractFilePathFromValue(cleaned);
-  if (filePath) {
-    const fileName = filePath.split("/").pop() ?? filePath;
-    return `Read ${fileName}`;
-  }
+  if (filePath) return `Read ${fileNameFromPath(filePath)}`;
   return cleaned.slice(0, 80);
 }
 

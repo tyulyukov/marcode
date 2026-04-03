@@ -71,7 +71,10 @@ function sameId(left: string | null | undefined, right: string | null | undefine
   return left === right;
 }
 
-function truncateDetail(value: string, limit = 180): string {
+const SUMMARY_DETAIL_LIMIT = 180;
+const TOOL_OUTPUT_LIMIT = 20_000;
+
+function truncateDetail(value: string, limit = SUMMARY_DETAIL_LIMIT): string {
   return value.length > limit ? `${value.slice(0, limit - 3)}...` : value;
 }
 
@@ -443,7 +446,9 @@ function runtimeEventToActivities(
           payload: {
             itemType: event.payload.itemType,
             ...(event.payload.status ? { status: event.payload.status } : {}),
-            ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.detail
+              ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
+              : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -465,7 +470,9 @@ function runtimeEventToActivities(
           summary: event.payload.title ?? "Tool",
           payload: {
             itemType: event.payload.itemType,
-            ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.detail
+              ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
+              : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
@@ -487,7 +494,9 @@ function runtimeEventToActivities(
           summary: `${event.payload.title ?? "Tool"} started`,
           payload: {
             itemType: event.payload.itemType,
-            ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
+            ...(event.payload.detail
+              ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
+              : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

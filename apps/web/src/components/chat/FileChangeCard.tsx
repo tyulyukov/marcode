@@ -9,6 +9,7 @@ import {
 } from "./InlineDiffPreview";
 
 const PREVIEW_MAX_HEIGHT = "120px";
+const MIN_OVERFLOW_PX = 24;
 
 interface FileChangeCardProps {
   diffPreviews: ReadonlyArray<InlineDiffHunk>;
@@ -45,7 +46,7 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   useLayoutEffect(() => {
     const el = previewRef.current;
     if (!el || expanded) return;
-    setPreviewOverflows(el.scrollHeight > el.clientHeight + 1);
+    setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
   }, [expanded, diffPreviews]);
 
   if (diffPreviews.length === 0) return null;
