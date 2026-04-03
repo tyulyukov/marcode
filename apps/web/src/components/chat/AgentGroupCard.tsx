@@ -26,16 +26,16 @@ function formatAgentTaskType(taskType: string | null): string | null {
     .join(" ");
 }
 
-function agentTaskStatusAccent(status: AgentTaskSummary["status"]): string {
+function agentTaskStatusDotColor(status: AgentTaskSummary["status"]): string {
   switch (status) {
     case "running":
-      return "border-l-amber-400/70";
+      return "bg-amber-400/70";
     case "failed":
-      return "border-l-rose-400/70";
+      return "bg-rose-400/70";
     case "completed":
-      return "border-l-emerald-500/70";
+      return "bg-emerald-500/70";
     case "stopped":
-      return "border-l-muted-foreground/40";
+      return "bg-muted-foreground/40";
   }
 }
 
@@ -63,10 +63,15 @@ const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary 
   const meta = agentTaskMeta(task);
 
   return (
-    <div
-      className={cn("rounded-md border-l-2 py-1 pl-2.5 pr-1.5", agentTaskStatusAccent(task.status))}
-    >
+    <div className="rounded-md py-1 pr-1.5 pl-2">
       <div className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            isRunning && "animate-pulse",
+            agentTaskStatusDotColor(task.status),
+          )}
+        />
         {typeLabel && (
           <span className="shrink-0 rounded bg-muted/50 px-1 py-px text-[10px] text-muted-foreground/60">
             {typeLabel}
@@ -95,13 +100,10 @@ const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary 
             render={
               <p
                 className={cn(
-                  "truncate text-[10px] leading-4",
+                  "truncate pl-[9px] text-[10px] leading-4",
                   isRunning ? "text-amber-400/70" : "text-muted-foreground/50",
                 )}
               >
-                {isRunning && (
-                  <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-amber-400/80 align-middle" />
-                )}
                 {activityLine}
               </p>
             }
@@ -119,16 +121,13 @@ const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary 
 });
 
 export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCardProps) {
-  const { agentGroup, label, isLive } = props;
+  const { agentGroup, label } = props;
   const tasks = agentGroup.tasks;
 
   return (
     <div
       data-scroll-anchor-target
-      className={cn(
-        "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
-        isLive ? "border-l-violet-400/40" : "border-l-violet-400/20",
-      )}
+      className="overflow-hidden rounded-xl border border-border/40 bg-card/25"
     >
       <div className="flex items-center gap-2 px-3 py-1.5">
         <BotIcon className="size-3.5 shrink-0 text-violet-400/60" />
