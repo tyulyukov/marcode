@@ -56,6 +56,9 @@ import { FileChangeCard } from "./FileChangeCard";
 import { AgentGroupCard } from "./AgentGroupCard";
 import { CommandExecutionCard } from "./CommandExecutionCard";
 import { ExplorationCard } from "./ExplorationCard";
+import { WebSearchCard } from "./WebSearchCard";
+import { WebFetchCard } from "./WebFetchCard";
+import { McpToolCallCard } from "./McpToolCallCard";
 
 const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
 
@@ -70,6 +73,9 @@ const EXPLORATION_CARD_COLLAPSED_HEIGHT = 36;
 const AGENT_GROUP_HEADER_HEIGHT = 32;
 const AGENT_TASK_ROW_HEIGHT = 36;
 const COMMAND_CARD_COLLAPSED_HEIGHT = 64;
+const WEB_SEARCH_CARD_COLLAPSED_HEIGHT = 64;
+const WEB_FETCH_CARD_COLLAPSED_HEIGHT = 64;
+const MCP_TOOL_CARD_COLLAPSED_HEIGHT = 80;
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
@@ -118,6 +124,27 @@ type TimelineRow =
     }
   | {
       kind: "command";
+      id: string;
+      createdAt: string;
+      entry: TimelineWorkEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "web-search";
+      id: string;
+      createdAt: string;
+      entry: TimelineWorkEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "web-fetch";
+      id: string;
+      createdAt: string;
+      entry: TimelineWorkEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "mcp-tool";
       id: string;
       createdAt: string;
       entry: TimelineWorkEntry;
@@ -228,6 +255,12 @@ const TimelineRowContent = memo(function TimelineRowContent({
       )}
 
       {row.kind === "command" && <CommandExecutionCard entry={row.entry} isLive={row.isLive} />}
+
+      {row.kind === "web-search" && <WebSearchCard entry={row.entry} isLive={row.isLive} />}
+
+      {row.kind === "web-fetch" && <WebFetchCard entry={row.entry} isLive={row.isLive} />}
+
+      {row.kind === "mcp-tool" && <McpToolCallCard entry={row.entry} isLive={row.isLive} />}
 
       {row.kind === "message" &&
         row.message.role === "user" &&
@@ -628,6 +661,36 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               entry: current.entry,
               isLive: false,
             });
+          } else if (isWebSearchEntry(current.entry)) {
+            flushPendingWork();
+            flushPendingExploration();
+            nextRows.push({
+              kind: "web-search",
+              id: current.id,
+              createdAt: current.createdAt,
+              entry: current.entry,
+              isLive: false,
+            });
+          } else if (isWebFetchEntry(current.entry)) {
+            flushPendingWork();
+            flushPendingExploration();
+            nextRows.push({
+              kind: "web-fetch",
+              id: current.id,
+              createdAt: current.createdAt,
+              entry: current.entry,
+              isLive: false,
+            });
+          } else if (isMcpToolEntry(current.entry)) {
+            flushPendingWork();
+            flushPendingExploration();
+            nextRows.push({
+              kind: "mcp-tool",
+              id: current.id,
+              createdAt: current.createdAt,
+              entry: current.entry,
+              isLive: false,
+            });
           } else if (
             current.entry.itemType === "file_change" &&
             (current.entry.diffPreviews?.length ?? 0) > 0
@@ -690,7 +753,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       for (let i = nextRows.length - 1; i >= 0; i--) {
         const r = nextRows[i];
         if (!r) break;
-        if (r.kind === "exploration" || r.kind === "agent-group" || r.kind === "command") {
+        if (
+          r.kind === "exploration" ||
+          r.kind === "agent-group" ||
+          r.kind === "command" ||
+          r.kind === "web-search" ||
+          r.kind === "web-fetch" ||
+          r.kind === "mcp-tool"
+        ) {
           nextRows[i] = { ...r, isLive: true };
           break;
         }
@@ -783,6 +853,9 @@ function estimateRowHeight(row: TimelineRow, timelineWidthPx: number | null): nu
     return AGENT_GROUP_HEADER_HEIGHT + taskCount * AGENT_TASK_ROW_HEIGHT + 12;
   }
   if (row.kind === "command") return COMMAND_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "web-search") return WEB_SEARCH_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "web-fetch") return WEB_FETCH_CARD_COLLAPSED_HEIGHT;
+  if (row.kind === "mcp-tool") return MCP_TOOL_CARD_COLLAPSED_HEIGHT;
   return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
 }
 
@@ -1045,7 +1118,9 @@ function isExplorationEntry(entry: TimelineWorkEntry): boolean {
   if (
     entry.itemType === "file_change" ||
     entry.itemType === "command_execution" ||
-    entry.itemType === "web_search"
+    entry.itemType === "web_search" ||
+    entry.itemType === "web_fetch" ||
+    entry.itemType === "mcp_tool_call"
   )
     return false;
   if (entry.command) return false;
@@ -1065,6 +1140,23 @@ function isCommandEntry(entry: TimelineWorkEntry): boolean {
   return (
     entry.requestKind === "command" || entry.itemType === "command_execution" || !!entry.command
   );
+}
+
+function isWebSearchEntry(entry: TimelineWorkEntry): boolean {
+  if (entry.itemType === "web_search") return true;
+  const lower = entry.toolName?.toLowerCase() ?? "";
+  return lower === "websearch" || lower === "web_search";
+}
+
+function isWebFetchEntry(entry: TimelineWorkEntry): boolean {
+  if (entry.itemType === "web_fetch") return true;
+  const lower = entry.toolName?.toLowerCase() ?? "";
+  return lower === "webfetch" || lower === "web_fetch";
+}
+
+function isMcpToolEntry(entry: TimelineWorkEntry): boolean {
+  if (entry.itemType === "mcp_tool_call") return true;
+  return (entry.toolName ?? "").startsWith("mcp__");
 }
 
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
@@ -1146,6 +1238,7 @@ function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
   if (workEntry.itemType === "file_read" || isExplorationToolName(workEntry.toolName))
     return EyeIcon;
   if (workEntry.itemType === "web_search") return GlobeIcon;
+  if (workEntry.itemType === "web_fetch") return GlobeIcon;
   if (workEntry.itemType === "image_view") return EyeIcon;
 
   switch (workEntry.itemType) {
