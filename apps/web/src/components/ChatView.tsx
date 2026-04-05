@@ -106,7 +106,6 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleAlertIcon,
-  ListTodoIcon,
   LockIcon,
   LockOpenIcon,
   XIcon,
@@ -4000,12 +3999,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
+          hasPlan={Boolean(activePlan || sidebarProposedPlan)}
+          planSidebarOpen={planSidebarOpen}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
+          onTogglePlanSidebar={togglePlanSidebar}
         />
       </header>
 
@@ -4311,15 +4313,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         {isComposerFooterCompact ? (
                           <>
                             <CompactComposerControlsMenu
-                              activePlan={Boolean(
-                                activePlan || sidebarProposedPlan || planSidebarOpen,
-                              )}
                               interactionMode={interactionMode}
-                              planSidebarOpen={planSidebarOpen}
                               runtimeMode={runtimeMode}
                               traitsMenuContent={providerTraitsMenuContent}
                               onToggleInteractionMode={toggleInteractionMode}
-                              onTogglePlanSidebar={togglePlanSidebar}
                               onToggleRuntimeMode={toggleRuntimeMode}
                             />
                             <DirectoryPickerPopover
@@ -4395,33 +4392,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 {runtimeMode === "full-access" ? "Full access" : "Supervised"}
                               </span>
                             </Button>
-
-                            {activePlan || sidebarProposedPlan || planSidebarOpen ? (
-                              <>
-                                <Separator
-                                  orientation="vertical"
-                                  className="mx-0.5 hidden h-4 sm:block"
-                                />
-                                <Button
-                                  variant="ghost"
-                                  className={cn(
-                                    "shrink-0 whitespace-nowrap px-2 sm:px-3",
-                                    planSidebarOpen
-                                      ? "text-blue-400 hover:text-blue-300"
-                                      : "text-muted-foreground/70 hover:text-foreground/80",
-                                  )}
-                                  size="sm"
-                                  type="button"
-                                  onClick={togglePlanSidebar}
-                                  title={
-                                    planSidebarOpen ? "Hide plan sidebar" : "Show plan sidebar"
-                                  }
-                                >
-                                  <ListTodoIcon />
-                                  <span className="sr-only sm:not-sr-only">Plan</span>
-                                </Button>
-                              </>
-                            ) : null}
 
                             <Separator
                               orientation="vertical"

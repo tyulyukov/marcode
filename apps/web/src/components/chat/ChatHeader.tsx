@@ -6,7 +6,7 @@ import {
 } from "@marcode/contracts";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
-import { DiffIcon, TerminalSquareIcon } from "lucide-react";
+import { DiffIcon, ListTodoIcon, TerminalSquareIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
@@ -30,12 +30,15 @@ interface ChatHeaderProps {
   diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
   diffOpen: boolean;
+  hasPlan: boolean;
+  planSidebarOpen: boolean;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
+  onTogglePlanSidebar: () => void;
 }
 
 export const ChatHeader = memo(function ChatHeader({
@@ -54,12 +57,15 @@ export const ChatHeader = memo(function ChatHeader({
   diffToggleShortcutLabel,
   gitCwd,
   diffOpen,
+  hasPlan,
+  planSidebarOpen,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
   onToggleTerminal,
   onToggleDiff,
+  onTogglePlanSidebar,
 }: ChatHeaderProps) {
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
@@ -157,6 +163,30 @@ export const ChatHeader = memo(function ChatHeader({
               : diffToggleShortcutLabel
                 ? `Toggle diff panel (${diffToggleShortcutLabel})`
                 : "Toggle diff panel"}
+          </TooltipPopup>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                className="shrink-0"
+                pressed={planSidebarOpen}
+                onPressedChange={onTogglePlanSidebar}
+                aria-label="Toggle plan sidebar"
+                variant="outline"
+                size="xs"
+                disabled={!hasPlan}
+              >
+                <ListTodoIcon className="size-3" />
+              </Toggle>
+            }
+          />
+          <TooltipPopup side="bottom">
+            {!hasPlan
+              ? "No plan available"
+              : planSidebarOpen
+                ? "Hide plan sidebar"
+                : "Show plan sidebar"}
           </TooltipPopup>
         </Tooltip>
       </div>
