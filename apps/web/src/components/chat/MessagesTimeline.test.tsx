@@ -54,6 +54,7 @@ describe("MessagesTimeline", () => {
         hasMessages
         isWorking={false}
         isSendBusy={false}
+        isPreparingWorktree={false}
         activeTurnStartedAt={null}
         timelineEntries={[
           {
@@ -106,6 +107,7 @@ describe("MessagesTimeline", () => {
         hasMessages
         isWorking={false}
         isSendBusy={false}
+        isPreparingWorktree={false}
         activeTurnStartedAt={null}
         timelineEntries={[
           {

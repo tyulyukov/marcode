@@ -139,6 +139,7 @@ interface TimelineRowContentProps {
   isRevertingCheckpoint: boolean;
   isWorking: boolean;
   isSendBusy: boolean;
+  isPreparingWorktree: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
@@ -160,6 +161,7 @@ const TimelineRowContent = memo(function TimelineRowContent({
   isRevertingCheckpoint,
   isWorking,
   isSendBusy,
+  isPreparingWorktree,
   onImageExpand,
   markdownCwd,
   resolvedTheme,
@@ -436,22 +438,17 @@ const TimelineRowContent = memo(function TimelineRowContent({
 
       {row.kind === "working" && (
         <div className="py-0.5 pl-1.5">
-          <div className="flex items-center gap-2 pt-1 text-[11px] text-primary/60">
-            <span className="inline-flex items-center gap-[3px]">
-              <span className="h-1 w-1 rounded-full bg-primary/50 animate-pulse" />
-              <span className="h-1 w-1 rounded-full bg-primary/50 animate-pulse [animation-delay:200ms]" />
-              <span className="h-1 w-1 rounded-full bg-primary/50 animate-pulse [animation-delay:400ms]" />
-            </span>
-            <span>
-              {isSendBusy ? (
-                "Starting\u2026"
-              ) : row.createdAt ? (
-                <WorkingElapsedLabel startIso={row.createdAt} />
-              ) : (
-                "Working\u2026"
-              )}
-            </span>
-          </div>
+          <span className="shiny-text pt-1 text-xs font-semibold text-primary/60">
+            {isPreparingWorktree ? (
+              "Preparing worktree\u2026"
+            ) : isSendBusy ? (
+              "Starting\u2026"
+            ) : row.createdAt ? (
+              <WorkingElapsedLabel startIso={row.createdAt} />
+            ) : (
+              "Working\u2026"
+            )}
+          </span>
         </div>
       )}
     </div>
@@ -487,6 +484,7 @@ interface MessagesTimelineProps {
   hasMessages: boolean;
   isWorking: boolean;
   isSendBusy: boolean;
+  isPreparingWorktree: boolean;
   activeTurnStartedAt: string | null;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   completionDividerBeforeEntryId: string | null;
@@ -509,6 +507,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hasMessages,
   isWorking,
   isSendBusy,
+  isPreparingWorktree,
   activeTurnStartedAt,
   timelineEntries,
   completionDividerBeforeEntryId,
@@ -755,6 +754,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             isRevertingCheckpoint={isRevertingCheckpoint}
             isWorking={isWorking}
             isSendBusy={isSendBusy}
+            isPreparingWorktree={isPreparingWorktree}
             onImageExpand={onImageExpand}
             markdownCwd={markdownCwd}
             resolvedTheme={resolvedTheme}

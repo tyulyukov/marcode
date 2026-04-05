@@ -4041,6 +4041,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 hasMessages={timelineEntries.length > 0}
                 isWorking={isWorking}
                 isSendBusy={isSendBusy}
+                isPreparingWorktree={isPreparingWorktree}
                 activeTurnStartedAt={activeWorkStartedAt}
                 timelineEntries={timelineEntries}
                 completionDividerBeforeEntryId={completionDividerBeforeEntryId}
@@ -4446,11 +4447,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
                       >
                         {activeContextWindow ? (
                           <ContextWindowMeter usage={activeContextWindow} />
-                        ) : null}
-                        {isPreparingWorktree ? (
-                          <span className="text-muted-foreground/70 text-xs">
-                            Preparing worktree...
-                          </span>
                         ) : null}
                         {activePendingProgress ? (
                           <div className="flex items-center gap-2">
