@@ -427,6 +427,23 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
     return "file_change";
   }
   if (
+    normalized.includes("websearch") ||
+    normalized.includes("web_search") ||
+    normalized.includes("web search")
+  ) {
+    return "web_search";
+  }
+  if (
+    normalized.includes("webfetch") ||
+    normalized.includes("web_fetch") ||
+    normalized.includes("web fetch")
+  ) {
+    return "web_fetch";
+  }
+  if (normalized.includes("mcp")) {
+    return "mcp_tool_call";
+  }
+  if (
     normalized === "read" ||
     normalized.includes("glob") ||
     normalized.includes("grep") ||
@@ -442,12 +459,6 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
   if (normalized.includes("file")) {
     return "file_change";
   }
-  if (normalized.includes("mcp")) {
-    return "mcp_tool_call";
-  }
-  if (normalized.includes("websearch") || normalized.includes("web search")) {
-    return "web_search";
-  }
   if (normalized.includes("image")) {
     return "image_view";
   }
@@ -456,6 +467,15 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
 
 function isReadOnlyToolName(toolName: string): boolean {
   const normalized = toolName.toLowerCase();
+  if (
+    normalized.includes("websearch") ||
+    normalized.includes("web_search") ||
+    normalized.includes("webfetch") ||
+    normalized.includes("web_fetch") ||
+    normalized.startsWith("mcp")
+  ) {
+    return false;
+  }
   return (
     normalized === "read" ||
     normalized.includes("read file") ||
@@ -572,6 +592,8 @@ function titleForTool(itemType: CanonicalItemType, toolName?: string): string {
       return "Subagent task";
     case "web_search":
       return "Web search";
+    case "web_fetch":
+      return "Web fetch";
     case "image_view":
       return "Image view";
     case "dynamic_tool_call":
