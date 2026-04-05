@@ -1,0 +1,37 @@
+import type { ThemeDefinition } from "../types";
+
+export const MONOKAI_THEMES: readonly ThemeDefinition[] = [
+  {
+    id: "monokai-pro",
+    label: "Monokai Pro",
+    group: "monokai",
+    base: "dark",
+    variables: {
+      "--background": "#2d2a2e",
+      "--foreground": "#fcfcfa",
+      "--card": "#221f22",
+      "--card-foreground": "#fcfcfa",
+      "--popover": "#1d1a1e",
+      "--popover-foreground": "#fcfcfa",
+      "--primary": "#ffd866",
+      "--primary-foreground": "#2d2a2e",
+      "--secondary": "#403e41",
+      "--secondary-foreground": "#fcfcfa",
+      "--muted": "#403e41",
+      "--muted-foreground": "#939293",
+      "--accent": "#403e41",
+      "--accent-foreground": "#fcfcfa",
+      "--destructive": "#ff6188",
+      "--destructive-foreground": "#ff6188",
+      "--border": "#4a474b",
+      "--input": "#4a474b",
+      "--ring": "#ffd866",
+      "--info": "#78dce8",
+      "--info-foreground": "#78dce8",
+      "--success": "#a9dc76",
+      "--success-foreground": "#a9dc76",
+      "--warning": "#fc9867",
+      "--warning-foreground": "#fc9867",
+    },
+  },
+];

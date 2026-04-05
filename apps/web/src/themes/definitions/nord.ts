@@ -1,0 +1,37 @@
+import type { ThemeDefinition } from "../types";
+
+export const NORD_THEMES: readonly ThemeDefinition[] = [
+  {
+    id: "nord",
+    label: "Nord",
+    group: "nord",
+    base: "dark",
+    variables: {
+      "--background": "#2e3440",
+      "--foreground": "#d8dee9",
+      "--card": "#3b4252",
+      "--card-foreground": "#d8dee9",
+      "--popover": "#3b4252",
+      "--popover-foreground": "#d8dee9",
+      "--primary": "#88c0d0",
+      "--primary-foreground": "#2e3440",
+      "--secondary": "#434c5e",
+      "--secondary-foreground": "#d8dee9",
+      "--muted": "#434c5e",
+      "--muted-foreground": "#7b88a1",
+      "--accent": "#434c5e",
+      "--accent-foreground": "#d8dee9",
+      "--destructive": "#bf616a",
+      "--destructive-foreground": "#bf616a",
+      "--border": "#4c566a",
+      "--input": "#4c566a",
+      "--ring": "#88c0d0",
+      "--info": "#81a1c1",
+      "--info-foreground": "#81a1c1",
+      "--success": "#a3be8c",
+      "--success-foreground": "#a3be8c",
+      "--warning": "#ebcb8b",
+      "--warning-foreground": "#ebcb8b",
+    },
+  },
+];

@@ -1,0 +1,37 @@
+import type { ThemeDefinition } from "../types";
+
+export const ONE_DARK_THEMES: readonly ThemeDefinition[] = [
+  {
+    id: "one-dark-pro",
+    label: "One Dark Pro",
+    group: "one-dark",
+    base: "dark",
+    variables: {
+      "--background": "#282c34",
+      "--foreground": "#abb2bf",
+      "--card": "#21252b",
+      "--card-foreground": "#abb2bf",
+      "--popover": "#1e2127",
+      "--popover-foreground": "#abb2bf",
+      "--primary": "#61afef",
+      "--primary-foreground": "#282c34",
+      "--secondary": "#3a3f4b",
+      "--secondary-foreground": "#abb2bf",
+      "--muted": "#3a3f4b",
+      "--muted-foreground": "#7f848e",
+      "--accent": "#3a3f4b",
+      "--accent-foreground": "#abb2bf",
+      "--destructive": "#e06c75",
+      "--destructive-foreground": "#e06c75",
+      "--border": "#3e4451",
+      "--input": "#3e4451",
+      "--ring": "#61afef",
+      "--info": "#61afef",
+      "--info-foreground": "#61afef",
+      "--success": "#98c379",
+      "--success-foreground": "#98c379",
+      "--warning": "#e5c07b",
+      "--warning-foreground": "#e5c07b",
+    },
+  },
+];
