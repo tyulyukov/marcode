@@ -101,7 +101,8 @@ function defaultStyle(): AnsiStyle {
   };
 }
 
-const ANSI_RE = /\x1b\[([0-9;]*)m/g;
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\u001b\[([0-9;]*)m/g;
 
 function parseSgrParams(raw: string, style: AnsiStyle): void {
   const codes = raw.length === 0 ? [0] : raw.split(";").map(Number);

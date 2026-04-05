@@ -78,8 +78,8 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
         <>
           {!isSingleHunk && (
             <div className="border-t border-border/20 px-3 py-1">
-              {diffPreviews.map((hunk, idx) => (
-                <div key={`${hunk.filePath}:${idx}`} className="flex items-center gap-1.5 py-0.5">
+              {diffPreviews.map((hunk) => (
+                <div key={hunk.filePath} className="flex items-center gap-1.5 py-0.5">
                   <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/60">
                     {shortenPath(hunk.filePath)}
                   </span>
@@ -106,8 +106,8 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
       )}
 
       {expanded &&
-        diffPreviews.map((hunk, idx) => (
-          <div key={`${hunk.filePath}:${idx}`}>
+        diffPreviews.map((hunk) => (
+          <div key={hunk.filePath}>
             {!isSingleHunk && (
               <div className="border-t border-border/20 px-3 py-1">
                 <span className="font-mono text-[10px] text-muted-foreground/60">
