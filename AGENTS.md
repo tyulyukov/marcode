@@ -121,6 +121,32 @@ className = "pr-3 sm:pr-5 pl-[90px]";
 
 The same applies to `py-*` vs `pt-*`/`pb-*`.
 
+## Custom Theme System
+
+MarCode supports 24+ themes across 12 families (MarCode branded, Catppuccin, Solarized, Dracula, Nord, One Dark, GitHub, Gruvbox, Tokyo Night, Rosé Pine, Ayu, Monokai). The default "System" preference uses branded MarCode Light/Dark based on OS preference.
+
+### Architecture
+
+- **Theme definitions** live in `apps/web/src/themes/definitions/` — one file per family, each exporting a `readonly ThemeDefinition[]`.
+- **Registry** (`apps/web/src/themes/registry.ts`) — `THEME_REGISTRY` array, `THEME_MAP` for O(1) lookup, `THEME_GROUPS` for UI grouping.
+- **Application** (`apps/web/src/themes/apply.ts`) — `applyThemeToDOM()` sets CSS variables via `document.documentElement.style` inline overrides (highest specificity). MarCode branded themes (`variables: null`) use the existing CSS cascade in `index.css` untouched.
+- **Hook** (`apps/web/src/hooks/useTheme.ts`) — `useTheme()` returns `{ theme, activeTheme, resolvedTheme, setTheme }`. `resolvedTheme` is always `"light" | "dark"` derived from `ThemeDefinition.base`.
+- **UI** (`apps/web/src/components/settings/ThemePicker.tsx`) — Grouped `Select` dropdown in Settings > General.
+
+### Key Patterns
+
+- `.dark` class on `<html>` is toggled based on `ThemeDefinition.base` — all `dark:` Tailwind utilities continue working.
+- Custom theme CSS vars are set as inline styles on `document.documentElement`; cleared when switching back to branded themes.
+- `resolvedTheme` ("light"|"dark") is used by diff rendering, code highlighting, and ~12 consumer components — none need changes when adding themes.
+- localStorage migration: old `"light"` → `"marcode-light"`, `"dark"` → `"marcode-dark"`, handled transparently in `getStored()`.
+
+### Adding New Themes
+
+1. Create a new file in `apps/web/src/themes/definitions/` exporting a `ThemeDefinition[]`.
+2. Add the `ThemeGroup` value to the union in `apps/web/src/themes/types.ts`.
+3. Import and spread into `THEME_REGISTRY` in `apps/web/src/themes/registry.ts`.
+4. Add the group entry to `THEME_GROUPS` in the same file.
+
 ## Reference Repos
 
 - Open-source Codex repo: https://github.com/openai/codex

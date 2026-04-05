@@ -1,0 +1,37 @@
+import type { ThemeDefinition } from "../types";
+
+export const DRACULA_THEMES: readonly ThemeDefinition[] = [
+  {
+    id: "dracula",
+    label: "Dracula",
+    group: "dracula",
+    base: "dark",
+    variables: {
+      "--background": "#282a36",
+      "--foreground": "#f8f8f2",
+      "--card": "#21222c",
+      "--card-foreground": "#f8f8f2",
+      "--popover": "#1e1f29",
+      "--popover-foreground": "#f8f8f2",
+      "--primary": "#bd93f9",
+      "--primary-foreground": "#282a36",
+      "--secondary": "#44475a",
+      "--secondary-foreground": "#f8f8f2",
+      "--muted": "#44475a",
+      "--muted-foreground": "#6272a4",
+      "--accent": "#44475a",
+      "--accent-foreground": "#f8f8f2",
+      "--destructive": "#ff5555",
+      "--destructive-foreground": "#ff5555",
+      "--border": "#44475a",
+      "--input": "#44475a",
+      "--ring": "#bd93f9",
+      "--info": "#8be9fd",
+      "--info-foreground": "#8be9fd",
+      "--success": "#50fa7b",
+      "--success-foreground": "#50fa7b",
+      "--warning": "#f1fa8c",
+      "--warning-foreground": "#f1fa8c",
+    },
+  },
+];
