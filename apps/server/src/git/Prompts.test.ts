@@ -147,6 +147,14 @@ describe("sanitizeThreadTitle", () => {
       ),
     ).toBe("Reconnect failures after restart because the se...");
   });
+
+  it("unwraps JSON-wrapped title from misbehaving models", () => {
+    expect(sanitizeThreadTitle('{"title": "Fix login timeout"}')).toBe("Fix login timeout");
+  });
+
+  it("does not break on non-JSON input", () => {
+    expect(sanitizeThreadTitle("Fix login timeout")).toBe("Fix login timeout");
+  });
 });
 
 describe("normalizeCliError", () => {

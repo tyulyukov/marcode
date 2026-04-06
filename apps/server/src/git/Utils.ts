@@ -55,8 +55,18 @@ export function sanitizePrTitle(raw: string): string {
 
 /** Normalise a raw thread title to a compact single-line sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
-  const normalized = raw
-    .trim()
+  let unwrapped = raw.trim();
+  try {
+    const parsed: unknown = JSON.parse(unwrapped);
+    if (typeof parsed === "object" && parsed !== null && "title" in parsed) {
+      const inner = (parsed as Record<string, unknown>).title;
+      if (typeof inner === "string") unwrapped = inner;
+    }
+  } catch {
+    // not JSON — use as-is
+  }
+
+  const normalized = unwrapped
     .split(/\r?\n/g)[0]
     ?.trim()
     .replace(/^['"`]+|['"`]+$/g, "")
