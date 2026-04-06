@@ -163,7 +163,7 @@ const ToolProgressTimelineRow = memo(function ToolProgressTimelineRow(props: {
         <TooltipTrigger
           render={
             <div className="flex min-w-0 flex-1 items-baseline gap-2 pt-0.5">
-              <span className="truncate text-xs text-foreground/70">{entry.toolName}</span>
+              <span className="text-xs text-foreground/70">{entry.toolName}</span>
               {entry.elapsedSeconds !== null && (
                 <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/40">
                   {formatElapsedSeconds(entry.elapsedSeconds)}
@@ -211,9 +211,9 @@ const TaskProgressTimelineRow = memo(function TaskProgressTimelineRow(props: {
         <TooltipTrigger
           render={
             <div className="min-w-0 flex-1 pt-0.5">
-              <p className="truncate text-xs text-foreground/60">{toolLabel}</p>
+              <p className="text-xs text-foreground/60">{toolLabel}</p>
               {entry.summary && entry.summary !== entry.description && (
-                <p className="mt-0.5 truncate text-[10px] text-muted-foreground/50 italic">
+                <p className="mt-0.5 text-[10px] text-muted-foreground/50 italic">
                   {entry.summary}
                 </p>
               )}

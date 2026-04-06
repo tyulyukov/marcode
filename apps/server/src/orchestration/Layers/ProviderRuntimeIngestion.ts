@@ -71,7 +71,7 @@ function sameId(left: string | null | undefined, right: string | null | undefine
   return left === right;
 }
 
-const SUMMARY_DETAIL_LIMIT = 180;
+const SUMMARY_DETAIL_LIMIT = 500;
 const TOOL_OUTPUT_LIMIT = 20_000;
 
 function truncateDetail(value: string, limit = SUMMARY_DETAIL_LIMIT): string {
