@@ -15,14 +15,13 @@ type CommandStatus = "running" | "error" | "success";
 const PREVIEW_MAX_HEIGHT_PX = 120;
 const MIN_OVERFLOW_PX = 24;
 
-function deriveCommandStatus(entry: WorkLogEntry, isLive: boolean): CommandStatus {
+function deriveCommandStatus(entry: WorkLogEntry): CommandStatus {
   if (entry.toolCompleted || entry.exitCode !== undefined) {
     if (entry.tone === "error" || (entry.exitCode !== undefined && entry.exitCode !== 0))
       return "error";
     return "success";
   }
-  if (isLive) return "running";
-  return "success";
+  return "running";
 }
 
 const DETAIL_COMMAND_PREFIX_RE = /^(?:Bash|Shell|Sh|Read|Edit|Write|Grep|Glob):\s*/i;
@@ -95,12 +94,12 @@ function CommandStatusBadge(props: { entry: WorkLogEntry; status: CommandStatus 
 export const CommandExecutionCard = memo(function CommandExecutionCard(
   props: CommandExecutionCardProps,
 ) {
-  const { entry, isLive } = props;
+  const { entry } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  const status = deriveCommandStatus(entry, isLive);
+  const status = deriveCommandStatus(entry);
   const { displayCommand, output } = useMemo(() => deriveCommandAndOutput(entry), [entry]);
   const renderedOutput = useMemo(() => (output ? ansiToSpans(output) : null), [output]);
 

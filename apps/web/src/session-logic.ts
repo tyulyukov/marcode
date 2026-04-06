@@ -1124,6 +1124,7 @@ function mergeDerivedWorkLogEntries(
   return {
     ...previous,
     ...next,
+    createdAt: previous.createdAt,
     ...(detail ? { detail } : {}),
     ...(command ? { command } : {}),
     ...(exitCode !== undefined ? { exitCode } : {}),
