@@ -15,12 +15,12 @@ type ToolStatus = "running" | "error" | "success";
 const PREVIEW_MAX_HEIGHT_PX = 120;
 const MIN_OVERFLOW_PX = 24;
 
-function deriveToolStatus(entry: WorkLogEntry, isLive: boolean): ToolStatus {
+function deriveToolStatus(entry: WorkLogEntry): ToolStatus {
   if (entry.toolCompleted) {
-    return entry.tone === "error" ? "error" : "success";
+    if (entry.tone === "error") return "error";
+    return "success";
   }
-  if (isLive) return "running";
-  return "success";
+  return "running";
 }
 
 const STATUS_ACCENT: Record<ToolStatus, string> = {
@@ -105,12 +105,12 @@ function StatusBadge(props: { status: ToolStatus }) {
 }
 
 export const McpToolCallCard = memo(function McpToolCallCard(props: McpToolCallCardProps) {
-  const { entry, isLive } = props;
+  const { entry } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  const status = deriveToolStatus(entry, isLive);
+  const status = deriveToolStatus(entry);
   const parsed = useMemo(() => parseMcpToolName(entry.toolName), [entry.toolName]);
   const inputSummary = useMemo(() => summarizeInput(entry.toolInput), [entry.toolInput]);
   const renderedOutput = useMemo(

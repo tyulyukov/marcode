@@ -467,11 +467,12 @@ function runtimeEventToActivities(
       if (!isToolLifecycleItemType(event.payload.itemType)) {
         return [];
       }
+      const completedTone = event.payload.status === "failed" ? "error" : "tool";
       return [
         {
           id: event.eventId,
           createdAt: event.createdAt,
-          tone: "tool",
+          tone: completedTone,
           kind: "tool.completed",
           summary: event.payload.title ?? "Tool",
           payload: {

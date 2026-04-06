@@ -15,12 +15,12 @@ type ToolStatus = "running" | "error" | "success";
 const PREVIEW_MAX_HEIGHT_PX = 120;
 const MIN_OVERFLOW_PX = 24;
 
-function deriveToolStatus(entry: WorkLogEntry, isLive: boolean): ToolStatus {
+function deriveToolStatus(entry: WorkLogEntry): ToolStatus {
   if (entry.toolCompleted) {
-    return entry.tone === "error" ? "error" : "success";
+    if (entry.tone === "error") return "error";
+    return "success";
   }
-  if (isLive) return "running";
-  return "success";
+  return "running";
 }
 
 const STATUS_ACCENT: Record<ToolStatus, string> = {
@@ -77,12 +77,12 @@ function StatusBadge(props: { status: ToolStatus }) {
 }
 
 export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardProps) {
-  const { entry, isLive } = props;
+  const { entry } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  const status = deriveToolStatus(entry, isLive);
+  const status = deriveToolStatus(entry);
   const query = useMemo(() => deriveSearchQuery(entry), [entry]);
   const renderedOutput = useMemo(
     () => (entry.detail ? ansiToSpans(entry.detail) : null),

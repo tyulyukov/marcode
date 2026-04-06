@@ -15,12 +15,15 @@ type ToolStatus = "running" | "error" | "success";
 const PREVIEW_MAX_HEIGHT_PX = 120;
 const MIN_OVERFLOW_PX = 24;
 
-function deriveToolStatus(entry: WorkLogEntry, isLive: boolean): ToolStatus {
+const HTTP_ERROR_PATTERN = /^Request failed with status code \d{3}/;
+
+function deriveToolStatus(entry: WorkLogEntry): ToolStatus {
   if (entry.toolCompleted) {
-    return entry.tone === "error" ? "error" : "success";
+    if (entry.tone === "error") return "error";
+    if (entry.detail && HTTP_ERROR_PATTERN.test(entry.detail.trim())) return "error";
+    return "success";
   }
-  if (isLive) return "running";
-  return "success";
+  return "running";
 }
 
 const STATUS_ACCENT: Record<ToolStatus, string> = {
@@ -80,17 +83,23 @@ function StatusBadge(props: { status: ToolStatus }) {
 }
 
 export const WebFetchCard = memo(function WebFetchCard(props: WebFetchCardProps) {
-  const { entry, isLive } = props;
+  const { entry } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  const status = deriveToolStatus(entry, isLive);
+  const status = deriveToolStatus(entry);
   const url = useMemo(() => deriveUrl(entry), [entry]);
   const urlDisplay = useMemo(() => (url ? formatUrlDisplay(url) : null), [url]);
+  const meaningfulDetail = useMemo(() => {
+    if (!entry.detail) return null;
+    const trimmed = entry.detail.trim();
+    if (url && trimmed === url) return null;
+    return entry.detail;
+  }, [entry.detail, url]);
   const renderedOutput = useMemo(
-    () => (entry.detail ? ansiToSpans(entry.detail) : null),
-    [entry.detail],
+    () => (meaningfulDetail ? ansiToSpans(meaningfulDetail) : null),
+    [meaningfulDetail],
   );
 
   useLayoutEffect(() => {
