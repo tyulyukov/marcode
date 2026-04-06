@@ -105,13 +105,13 @@ export function ComposerAttachmentsPopover({
               variant="ghost"
               size="sm"
               type="button"
-              className="relative mr-1.5 shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80 sm:mr-2"
+              className="relative mr-1 shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80 sm:mr-1.5"
               disabled={disabled}
               aria-label="Attachments & settings"
             >
               <PlusIcon />
               {count > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-blue-500 px-0.5 text-[9px] font-medium text-white">
                   {count}
                 </span>
               )}
