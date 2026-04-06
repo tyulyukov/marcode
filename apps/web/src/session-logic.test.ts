@@ -1432,7 +1432,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       id: "tool-complete",
-      createdAt: "2026-02-23T00:00:03.000Z",
+      createdAt: "2026-02-23T00:00:01.000Z",
       label: "Tool call completed",
       detail: 'Read: {"file_path":"/tmp/app.ts"}',
       command: "sed -n 1,40p /tmp/app.ts",

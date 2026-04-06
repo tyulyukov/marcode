@@ -1,5 +1,11 @@
 # MarCode Project Guidelines
 
+## GitHub Repository
+
+- **Origin**: `tyulyukov/marcode` (this is the main repo for CI checks)
+- **Upstream**: `pingdotgg/t3code` (the fork source — do NOT check CI here)
+- When checking CI status, always use `--repo tyulyukov/marcode` with `gh` commands.
+
 ## Rebrand Note
 
 This project was forked from T3 Code and fully rebranded to MarCode. When merging upstream changes, always check for and replace any remaining T3 references:
