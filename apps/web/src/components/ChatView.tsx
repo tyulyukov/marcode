@@ -107,8 +107,6 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleAlertIcon,
-  LockIcon,
-  LockOpenIcon,
   XIcon,
 } from "lucide-react";
 import { Button } from "./ui/button";
@@ -170,7 +168,7 @@ import {
   jiraIssueSearchQueryOptions,
   jiraIssueQueryOptions,
 } from "../lib/jiraReactQuery";
-import { DirectoryPickerPopover } from "./chat/DirectoryPickerPopover";
+import { ComposerAttachmentsPopover } from "./chat/ComposerAttachmentsPopover";
 import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 import { shouldUseCompactComposerFooter } from "./composerFooterLayout";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
@@ -1877,11 +1875,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
-  const toggleRuntimeMode = useCallback(() => {
-    void handleRuntimeModeChange(
-      runtimeMode === "full-access" ? "approval-required" : "full-access",
-    );
-  }, [handleRuntimeModeChange, runtimeMode]);
   const togglePlanSidebar = useCallback(() => {
     setPlanSidebarOpen((open) => {
       if (open) {
@@ -4311,12 +4304,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
                     >
                       <div
                         className={cn(
-                          "flex min-w-0 flex-1 items-center",
+                          "flex min-w-0 flex-1 items-center pt-1",
                           isComposerFooterCompact
                             ? "gap-1 overflow-hidden"
                             : "gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                         )}
                       >
+                        <ComposerAttachmentsPopover
+                          threadId={activeThread.id}
+                          additionalDirectories={activeThread.additionalDirectories}
+                          onLocalDirectoriesChange={
+                            isLocalDraftThread ? setDraftAdditionalDirectories : undefined
+                          }
+                          runtimeMode={runtimeMode}
+                          onRuntimeModeChange={handleRuntimeModeChange}
+                          onAttachImages={addComposerImages}
+                          disabled={isConnecting}
+                        />
+
+                        <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
+
                         {/* Provider/model picker */}
                         <ProviderModelPicker
                           compact={isComposerFooterCompact}
@@ -4335,24 +4342,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         />
 
                         {isComposerFooterCompact ? (
-                          <>
-                            <CompactComposerControlsMenu
-                              interactionMode={interactionMode}
-                              runtimeMode={runtimeMode}
-                              traitsMenuContent={providerTraitsMenuContent}
-                              onToggleInteractionMode={toggleInteractionMode}
-                              onToggleRuntimeMode={toggleRuntimeMode}
-                            />
-                            <DirectoryPickerPopover
-                              threadId={activeThread.id}
-                              projectCwd={gitCwd}
-                              additionalDirectories={activeThread.additionalDirectories}
-                              disabled={isConnecting}
-                              onLocalDirectoriesChange={
-                                isLocalDraftThread ? setDraftAdditionalDirectories : undefined
-                              }
-                            />
-                          </>
+                          <CompactComposerControlsMenu
+                            interactionMode={interactionMode}
+                            traitsMenuContent={providerTraitsMenuContent}
+                            onToggleInteractionMode={toggleInteractionMode}
+                          />
                         ) : (
                           <>
                             {providerTraitsPicker ? (
@@ -4387,49 +4381,6 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 {interactionMode === "plan" ? "Plan" : "Chat"}
                               </span>
                             </Button>
-
-                            <Separator
-                              orientation="vertical"
-                              className="mx-0.5 hidden h-4 sm:block"
-                            />
-
-                            <Button
-                              variant="ghost"
-                              className="shrink-0 whitespace-nowrap px-2 text-muted-foreground/70 hover:text-foreground/80 sm:px-3"
-                              size="sm"
-                              type="button"
-                              onClick={() =>
-                                void handleRuntimeModeChange(
-                                  runtimeMode === "full-access"
-                                    ? "approval-required"
-                                    : "full-access",
-                                )
-                              }
-                              title={
-                                runtimeMode === "full-access"
-                                  ? "Full access — click to require approvals"
-                                  : "Approval required — click for full access"
-                              }
-                            >
-                              {runtimeMode === "full-access" ? <LockOpenIcon /> : <LockIcon />}
-                              <span className="sr-only sm:not-sr-only">
-                                {runtimeMode === "full-access" ? "Full access" : "Supervised"}
-                              </span>
-                            </Button>
-
-                            <Separator
-                              orientation="vertical"
-                              className="mx-0.5 hidden h-4 sm:block"
-                            />
-                            <DirectoryPickerPopover
-                              threadId={activeThread.id}
-                              projectCwd={gitCwd}
-                              additionalDirectories={activeThread.additionalDirectories}
-                              disabled={isConnecting}
-                              onLocalDirectoriesChange={
-                                isLocalDraftThread ? setDraftAdditionalDirectories : undefined
-                              }
-                            />
                           </>
                         )}
                       </div>
