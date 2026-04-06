@@ -44,18 +44,16 @@ export function useHandleNewThread() {
       } = useComposerDraftStore.getState();
       const hasBranchOption = options?.branch !== undefined;
       const hasWorktreePathOption = options?.worktreePath !== undefined;
-      const hasEnvModeOption = options?.envMode !== undefined;
       const storedDraftThread = getDraftThreadByProjectId(projectId);
       const latestActiveDraftThread: DraftThreadState | null = routeThreadId
         ? getDraftThread(routeThreadId)
         : null;
       if (storedDraftThread) {
         return (async () => {
-          if (hasBranchOption || hasWorktreePathOption || hasEnvModeOption) {
+          if (hasBranchOption || hasWorktreePathOption) {
             setDraftThreadContext(storedDraftThread.threadId, {
               ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
               ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
-              ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
             });
           }
           setProjectDraftThreadId(projectId, storedDraftThread.threadId);
@@ -76,11 +74,10 @@ export function useHandleNewThread() {
         routeThreadId &&
         latestActiveDraftThread.projectId === projectId
       ) {
-        if (hasBranchOption || hasWorktreePathOption || hasEnvModeOption) {
+        if (hasBranchOption || hasWorktreePathOption) {
           setDraftThreadContext(routeThreadId, {
             ...(hasBranchOption ? { branch: options?.branch ?? null } : {}),
             ...(hasWorktreePathOption ? { worktreePath: options?.worktreePath ?? null } : {}),
-            ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
           });
         }
         setProjectDraftThreadId(projectId, routeThreadId);
