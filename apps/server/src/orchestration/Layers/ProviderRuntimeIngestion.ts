@@ -337,6 +337,11 @@ function runtimeEventToActivities(
             ...(event.payload.description
               ? { detail: truncateDetail(event.payload.description) }
               : {}),
+            ...(event.payload.toolUseId ? { toolUseId: event.payload.toolUseId } : {}),
+            ...(event.payload.prompt
+              ? { prompt: truncateDetail(event.payload.prompt, TOOL_OUTPUT_LIMIT) }
+              : {}),
+            ...(event.payload.model ? { model: event.payload.model } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -450,6 +455,7 @@ function runtimeEventToActivities(
               ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
               : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.itemId ? { itemId: event.itemId } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -474,6 +480,7 @@ function runtimeEventToActivities(
               ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
               : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.itemId ? { itemId: event.itemId } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,
@@ -496,6 +503,35 @@ function runtimeEventToActivities(
             itemType: event.payload.itemType,
             ...(event.payload.detail
               ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
+              : {}),
+          },
+          turnId: toTurnId(event.turnId) ?? null,
+          ...maybeSequence,
+        },
+      ];
+    }
+
+    case "tool.progress": {
+      const rawSummary =
+        typeof event.payload.summary === "string" ? event.payload.summary : undefined;
+      const taskIdMatch = rawSummary?.match(/^task:(.+)$/);
+      if (!taskIdMatch) {
+        return [];
+      }
+      return [
+        {
+          id: event.eventId,
+          createdAt: event.createdAt,
+          tone: "info",
+          kind: "tool.progress",
+          summary: event.payload.toolName
+            ? `Tool ${event.payload.toolName} running`
+            : "Tool progress",
+          payload: {
+            taskId: taskIdMatch[1],
+            ...(event.payload.toolName ? { toolName: event.payload.toolName } : {}),
+            ...(event.payload.elapsedSeconds !== undefined
+              ? { elapsedSeconds: event.payload.elapsedSeconds }
               : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,

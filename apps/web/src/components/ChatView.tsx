@@ -67,6 +67,7 @@ import {
   hasToolActivityForTurn,
   isLatestTurnSettled,
   formatElapsed,
+  type AgentTaskSummary,
 } from "../session-logic";
 import { isScrollContainerNearBottom } from "../chat-scroll";
 import {
@@ -187,6 +188,7 @@ import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPane
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./chat/ComposerPlanFollowUpBanner";
 import { ComposerTodoListPanel } from "./chat/ComposerActiveTasksPanel";
+import { SubagentDetailDrawer } from "./chat/SubagentDetailDrawer";
 import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
@@ -430,6 +432,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
   const [expandedWorkGroups, setExpandedWorkGroups] = useState<Record<string, boolean>>({});
+  const [selectedSubagentTaskId, setSelectedSubagentTaskId] = useState<string | null>(null);
   const [planSidebarOpen, setPlanSidebarOpen] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
@@ -2149,6 +2152,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
 
   useEffect(() => {
     setExpandedWorkGroups({});
+    setSelectedSubagentTaskId(null);
     setPullRequestDialogState(null);
     if (planSidebarOpenOnNextThreadRef.current) {
       planSidebarOpenOnNextThreadRef.current = false;
@@ -3915,6 +3919,25 @@ export default function ChatView({ threadId }: ChatViewProps) {
       [groupId]: !existing[groupId],
     }));
   }, []);
+  const onSubagentSelect = useCallback((taskId: string) => {
+    setSelectedSubagentTaskId(taskId);
+  }, []);
+  const onSubagentDrawerClose = useCallback(() => {
+    setSelectedSubagentTaskId(null);
+  }, []);
+  const subagentTaskMap = useMemo(() => {
+    const map = new Map<string, AgentTaskSummary>();
+    for (const entry of workLogEntries) {
+      if (!entry.agentGroup) continue;
+      for (const task of entry.agentGroup.tasks) {
+        map.set(task.taskId, task);
+      }
+    }
+    return map;
+  }, [workLogEntries]);
+  const selectedSubagentTask = selectedSubagentTaskId
+    ? (subagentTaskMap.get(selectedSubagentTaskId) ?? null)
+    : null;
   const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
@@ -4060,6 +4083,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeProject?.cwd ?? undefined}
+                onSubagentSelect={onSubagentSelect}
               />
             </div>
 
@@ -4721,6 +4745,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
           )}
         </div>
       )}
+
+      <SubagentDetailDrawer
+        task={selectedSubagentTask}
+        onClose={onSubagentDrawerClose}
+        markdownCwd={gitCwd ?? undefined}
+      />
     </div>
   );
 }

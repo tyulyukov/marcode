@@ -2136,11 +2136,17 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         return;
       case "task_started": {
         let agentType: string | undefined;
+        let prompt: string | undefined;
+        let model: string | undefined;
         if (message.tool_use_id) {
           for (const tool of context.inFlightTools.values()) {
             if (tool.itemId === message.tool_use_id) {
               const raw = tool.input.subagent_type;
               if (typeof raw === "string" && raw.length > 0) agentType = raw;
+              const rawPrompt = tool.input.prompt;
+              if (typeof rawPrompt === "string" && rawPrompt.length > 0) prompt = rawPrompt;
+              const rawModel = tool.input.model;
+              if (typeof rawModel === "string" && rawModel.length > 0) model = rawModel;
               break;
             }
           }
@@ -2153,6 +2159,9 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             description: message.description,
             ...(message.task_type ? { taskType: message.task_type } : {}),
             ...(agentType ? { agentType } : {}),
+            ...(message.tool_use_id ? { toolUseId: message.tool_use_id } : {}),
+            ...(prompt ? { prompt } : {}),
+            ...(model ? { model } : {}),
           },
         });
         return;
