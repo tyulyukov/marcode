@@ -34,6 +34,19 @@ export const PROVIDER_OPTIONS: Array<{
   { value: "cursor", label: "Cursor", available: false },
 ];
 
+export interface SubagentToolProgress {
+  readonly toolName: string;
+  readonly elapsedSeconds: number | null;
+  readonly createdAt: string;
+}
+
+export interface AgentProgressEntry {
+  readonly lastToolName: string | null;
+  readonly description: string | null;
+  readonly summary: string | null;
+  readonly createdAt: string;
+}
+
 export interface AgentTaskSummary {
   taskId: string;
   agentType: string | null;
@@ -44,6 +57,12 @@ export interface AgentTaskSummary {
   lastToolName: string | null;
   progressSummary: string | null;
   createdAt: string;
+  toolUseId: string | null;
+  prompt: string | null;
+  response: string | null;
+  model: string | null;
+  toolProgressEntries: ReadonlyArray<SubagentToolProgress>;
+  progressHistory: ReadonlyArray<AgentProgressEntry>;
 }
 
 export interface AgentGroup {
@@ -527,6 +546,27 @@ export function deriveWorkLogEntries(
 ): WorkLogEntry[] {
   const excludeTodos = options?.excludeTodoToolCalls === true;
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
+
+  const collabToolDataByItemId = new Map<string, SubagentCollabToolData>();
+  const collabToolDataUnkeyed: SubagentCollabToolData[] = [];
+  for (const activity of ordered) {
+    if (latestTurnId && activity.turnId !== latestTurnId) continue;
+    if (!isSubagentToolActivity(activity)) continue;
+    const payload = asRecord(activity.payload);
+    const data = asRecord(payload?.data);
+    if (!data) continue;
+    const input = asRecord(data.input);
+    const prompt = asTrimmedString(input?.prompt) ?? null;
+    const response = extractCollabToolResponse(data.result);
+    const entry: SubagentCollabToolData = { prompt, response };
+    const itemId = asTrimmedString(payload?.itemId);
+    if (itemId) {
+      collabToolDataByItemId.set(itemId, entry);
+    } else {
+      collabToolDataUnkeyed.push(entry);
+    }
+  }
+
   const filtered = ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter((activity) => activity.kind !== "tool.started")
@@ -550,6 +590,7 @@ export function deriveWorkLogEntries(
   const pendingTaskIds = new Set<string>();
 
   for (const activity of filtered) {
+    if (activity.kind === "tool.progress") continue;
     if (!isTaskActivity(activity)) {
       needsNewGroup = true;
       continue;
@@ -611,11 +652,17 @@ export function deriveWorkLogEntries(
         emittedGroups.add(gIdx);
         const waveActivities = groupActivities.get(gIdx) ?? [];
         const taskGroups = buildTaskGroups(waveActivities);
-        const groupEntry = buildAgentGroupEntry(activity, taskGroups);
+        const groupEntry = buildAgentGroupEntry(
+          activity,
+          taskGroups,
+          collabToolDataByItemId,
+          collabToolDataUnkeyed,
+        );
         if (groupEntry) entries.push(groupEntry);
       }
       continue;
     }
+    if (activity.kind === "tool.progress") continue;
     entries.push(toDerivedWorkLogEntry(activity));
   }
 
@@ -663,10 +710,16 @@ interface TaskActivityGroup {
   started: OrchestrationThreadActivity | null;
   progressEntries: OrchestrationThreadActivity[];
   completed: OrchestrationThreadActivity | null;
+  toolProgressEntries: OrchestrationThreadActivity[];
   activityIds: string[];
 }
 
-const TASK_ACTIVITY_KINDS = new Set(["task.started", "task.progress", "task.completed"]);
+const TASK_ACTIVITY_KINDS = new Set([
+  "task.started",
+  "task.progress",
+  "task.completed",
+  "tool.progress",
+]);
 
 function isTaskActivity(activity: OrchestrationThreadActivity): boolean {
   return TASK_ACTIVITY_KINDS.has(activity.kind);
@@ -689,7 +742,13 @@ function buildTaskGroups(
 
     let group = groups.get(taskId);
     if (!group) {
-      group = { started: null, progressEntries: [], completed: null, activityIds: [] };
+      group = {
+        started: null,
+        progressEntries: [],
+        completed: null,
+        toolProgressEntries: [],
+        activityIds: [],
+      };
       groups.set(taskId, group);
     }
     group.activityIds.push(activity.id);
@@ -697,6 +756,7 @@ function buildTaskGroups(
     if (activity.kind === "task.started") group.started = activity;
     else if (activity.kind === "task.progress") group.progressEntries.push(activity);
     else if (activity.kind === "task.completed") group.completed = activity;
+    else if (activity.kind === "tool.progress") group.toolProgressEntries.push(activity);
   }
   return groups;
 }
@@ -713,7 +773,36 @@ function extractTaskUsage(payload: Record<string, unknown> | null): {
   };
 }
 
-function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentTaskSummary {
+interface SubagentCollabToolData {
+  prompt: string | null;
+  response: string | null;
+}
+
+function extractCollabToolResponse(resultRaw: unknown): string | null {
+  if (typeof resultRaw === "string") return resultRaw;
+  const record = asRecord(resultRaw);
+  if (!record) return null;
+  const content = record.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const texts: string[] = [];
+    for (const block of content) {
+      const b = asRecord(block);
+      if (b && typeof b.text === "string") texts.push(b.text);
+    }
+    return texts.length > 0 ? texts.join("\n") : null;
+  }
+  const text = asTrimmedString(record.text);
+  if (text) return text;
+  return null;
+}
+
+function buildAgentTaskSummary(
+  taskId: string,
+  group: TaskActivityGroup,
+  collabToolDataByItemId: ReadonlyMap<string, SubagentCollabToolData>,
+  collabToolDataUnkeyed: ReadonlyArray<SubagentCollabToolData>,
+): AgentTaskSummary {
   const completedPayload = asRecord(group.completed?.payload);
   const latestProgress = group.progressEntries.at(-1);
   const latestProgressPayload = asRecord(latestProgress?.payload);
@@ -750,6 +839,42 @@ function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentT
   const createdAt =
     group.started?.createdAt ?? latestProgress?.createdAt ?? group.completed?.createdAt ?? "";
 
+  const toolUseId = asTrimmedString(startedPayload?.toolUseId) ?? null;
+  const startedPrompt = asTrimmedString(startedPayload?.prompt) ?? null;
+  const collabData = toolUseId
+    ? collabToolDataByItemId.get(toolUseId)
+    : (collabToolDataUnkeyed.find(
+        (d) => d.prompt !== null && startedPrompt !== null && d.prompt === startedPrompt,
+      ) ?? (collabToolDataUnkeyed.length === 1 ? collabToolDataUnkeyed[0] : undefined));
+
+  const prompt = startedPrompt ?? collabData?.prompt ?? null;
+
+  const completedDetail = asTrimmedString(completedPayload?.detail);
+  const completedSummary = asTrimmedString(completedPayload?.summary);
+  const rawResponse = collabData?.response ?? completedDetail ?? completedSummary ?? null;
+  const response = rawResponse === description ? null : rawResponse;
+
+  const model = asTrimmedString(startedPayload?.model) ?? null;
+
+  const toolProgressEntries: SubagentToolProgress[] = group.toolProgressEntries.map((activity) => {
+    const p = asRecord(activity.payload);
+    return {
+      toolName: asTrimmedString(p?.toolName) ?? "Tool",
+      elapsedSeconds: typeof p?.elapsedSeconds === "number" ? p.elapsedSeconds : null,
+      createdAt: activity.createdAt,
+    };
+  });
+
+  const progressHistory: AgentProgressEntry[] = group.progressEntries.map((activity) => {
+    const p = asRecord(activity.payload);
+    return {
+      lastToolName: asTrimmedString(p?.lastToolName) ?? null,
+      description: asTrimmedString(p?.detail) ?? null,
+      summary: asTrimmedString(p?.summary) ?? null,
+      createdAt: activity.createdAt,
+    };
+  });
+
   return {
     taskId,
     agentType,
@@ -760,6 +885,12 @@ function buildAgentTaskSummary(taskId: string, group: TaskActivityGroup): AgentT
     lastToolName,
     progressSummary,
     createdAt,
+    toolUseId,
+    prompt,
+    response,
+    model,
+    toolProgressEntries,
+    progressHistory,
   };
 }
 
@@ -793,11 +924,13 @@ function buildAgentGroupLabel(tasks: ReadonlyArray<AgentTaskSummary>): string {
 function buildAgentGroupEntry(
   firstActivity: OrchestrationThreadActivity,
   taskGroups: Map<string, TaskActivityGroup>,
+  collabToolDataByItemId: ReadonlyMap<string, SubagentCollabToolData>,
+  collabToolDataUnkeyed: ReadonlyArray<SubagentCollabToolData>,
 ): DerivedWorkLogEntry | null {
   if (taskGroups.size === 0) return null;
 
   const tasks = [...taskGroups.entries()].map(([taskId, group]) =>
-    buildAgentTaskSummary(taskId, group),
+    buildAgentTaskSummary(taskId, group, collabToolDataByItemId, collabToolDataUnkeyed),
   );
   const hasFailed = tasks.some((t) => t.status === "failed");
 

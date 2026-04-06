@@ -172,6 +172,7 @@ interface TimelineRowContentProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  onSubagentSelect: (taskId: string) => void;
 }
 
 const TimelineRowContent = memo(function TimelineRowContent({
@@ -194,6 +195,7 @@ const TimelineRowContent = memo(function TimelineRowContent({
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
+  onSubagentSelect,
 }: TimelineRowContentProps) {
   return (
     <div
@@ -253,6 +255,7 @@ const TimelineRowContent = memo(function TimelineRowContent({
           agentGroup={row.entry.agentGroup}
           label={row.entry.label}
           isLive={row.isLive}
+          onTaskSelect={onSubagentSelect}
         />
       )}
 
@@ -534,6 +537,7 @@ interface MessagesTimelineProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  onSubagentSelect: (taskId: string) => void;
 }
 
 export const MessagesTimeline = memo(function MessagesTimeline({
@@ -557,6 +561,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
+  onSubagentSelect,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
   const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
@@ -830,6 +835,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             resolvedTheme={resolvedTheme}
             timestampFormat={timestampFormat}
             workspaceRoot={workspaceRoot}
+            onSubagentSelect={onSubagentSelect}
           />
         </div>
       ))}

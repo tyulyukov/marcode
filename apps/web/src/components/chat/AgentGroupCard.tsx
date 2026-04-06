@@ -1,5 +1,5 @@
 import { BotIcon } from "lucide-react";
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import {
   formatTokenCount,
   formatToolUseCount,
@@ -14,6 +14,7 @@ interface AgentGroupCardProps {
   agentGroup: AgentGroup;
   label: string;
   isLive: boolean;
+  onTaskSelect: (taskId: string) => void;
 }
 
 function formatAgentTaskType(taskType: string | null): string | null {
@@ -55,15 +56,23 @@ function agentTaskMeta(task: AgentTaskSummary): string {
   return parts.join(" · ");
 }
 
-const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary }) {
-  const { task } = props;
+const AgentTaskRow = memo(function AgentTaskRow(props: {
+  task: AgentTaskSummary;
+  onSelect: (taskId: string) => void;
+}) {
+  const { task, onSelect } = props;
   const typeLabel = formatAgentTaskType(task.agentType);
   const isRunning = task.status === "running";
   const activityLine = agentTaskActivityLine(task);
   const meta = agentTaskMeta(task);
+  const handleClick = useCallback(() => onSelect(task.taskId), [onSelect, task.taskId]);
 
   return (
-    <div className="rounded-md py-1 pr-1.5 pl-2">
+    <button
+      type="button"
+      onClick={handleClick}
+      className="w-full cursor-pointer rounded-md py-1 pr-1.5 pl-2 text-left transition-colors hover:bg-muted/40"
+    >
       <div className="flex items-center gap-1.5">
         <span
           className={cn(
@@ -116,12 +125,12 @@ const AgentTaskRow = memo(function AgentTaskRow(props: { task: AgentTaskSummary 
           </TooltipPopup>
         </Tooltip>
       )}
-    </div>
+    </button>
   );
 });
 
 export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCardProps) {
-  const { agentGroup, label } = props;
+  const { agentGroup, label, onTaskSelect } = props;
   const tasks = agentGroup.tasks;
 
   return (
@@ -138,7 +147,7 @@ export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCard
 
       <div className="space-y-1 border-t border-border/20 px-2 py-1.5">
         {tasks.map((task) => (
-          <AgentTaskRow key={task.taskId} task={task} />
+          <AgentTaskRow key={task.taskId} task={task} onSelect={onTaskSelect} />
         ))}
       </div>
     </div>
