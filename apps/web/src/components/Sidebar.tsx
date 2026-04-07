@@ -2125,7 +2125,7 @@ export default function Sidebar() {
       {isElectron ? (
         <SidebarHeader
           className="drag-region h-[52px] flex-row items-center justify-center gap-2 py-0"
-          style={{ paddingLeft: 78 }}
+          style={{ paddingLeft: 68 }}
         >
           {wordmark}
         </SidebarHeader>
