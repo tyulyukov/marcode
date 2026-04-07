@@ -665,22 +665,28 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       return null;
     }
 
-    const pr =
-      details.branch !== null
-        ? yield* findLatestPr(cwd, {
-            branch: details.branch,
-            upstreamRef: details.upstreamRef,
-          }).pipe(
-            Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
-            Effect.catch(() => Effect.succeed(null)),
-          )
-        : null;
+    const [pr, gitHostProvider] = yield* Effect.all(
+      [
+        details.branch !== null
+          ? findLatestPr(cwd, {
+              branch: details.branch,
+              upstreamRef: details.upstreamRef,
+            }).pipe(
+              Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
+              Effect.catch(() => Effect.succeed(null)),
+            )
+          : Effect.succeed(null),
+        detectHostProvider(cwd).pipe(Effect.catch(() => Effect.succeed(undefined))),
+      ],
+      { concurrency: 2 },
+    );
 
     return {
       hasUpstream: details.hasUpstream,
       aheadCount: details.aheadCount,
       behindCount: details.behindCount,
       pr,
+      ...(gitHostProvider ? { gitHostProvider } : {}),
     } satisfies GitStatusRemoteResult;
   });
   const remoteStatusResultCache = yield* Cache.makeWith({

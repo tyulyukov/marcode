@@ -215,6 +215,7 @@ function toRemoteStatusPart(status: GitStatusResult): GitStatusRemoteResult {
     aheadCount: status.aheadCount,
     behindCount: status.behindCount,
     pr: status.pr,
+    ...(status.gitHostProvider ? { gitHostProvider: status.gitHostProvider } : {}),
   };
 }
 
