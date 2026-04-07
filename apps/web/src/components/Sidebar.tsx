@@ -2123,10 +2123,7 @@ export default function Sidebar() {
   return (
     <>
       {isElectron ? (
-        <SidebarHeader
-          className={`drag-region h-[52px] flex-row items-center gap-2 py-0 ${isDesktopFullscreen ? "justify-center px-4" : "pr-4"}`}
-          style={isDesktopFullscreen ? undefined : { paddingLeft: 90 }}
-        >
+        <SidebarHeader className="drag-region h-[52px] flex-row items-center justify-center gap-2 px-4 py-0">
           {wordmark}
         </SidebarHeader>
       ) : (
