@@ -4417,6 +4417,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeWorkspaceRoot}
+                isSendBusy={isSendBusy}
+                isPreparingWorktree={isPreparingWorktree}
                 onSubagentSelect={onSubagentSelect}
               />
             </div>
