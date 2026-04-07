@@ -47,6 +47,13 @@ import {
   normalizeCompactToolLabel,
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
+import { FileChangeCard } from "./FileChangeCard";
+import { AgentGroupCard } from "./AgentGroupCard";
+import { CommandExecutionCard } from "./CommandExecutionCard";
+import { ExplorationCard } from "./ExplorationCard";
+import { WebSearchCard } from "./WebSearchCard";
+import { WebFetchCard } from "./WebFetchCard";
+import { McpToolCallCard } from "./McpToolCallCard";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -88,6 +95,7 @@ interface MessagesTimelineProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  onSubagentSelect: (taskId: string) => void;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -123,6 +131,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
+  onSubagentSelect,
   onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -355,6 +364,27 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             </div>
           );
         })()}
+
+      {row.kind === "file-change" && <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} />}
+
+      {row.kind === "exploration" && <ExplorationCard entries={row.entries} isLive={row.isLive} />}
+
+      {row.kind === "agent-group" && row.entry.agentGroup && (
+        <AgentGroupCard
+          agentGroup={row.entry.agentGroup}
+          label={row.entry.label}
+          isLive={row.isLive}
+          onTaskSelect={onSubagentSelect}
+        />
+      )}
+
+      {row.kind === "command" && <CommandExecutionCard entry={row.entry} isLive={row.isLive} />}
+
+      {row.kind === "web-search" && <WebSearchCard entry={row.entry} isLive={row.isLive} />}
+
+      {row.kind === "web-fetch" && <WebFetchCard entry={row.entry} isLive={row.isLive} />}
+
+      {row.kind === "mcp-tool" && <McpToolCallCard entry={row.entry} isLive={row.isLive} />}
 
       {row.kind === "message" &&
         row.message.role === "user" &&

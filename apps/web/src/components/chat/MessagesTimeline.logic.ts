@@ -34,6 +34,54 @@ export type MessagesTimelineRow =
       createdAt: string;
       proposedPlan: ProposedPlan;
     }
+  | {
+      kind: "file-change";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+    }
+  | {
+      kind: "exploration";
+      id: string;
+      createdAt: string;
+      entries: WorkLogEntry[];
+      isLive: boolean;
+    }
+  | {
+      kind: "agent-group";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "command";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "web-search";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "web-fetch";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      isLive: boolean;
+    }
+  | {
+      kind: "mcp-tool";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      isLive: boolean;
+    }
   | { kind: "working"; id: string; createdAt: string | null };
 
 export function computeMessageDurationStart(
@@ -59,6 +107,83 @@ export function normalizeCompactToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }
 
+const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
+const EXPLORATION_CARD_COLLAPSED_HEIGHT = 36;
+const AGENT_GROUP_HEADER_HEIGHT = 32;
+const AGENT_TASK_ROW_HEIGHT = 36;
+const COMMAND_CARD_COLLAPSED_HEIGHT = 64;
+const WEB_SEARCH_CARD_COLLAPSED_HEIGHT = 64;
+const WEB_FETCH_CARD_COLLAPSED_HEIGHT = 64;
+const MCP_TOOL_CARD_COLLAPSED_HEIGHT = 80;
+
+const EXPLORATION_LABEL_RE =
+  /^(Read|Search(ed)?|Glob(bed)?|Grep(ped)?|List(ed)?|Find|Found|View(ed)?|Inspect(ed)?)\b/i;
+
+const EXPLORATION_TOOL_NAMES = new Set([
+  "read",
+  "grep",
+  "glob",
+  "search",
+  "find",
+  "list",
+  "view",
+  "ls",
+  "cat",
+  "head",
+  "tail",
+]);
+
+function isExplorationToolName(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase());
+}
+
+export function isExplorationEntry(entry: WorkLogEntry): boolean {
+  if (entry.requestKind === "file-change" || entry.requestKind === "command") return false;
+  if (
+    entry.itemType === "file_change" ||
+    entry.itemType === "command_execution" ||
+    entry.itemType === "web_search" ||
+    entry.itemType === "web_fetch" ||
+    entry.itemType === "mcp_tool_call"
+  )
+    return false;
+  if (entry.command) return false;
+  if ((entry.diffPreviews?.length ?? 0) > 0) return false;
+  if (entry.agentGroup) return false;
+
+  if (entry.requestKind === "file-read") return true;
+  if (entry.itemType === "file_read") return true;
+  if (entry.itemType === "image_view") return true;
+  if (isExplorationToolName(entry.toolName)) return true;
+
+  const heading = (entry.toolTitle ?? entry.label).trim();
+  return EXPLORATION_LABEL_RE.test(heading);
+}
+
+export function isCommandEntry(entry: WorkLogEntry): boolean {
+  return (
+    entry.requestKind === "command" || entry.itemType === "command_execution" || !!entry.command
+  );
+}
+
+export function isWebSearchEntry(entry: WorkLogEntry): boolean {
+  if (entry.itemType === "web_search") return true;
+  const lower = entry.toolName?.toLowerCase() ?? "";
+  return lower === "websearch" || lower === "web_search";
+}
+
+export function isWebFetchEntry(entry: WorkLogEntry): boolean {
+  if (entry.itemType === "web_fetch") return true;
+  const lower = entry.toolName?.toLowerCase() ?? "";
+  return lower === "webfetch" || lower === "web_fetch";
+}
+
+export function isMcpToolEntry(entry: WorkLogEntry): boolean {
+  if (entry.itemType === "mcp_tool_call") return true;
+  return (entry.toolName ?? "").startsWith("mcp__");
+}
+
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
   completionDividerBeforeEntryId: string | null;
@@ -77,20 +202,128 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
-      const groupedEntries = [timelineEntry.entry];
-      let cursor = index + 1;
+      let pendingWork: WorkLogEntry[] = [];
+      let pendingWorkFirstId: string | null = null;
+      let pendingWorkFirstCreatedAt: string | null = null;
+      let pendingExploration: WorkLogEntry[] = [];
+      let pendingExplorationFirstId: string | null = null;
+      let pendingExplorationFirstCreatedAt: string | null = null;
+      let cursor = index;
+
+      const flushPendingWork = () => {
+        if (pendingWork.length > 0) {
+          nextRows.push({
+            kind: "work",
+            id: pendingWorkFirstId!,
+            createdAt: pendingWorkFirstCreatedAt!,
+            groupedEntries: pendingWork,
+          });
+          pendingWork = [];
+          pendingWorkFirstId = null;
+          pendingWorkFirstCreatedAt = null;
+        }
+      };
+
+      const flushPendingExploration = () => {
+        if (pendingExploration.length > 0) {
+          nextRows.push({
+            kind: "exploration",
+            id: pendingExplorationFirstId!,
+            createdAt: pendingExplorationFirstCreatedAt!,
+            entries: pendingExploration,
+            isLive: false,
+          });
+          pendingExploration = [];
+          pendingExplorationFirstId = null;
+          pendingExplorationFirstCreatedAt = null;
+        }
+      };
+
       while (cursor < input.timelineEntries.length) {
-        const nextEntry = input.timelineEntries[cursor];
-        if (!nextEntry || nextEntry.kind !== "work") break;
-        groupedEntries.push(nextEntry.entry);
+        const current = input.timelineEntries[cursor];
+        if (!current || current.kind !== "work") break;
+
+        if (current.entry.agentGroup) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "agent-group",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+            isLive: false,
+          });
+        } else if (isCommandEntry(current.entry)) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "command",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+            isLive: false,
+          });
+        } else if (isWebSearchEntry(current.entry)) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "web-search",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+            isLive: false,
+          });
+        } else if (isWebFetchEntry(current.entry)) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "web-fetch",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+            isLive: false,
+          });
+        } else if (isMcpToolEntry(current.entry)) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "mcp-tool",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+            isLive: false,
+          });
+        } else if (
+          current.entry.itemType === "file_change" &&
+          (current.entry.diffPreviews?.length ?? 0) > 0
+        ) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "file-change",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+          });
+        } else if (isExplorationEntry(current.entry)) {
+          flushPendingWork();
+          if (pendingExploration.length === 0) {
+            pendingExplorationFirstId = current.id;
+            pendingExplorationFirstCreatedAt = current.createdAt;
+          }
+          pendingExploration.push(current.entry);
+        } else {
+          flushPendingExploration();
+          if (pendingWork.length === 0) {
+            pendingWorkFirstId = current.id;
+            pendingWorkFirstCreatedAt = current.createdAt;
+          }
+          pendingWork.push(current.entry);
+        }
         cursor += 1;
       }
-      nextRows.push({
-        kind: "work",
-        id: timelineEntry.id,
-        createdAt: timelineEntry.createdAt,
-        groupedEntries,
-      });
+      flushPendingWork();
+      flushPendingExploration();
       index = cursor - 1;
       continue;
     }
@@ -119,6 +352,23 @@ export function deriveMessagesTimelineRows(input: {
   }
 
   if (input.isWorking) {
+    for (let i = nextRows.length - 1; i >= 0; i--) {
+      const r = nextRows[i];
+      if (!r) break;
+      if (
+        r.kind === "exploration" ||
+        r.kind === "agent-group" ||
+        r.kind === "command" ||
+        r.kind === "web-search" ||
+        r.kind === "web-fetch" ||
+        r.kind === "mcp-tool"
+      ) {
+        nextRows[i] = { ...r, isLive: true };
+        break;
+      }
+      if (r.kind === "message" || r.kind === "proposed-plan") break;
+    }
+
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
@@ -144,6 +394,22 @@ export function estimateMessagesTimelineRowHeight(
       return estimateTimelineProposedPlanHeight(row.proposedPlan);
     case "working":
       return 40;
+    case "file-change":
+      return FILE_CHANGE_CARD_COLLAPSED_HEIGHT;
+    case "exploration":
+      return EXPLORATION_CARD_COLLAPSED_HEIGHT;
+    case "agent-group": {
+      const taskCount = row.entry.agentGroup?.tasks.length ?? 1;
+      return AGENT_GROUP_HEADER_HEIGHT + taskCount * AGENT_TASK_ROW_HEIGHT + 12;
+    }
+    case "command":
+      return COMMAND_CARD_COLLAPSED_HEIGHT;
+    case "web-search":
+      return WEB_SEARCH_CARD_COLLAPSED_HEIGHT;
+    case "web-fetch":
+      return WEB_FETCH_CARD_COLLAPSED_HEIGHT;
+    case "mcp-tool":
+      return MCP_TOOL_CARD_COLLAPSED_HEIGHT;
     case "message": {
       let estimate = estimateTimelineMessageHeight(row.message, {
         timelineWidthPx: input.timelineWidthPx,

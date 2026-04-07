@@ -3349,10 +3349,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
         ...(selectedModelSelection.options ? { options: selectedModelSelection.options } : {}),
       };
 
-      if (isLocalDraftThread) {
-        if (draftAdditionalDirectories.length > 0) {
-          setDraftAdditionalDirectories([]);
-        }
+      if (isLocalDraftThread && draftAdditionalDirectories.length > 0) {
+        await api.orchestration.dispatchCommand({
+          type: "thread.meta.update",
+          commandId: newCommandId(),
+          threadId: threadIdForSend,
+          additionalDirectories: draftAdditionalDirectories,
+        });
+        setDraftAdditionalDirectories([]);
       }
 
       // Auto-title from first message
@@ -4248,6 +4252,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
       [groupId]: !existing[groupId],
     }));
   }, []);
+  const onSubagentSelect = useCallback((taskId: string) => {
+    setSelectedSubagentTaskId(taskId);
+  }, []);
   const onSubagentDrawerClose = useCallback(() => {
     setSelectedSubagentTaskId(null);
   }, []);
@@ -4410,6 +4417,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeWorkspaceRoot}
+                onSubagentSelect={onSubagentSelect}
               />
             </div>
 

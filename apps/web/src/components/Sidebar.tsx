@@ -155,13 +155,19 @@ interface TerminalStatusIndicator {
 }
 
 interface PrStatusIndicator {
-  label: "PR open" | "PR closed" | "PR merged";
+  label: string;
   colorClass: string;
   tooltip: string;
   url: string;
 }
 
 type ThreadPr = GitStatusResult["pr"];
+type GitHostProvider = NonNullable<GitStatusResult["gitHostProvider"]>;
+
+interface ThreadPrWithProvider {
+  pr: ThreadPr;
+  gitHostProvider: GitHostProvider | undefined;
+}
 
 function ThreadStatusLabel({
   status,
@@ -214,30 +220,33 @@ function terminalStatusFromRunningIds(
   };
 }
 
-function prStatusIndicator(pr: ThreadPr): PrStatusIndicator | null {
+function prStatusIndicator(input: ThreadPrWithProvider): PrStatusIndicator | null {
+  const { pr, gitHostProvider } = input;
   if (!pr) return null;
+
+  const label = gitHostProvider === "gitlab" ? "MR" : "PR";
 
   if (pr.state === "open") {
     return {
-      label: "PR open",
+      label: `${label} open`,
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
-      tooltip: `#${pr.number} PR open: ${pr.title}`,
+      tooltip: `#${pr.number} ${label} open: ${pr.title}`,
       url: pr.url,
     };
   }
   if (pr.state === "closed") {
     return {
-      label: "PR closed",
+      label: `${label} closed`,
       colorClass: "text-zinc-500 dark:text-zinc-400/80",
-      tooltip: `#${pr.number} PR closed: ${pr.title}`,
+      tooltip: `#${pr.number} ${label} closed: ${pr.title}`,
       url: pr.url,
     };
   }
   if (pr.state === "merged") {
     return {
-      label: "PR merged",
+      label: `${label} merged`,
       colorClass: "text-violet-600 dark:text-violet-300/90",
-      tooltip: `#${pr.number} PR merged: ${pr.title}`,
+      tooltip: `#${pr.number} ${label} merged: ${pr.title}`,
       url: pr.url,
     };
   }
@@ -317,7 +326,7 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
     },
   });
   const pr = resolveThreadPr(thread.branch, gitStatus.data);
-  const prStatus = prStatusIndicator(pr);
+  const prStatus = prStatusIndicator({ pr, gitHostProvider: gitStatus.data?.gitHostProvider });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
   const isConfirmingArchive = props.confirmingArchiveThreadId === thread.id && !isThreadRunning;
   const threadMetaClassName = isConfirmingArchive
@@ -2080,9 +2089,6 @@ export default function Sidebar() {
               to="/"
             >
               <MarCodeWordmark />
-              <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
-                Code
-              </span>
               <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
                 {APP_STAGE_LABEL}
               </span>

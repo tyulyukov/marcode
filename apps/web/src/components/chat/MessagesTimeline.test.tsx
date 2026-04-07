@@ -93,6 +93,7 @@ describe("MessagesTimeline", () => {
         resolvedTheme="light"
         timestampFormat="locale"
         workspaceRoot={undefined}
+        onSubagentSelect={() => {}}
       />,
     );
 
@@ -138,6 +139,7 @@ describe("MessagesTimeline", () => {
         resolvedTheme="light"
         timestampFormat="locale"
         workspaceRoot={undefined}
+        onSubagentSelect={() => {}}
       />,
     );
 

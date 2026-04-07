@@ -169,6 +169,7 @@ function createBaseTimelineProps(input: {
     resolvedTheme: "light",
     timestampFormat: "locale",
     workspaceRoot: MARKDOWN_CWD,
+    onSubagentSelect: () => {},
     ...(input.onVirtualizerSnapshot ? { onVirtualizerSnapshot: input.onVirtualizerSnapshot } : {}),
   };
 }
