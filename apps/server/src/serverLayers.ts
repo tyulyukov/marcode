@@ -36,6 +36,7 @@ import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
 import { JiraTokenServiceLive } from "./jira/Layers/JiraTokenService";
 import { JiraApiClientLive } from "./jira/Layers/JiraApiClient";
+import { LocalWhisperTranscriptionLive } from "./transcription/Layers/LocalWhisperTranscription";
 
 type RuntimePtyAdapterLoader = {
   layer: Layer.Layer<PtyAdapter, never, FileSystem.FileSystem | Path.Path>;
@@ -148,5 +149,6 @@ export function makeServerRuntimeServicesLayer() {
     terminalLayer,
     KeybindingsLive,
     jiraLayer,
+    LocalWhisperTranscriptionLive,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 }

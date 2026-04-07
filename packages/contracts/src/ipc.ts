@@ -66,6 +66,15 @@ import type {
   JiraListSprintsResult,
   JiraSite,
 } from "./jira";
+import type {
+  TranscribeInput,
+  TranscribeResult,
+  TranscriptionCleanupInput,
+  TranscriptionCleanupResult,
+  WhisperInstallModelInput,
+  WhisperDeleteModelInput,
+  WhisperDownloadProgressPayload,
+} from "./transcription";
 import { EditorId } from "./editor";
 import { ServerSettings, ServerSettingsPatch } from "./settings";
 
@@ -217,5 +226,14 @@ export interface NativeApi {
     getIssue: (input: JiraGetIssueInput) => Promise<JiraIssue>;
     getAttachment: (input: JiraGetAttachmentInput) => Promise<JiraGetAttachmentResult>;
     onConnectionStatusChanged: (callback: (status: JiraConnectionStatus) => void) => () => void;
+  };
+  transcription: {
+    transcribe: (input: TranscribeInput) => Promise<TranscribeResult>;
+    cleanup: (input: TranscriptionCleanupInput) => Promise<TranscriptionCleanupResult>;
+  };
+  whisper: {
+    installModel: (input: WhisperInstallModelInput) => Promise<void>;
+    deleteModel: (input: WhisperDeleteModelInput) => Promise<void>;
+    onDownloadProgress: (callback: (event: WhisperDownloadProgressPayload) => void) => () => void;
   };
 }

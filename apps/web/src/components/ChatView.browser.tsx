@@ -126,6 +126,7 @@ function createBaseServerConfig(): ServerConfig {
       ...DEFAULT_SERVER_SETTINGS,
       ...DEFAULT_CLIENT_SETTINGS,
     },
+    whisper: { installedModels: [] },
   };
 }
 

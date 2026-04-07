@@ -35,6 +35,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   timestampFormat: TimestampFormat.pipe(Schema.withDecodingDefault(() => DEFAULT_TIMESTAMP_FORMAT)),
   showTodosInComposer: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  voiceEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  voiceLanguage: Schema.String.pipe(Schema.withDecodingDefault(() => "en")),
+  voiceLlmCleanup: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -89,6 +92,9 @@ export const ServerSettings = Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(() => ({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(() => ({}))),
   }).pipe(Schema.withDecodingDefault(() => ({}))),
+  whisperSelectedModel: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(() => null as string | null),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -151,5 +157,6 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
     }),
   ),
+  whisperSelectedModel: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
