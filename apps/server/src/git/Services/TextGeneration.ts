@@ -10,7 +10,7 @@ import { ServiceMap } from "effect";
 import type { Effect } from "effect";
 import type { ChatAttachment, ModelSelection } from "@marcode/contracts";
 
-import type { TextGenerationError } from "../Errors.ts";
+import type { TextGenerationError } from "@marcode/contracts";
 
 /** Providers that support text generation (commit messages, PR content, branch names, thread names). */
 export type TextGenerationProvider = "codex" | "claudeAgent";

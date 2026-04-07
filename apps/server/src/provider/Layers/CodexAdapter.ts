@@ -112,6 +112,13 @@ function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+const FATAL_CODEX_STDERR_SNIPPETS = ["failed to connect to websocket"];
+
+function isFatalCodexProcessStderrMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return FATAL_CODEX_STDERR_SNIPPETS.some((snippet) => normalized.includes(snippet));
+}
+
 function normalizeCodexTokenUsage(value: unknown): ThreadTokenUsageSnapshot | undefined {
   const usage = asObject(value);
   const totalUsage = asObject(usage?.total_token_usage ?? usage?.total);
@@ -375,6 +382,7 @@ function toUserInputQuestions(payload: Record<string, unknown> | undefined) {
         header,
         question: prompt,
         options,
+        multiSelect: question.multiSelect === true,
       };
     })
     .filter(
@@ -385,6 +393,7 @@ function toUserInputQuestions(payload: Record<string, unknown> | undefined) {
         header: string;
         question: string;
         options: Array<{ label: string; description: string }>;
+        multiSelect: boolean;
       } => question !== undefined,
     );
 
@@ -1269,15 +1278,27 @@ function mapToRuntimeEvents(
   }
 
   if (event.method === "process/stderr") {
+    const message = event.message ?? "Codex process stderr";
+    const isFatal = isFatalCodexProcessStderrMessage(message);
     return [
-      {
-        type: "runtime.warning",
-        ...runtimeEventBase(event, canonicalThreadId),
-        payload: {
-          message: event.message ?? "Codex process stderr",
-          ...(event.payload !== undefined ? { detail: event.payload } : {}),
-        },
-      },
+      isFatal
+        ? {
+            type: "runtime.error",
+            ...runtimeEventBase(event, canonicalThreadId),
+            payload: {
+              message,
+              class: "provider_error" as const,
+              ...(event.payload !== undefined ? { detail: event.payload } : {}),
+            },
+          }
+        : {
+            type: "runtime.warning",
+            ...runtimeEventBase(event, canonicalThreadId),
+            payload: {
+              message,
+              ...(event.payload !== undefined ? { detail: event.payload } : {}),
+            },
+          },
     ];
   }
 
@@ -1612,7 +1633,9 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     listSessions,
     hasSession,
     stopAll,
-    streamEvents: Stream.fromQueue(runtimeEventQueue),
+    get streamEvents() {
+      return Stream.fromQueue(runtimeEventQueue);
+    },
   } satisfies CodexAdapterShape;
 });
 

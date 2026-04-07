@@ -32,7 +32,11 @@ export interface DefaultBranchActionDialogCopy {
   continueLabel: string;
 }
 
-export type DefaultBranchConfirmableAction = "commit_push" | "commit_push_pr";
+export type DefaultBranchConfirmableAction =
+  | "push"
+  | "create_pr"
+  | "commit_push"
+  | "commit_push_pr";
 
 const SHORT_SHA_LENGTH = 7;
 const TOAST_DESCRIPTION_MAX = 72;
@@ -60,28 +64,39 @@ export function buildGitActionProgressStages(input: {
   action: GitStackedAction;
   hasCustomCommitMessage: boolean;
   hasWorkingTreeChanges: boolean;
-  forcePushOnly?: boolean;
   pushTarget?: string;
   featureBranch?: boolean;
   gitHostProvider?: GitHostProvider;
+  shouldPushBeforePr?: boolean;
 }): string[] {
-  const label = prLabel(input.gitHostProvider);
   const branchStages = input.featureBranch ? ["Preparing feature branch..."] : [];
-  const shouldIncludeCommitStages =
-    !input.forcePushOnly && (input.action === "commit" || input.hasWorkingTreeChanges);
+  const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
+  const prStages = [
+    "Preparing PR...",
+    "Generating PR content...",
+    "Creating GitHub pull request...",
+  ];
+
+  if (input.action === "push") {
+    return [pushStage];
+  }
+  if (input.action === "create_pr") {
+    return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
+  }
+
+  const shouldIncludeCommitStages = input.action === "commit" || input.hasWorkingTreeChanges;
   const commitStages = !shouldIncludeCommitStages
     ? []
     : input.hasCustomCommitMessage
       ? ["Committing..."]
       : ["Generating commit message...", "Committing..."];
-  const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
   if (input.action === "commit") {
     return [...branchStages, ...commitStages];
   }
   if (input.action === "commit_push") {
     return [...branchStages, ...commitStages, pushStage];
   }
-  return [...branchStages, ...commitStages, pushStage, `Creating ${label}...`];
+  return [...branchStages, ...commitStages, pushStage, ...prStages];
 }
 
 const withDescription = (title: string, description: string | undefined) =>
@@ -263,13 +278,18 @@ export function resolveQuickAction(
       };
     }
     if (hasOpenPr || isDefaultBranch) {
-      return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
+      return {
+        label: "Push",
+        disabled: false,
+        kind: "run_action",
+        action: isDefaultBranch ? "commit_push" : "push",
+      };
     }
     return {
       label: `Push & create ${label}`,
       disabled: false,
       kind: "run_action",
-      action: "commit_push_pr",
+      action: "create_pr",
     };
   }
 
@@ -292,13 +312,18 @@ export function resolveQuickAction(
 
   if (isAhead) {
     if (hasOpenPr || isDefaultBranch) {
-      return { label: "Push", disabled: false, kind: "run_action", action: "commit_push" };
+      return {
+        label: "Push",
+        disabled: false,
+        kind: "run_action",
+        action: isDefaultBranch ? "commit_push" : "push",
+      };
     }
     return {
       label: `Push & create ${label}`,
       disabled: false,
       kind: "run_action",
-      action: "commit_push_pr",
+      action: "create_pr",
     };
   }
 
@@ -319,7 +344,12 @@ export function requiresDefaultBranchConfirmation(
   isDefaultBranch: boolean,
 ): boolean {
   if (!isDefaultBranch) return false;
-  return action === "commit_push" || action === "commit_push_pr";
+  return (
+    action === "push" ||
+    action === "create_pr" ||
+    action === "commit_push" ||
+    action === "commit_push_pr"
+  );
 }
 
 export function resolveDefaultBranchActionDialogCopy(input: {
@@ -332,7 +362,7 @@ export function resolveDefaultBranchActionDialogCopy(input: {
   const branchLabel = input.branchName;
   const suffix = ` on "${branchLabel}". You can continue on this branch or create a feature branch and run the same action there.`;
 
-  if (input.action === "commit_push") {
+  if (input.action === "push" || input.action === "commit_push") {
     if (input.includesCommit) {
       return {
         title: "Commit & push to default branch?",
@@ -358,6 +388,39 @@ export function resolveDefaultBranchActionDialogCopy(input: {
     title: `Push & create ${label} from default branch?`,
     description: `This action will push local commits and create a ${label}${suffix}`,
     continueLabel: `Push & create ${label}`,
+  };
+}
+
+export function resolveThreadBranchUpdate(
+  result: GitRunStackedActionResult,
+): { branch: string } | null {
+  if (result.branch.status !== "created" || !result.branch.name) {
+    return null;
+  }
+
+  return {
+    branch: result.branch.name,
+  };
+}
+
+export function resolveLiveThreadBranchUpdate(input: {
+  threadBranch: string | null;
+  gitStatus: GitStatusResult | null;
+}): { branch: string | null } | null {
+  if (!input.gitStatus) {
+    return null;
+  }
+
+  if (input.gitStatus.branch === null && input.threadBranch !== null) {
+    return null;
+  }
+
+  if (input.threadBranch === input.gitStatus.branch) {
+    return null;
+  }
+
+  return {
+    branch: input.gitStatus.branch,
   };
 }
 

@@ -9,7 +9,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  measureElement as measureVirtualElement,
+  type VirtualItem,
+  useVirtualizer,
+} from "@tanstack/react-virtual";
 import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
+import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../../chat-scroll";
 import { type TurnDiffSummary } from "../../types";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import ChatMarkdown from "../ChatMarkdown";
@@ -28,22 +34,28 @@ import {
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
-import { estimateTimelineMessageHeight } from "../timelineHeight";
+import { clamp } from "effect/Number";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
-import { computeMessageDurationStart, normalizeCompactToolLabel } from "./MessagesTimeline.logic";
+import {
+  MAX_VISIBLE_WORK_LOG_ENTRIES,
+  deriveMessagesTimelineRows,
+  estimateMessagesTimelineRowHeight,
+  normalizeCompactToolLabel,
+  type MessagesTimelineRow,
+} from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   deriveDisplayedUserMessageState,
   type ParsedTerminalContextEntry,
 } from "~/lib/terminalContext";
+import { cn } from "~/lib/utils";
 import { extractTrailingJiraContexts, type ParsedJiraContextEntry } from "~/lib/jiraContext";
 import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
-import { cn } from "~/lib/utils";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
 import {
@@ -51,155 +63,253 @@ import {
   formatInlineTerminalContextLabel,
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
-import { InlineDiffPreview } from "./InlineDiffPreview";
-import { FileChangeCard } from "./FileChangeCard";
-import { AgentGroupCard } from "./AgentGroupCard";
-import { CommandExecutionCard } from "./CommandExecutionCard";
-import { ExplorationCard } from "./ExplorationCard";
-import { WebSearchCard } from "./WebSearchCard";
-import { WebFetchCard } from "./WebFetchCard";
-import { McpToolCallCard } from "./McpToolCallCard";
 
-const MAX_VISIBLE_WORK_LOG_ENTRIES = 6;
+const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 
-const WORK_GROUP_OVERHEAD_HEIGHT = 56;
-const WORK_ENTRY_HEIGHT = 30;
-const DIFF_PREVIEW_HEADER_HEIGHT = 32;
-const DIFF_PREVIEW_LINE_HEIGHT = 18;
-const DIFF_PREVIEW_MAX_HEIGHT = 260;
-const DIFF_HUNK_SPACING = 8;
-const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
-const EXPLORATION_CARD_COLLAPSED_HEIGHT = 36;
-const AGENT_GROUP_HEADER_HEIGHT = 32;
-const AGENT_TASK_ROW_HEIGHT = 36;
-const COMMAND_CARD_COLLAPSED_HEIGHT = 64;
-const WEB_SEARCH_CARD_COLLAPSED_HEIGHT = 64;
-const WEB_FETCH_CARD_COLLAPSED_HEIGHT = 64;
-const MCP_TOOL_CARD_COLLAPSED_HEIGHT = 80;
-
-type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
-type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
-type TimelineProposedPlan = Extract<TimelineEntry, { kind: "proposed-plan" }>["proposedPlan"];
-type TimelineWorkEntry = Extract<TimelineEntry, { kind: "work" }>["entry"];
-type TimelineRow =
-  | {
-      kind: "work";
-      id: string;
-      createdAt: string;
-      groupedEntries: TimelineWorkEntry[];
-    }
-  | {
-      kind: "message";
-      id: string;
-      createdAt: string;
-      message: TimelineMessage;
-      durationStart: string;
-      showCompletionDivider: boolean;
-    }
-  | {
-      kind: "proposed-plan";
-      id: string;
-      createdAt: string;
-      proposedPlan: TimelineProposedPlan;
-    }
-  | {
-      kind: "file-change";
-      id: string;
-      createdAt: string;
-      entry: TimelineWorkEntry;
-    }
-  | {
-      kind: "exploration";
-      id: string;
-      createdAt: string;
-      entries: TimelineWorkEntry[];
-      isLive: boolean;
-    }
-  | {
-      kind: "agent-group";
-      id: string;
-      createdAt: string;
-      entry: TimelineWorkEntry;
-      isLive: boolean;
-    }
-  | {
-      kind: "command";
-      id: string;
-      createdAt: string;
-      entry: TimelineWorkEntry;
-      isLive: boolean;
-    }
-  | {
-      kind: "web-search";
-      id: string;
-      createdAt: string;
-      entry: TimelineWorkEntry;
-      isLive: boolean;
-    }
-  | {
-      kind: "web-fetch";
-      id: string;
-      createdAt: string;
-      entry: TimelineWorkEntry;
-      isLive: boolean;
-    }
-  | {
-      kind: "mcp-tool";
-      id: string;
-      createdAt: string;
-      entry: TimelineWorkEntry;
-      isLive: boolean;
-    }
-  | { kind: "working"; id: string; createdAt: string | null };
-
-interface TimelineRowContentProps {
-  row: TimelineRow;
-  expandedWorkGroups: Record<string, boolean>;
-  onToggleWorkGroup: (groupId: string) => void;
+interface MessagesTimelineProps {
+  hasMessages: boolean;
+  isWorking: boolean;
+  activeTurnInProgress: boolean;
+  activeTurnStartedAt: string | null;
+  scrollContainer: HTMLDivElement | null;
+  timelineEntries: ReturnType<typeof deriveTimelineEntries>;
+  completionDividerBeforeEntryId: string | null;
   completionSummary: string | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
-  allDirectoriesExpandedByTurnId: Record<string, boolean>;
-  onToggleAllDirectories: (turnId: TurnId) => void;
+  nowIso: string;
+  expandedWorkGroups: Record<string, boolean>;
+  onToggleWorkGroup: (groupId: string) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
-  isWorking: boolean;
-  isSendBusy: boolean;
-  isPreparingWorktree: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
-  onSubagentSelect: (taskId: string) => void;
+  onVirtualizerSnapshot?: (snapshot: {
+    totalSize: number;
+    measurements: ReadonlyArray<{
+      id: string;
+      kind: MessagesTimelineRow["kind"];
+      index: number;
+      size: number;
+      start: number;
+      end: number;
+    }>;
+  }) => void;
 }
 
-const TimelineRowContent = memo(function TimelineRowContent({
-  row,
-  expandedWorkGroups,
-  onToggleWorkGroup,
+export const MessagesTimeline = memo(function MessagesTimeline({
+  hasMessages,
+  isWorking,
+  activeTurnInProgress,
+  activeTurnStartedAt,
+  scrollContainer,
+  timelineEntries,
+  completionDividerBeforeEntryId,
   completionSummary,
   turnDiffSummaryByAssistantMessageId,
-  allDirectoriesExpandedByTurnId,
-  onToggleAllDirectories,
+  nowIso,
+  expandedWorkGroups,
+  onToggleWorkGroup,
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
   isRevertingCheckpoint,
-  isWorking,
-  isSendBusy,
-  isPreparingWorktree,
   onImageExpand,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
-  onSubagentSelect,
-}: TimelineRowContentProps) {
-  return (
+  onVirtualizerSnapshot,
+}: MessagesTimelineProps) {
+  const timelineRootRef = useRef<HTMLDivElement | null>(null);
+  const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const timelineRoot = timelineRootRef.current;
+    if (!timelineRoot) return;
+
+    const updateWidth = (nextWidth: number) => {
+      setTimelineWidthPx((previousWidth) => {
+        if (previousWidth !== null && Math.abs(previousWidth - nextWidth) < 0.5) {
+          return previousWidth;
+        }
+        return nextWidth;
+      });
+    };
+
+    updateWidth(timelineRoot.getBoundingClientRect().width);
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      updateWidth(timelineRoot.getBoundingClientRect().width);
+    });
+    observer.observe(timelineRoot);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMessages, isWorking]);
+
+  const rows = useMemo(
+    () =>
+      deriveMessagesTimelineRows({
+        timelineEntries,
+        completionDividerBeforeEntryId,
+        isWorking,
+        activeTurnStartedAt,
+      }),
+    [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt],
+  );
+
+  const firstUnvirtualizedRowIndex = useMemo(() => {
+    const firstTailRowIndex = Math.max(rows.length - ALWAYS_UNVIRTUALIZED_TAIL_ROWS, 0);
+    if (!activeTurnInProgress) return firstTailRowIndex;
+
+    const turnStartedAtMs =
+      typeof activeTurnStartedAt === "string" ? Date.parse(activeTurnStartedAt) : Number.NaN;
+    let firstCurrentTurnRowIndex = -1;
+    if (!Number.isNaN(turnStartedAtMs)) {
+      firstCurrentTurnRowIndex = rows.findIndex((row) => {
+        if (row.kind === "working") return true;
+        if (!row.createdAt) return false;
+        const rowCreatedAtMs = Date.parse(row.createdAt);
+        return !Number.isNaN(rowCreatedAtMs) && rowCreatedAtMs >= turnStartedAtMs;
+      });
+    }
+
+    if (firstCurrentTurnRowIndex < 0) {
+      firstCurrentTurnRowIndex = rows.findIndex(
+        (row) => row.kind === "message" && row.message.streaming,
+      );
+    }
+
+    if (firstCurrentTurnRowIndex < 0) return firstTailRowIndex;
+
+    for (let index = firstCurrentTurnRowIndex - 1; index >= 0; index -= 1) {
+      const previousRow = rows[index];
+      if (!previousRow || previousRow.kind !== "message") continue;
+      if (previousRow.message.role === "user") {
+        return Math.min(index, firstTailRowIndex);
+      }
+      if (previousRow.message.role === "assistant" && !previousRow.message.streaming) {
+        break;
+      }
+    }
+
+    return Math.min(firstCurrentTurnRowIndex, firstTailRowIndex);
+  }, [activeTurnInProgress, activeTurnStartedAt, rows]);
+
+  const virtualizedRowCount = clamp(firstUnvirtualizedRowIndex, {
+    minimum: 0,
+    maximum: rows.length,
+  });
+  const virtualMeasurementScopeKey =
+    timelineWidthPx === null ? "width:unknown" : `width:${Math.round(timelineWidthPx)}`;
+
+  const rowVirtualizer = useVirtualizer({
+    count: virtualizedRowCount,
+    getScrollElement: () => scrollContainer,
+    // Scope cached row measurements to the current timeline width so offscreen
+    // rows do not keep stale heights after wrapping changes.
+    getItemKey: (index: number) => {
+      const rowId = rows[index]?.id ?? String(index);
+      return `${virtualMeasurementScopeKey}:${rowId}`;
+    },
+    estimateSize: (index: number) => {
+      const row = rows[index];
+      if (!row) return 96;
+      return estimateMessagesTimelineRowHeight(row, {
+        expandedWorkGroups,
+        timelineWidthPx,
+        turnDiffSummaryByAssistantMessageId,
+      });
+    },
+    measureElement: measureVirtualElement,
+    useAnimationFrameWithResizeObserver: true,
+    overscan: 8,
+  });
+  useEffect(() => {
+    if (timelineWidthPx === null) return;
+    rowVirtualizer.measure();
+  }, [rowVirtualizer, timelineWidthPx]);
+  useEffect(() => {
+    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+      const viewportHeight = instance.scrollRect?.height ?? 0;
+      const scrollOffset = instance.scrollOffset ?? 0;
+      const itemIntersectsViewport =
+        item.end > scrollOffset && item.start < scrollOffset + viewportHeight;
+      if (itemIntersectsViewport) {
+        return false;
+      }
+      const remainingDistance = instance.getTotalSize() - (scrollOffset + viewportHeight);
+      return remainingDistance > AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
+    };
+    return () => {
+      rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
+    };
+  }, [rowVirtualizer]);
+  const pendingMeasureFrameRef = useRef<number | null>(null);
+  const onTimelineImageLoad = useCallback(() => {
+    if (pendingMeasureFrameRef.current !== null) return;
+    pendingMeasureFrameRef.current = window.requestAnimationFrame(() => {
+      pendingMeasureFrameRef.current = null;
+      rowVirtualizer.measure();
+    });
+  }, [rowVirtualizer]);
+  useEffect(() => {
+    return () => {
+      const frame = pendingMeasureFrameRef.current;
+      if (frame !== null) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (!onVirtualizerSnapshot) {
+      return;
+    }
+    onVirtualizerSnapshot({
+      totalSize: rowVirtualizer.getTotalSize(),
+      measurements: rowVirtualizer.measurementsCache
+        .slice(0, virtualizedRowCount)
+        .flatMap((measurement) => {
+          const row = rows[measurement.index];
+          if (!row) {
+            return [];
+          }
+          return [
+            {
+              id: row.id,
+              kind: row.kind,
+              index: measurement.index,
+              size: measurement.size,
+              start: measurement.start,
+              end: measurement.end,
+            },
+          ];
+        }),
+    });
+  }, [onVirtualizerSnapshot, rowVirtualizer, rows, virtualizedRowCount]);
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const nonVirtualizedRows = rows.slice(virtualizedRowCount);
+  const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
+    Record<string, boolean>
+  >({});
+  const onToggleAllDirectories = useCallback((turnId: TurnId) => {
+    setAllDirectoriesExpandedByTurnId((current) => ({
+      ...current,
+      [turnId]: !(current[turnId] ?? true),
+    }));
+  }, []);
+
+  const renderRowContent = (row: TimelineRow) => (
     <div
       className="pb-4"
+      data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
       data-message-id={row.kind === "message" ? row.message.id : undefined}
       data-message-role={row.kind === "message" ? row.message.role : undefined}
@@ -246,27 +356,6 @@ const TimelineRowContent = memo(function TimelineRowContent({
           );
         })()}
 
-      {row.kind === "file-change" && <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} />}
-
-      {row.kind === "exploration" && <ExplorationCard entries={row.entries} isLive={row.isLive} />}
-
-      {row.kind === "agent-group" && row.entry.agentGroup && (
-        <AgentGroupCard
-          agentGroup={row.entry.agentGroup}
-          label={row.entry.label}
-          isLive={row.isLive}
-          onTaskSelect={onSubagentSelect}
-        />
-      )}
-
-      {row.kind === "command" && <CommandExecutionCard entry={row.entry} isLive={row.isLive} />}
-
-      {row.kind === "web-search" && <WebSearchCard entry={row.entry} isLive={row.isLive} />}
-
-      {row.kind === "web-fetch" && <WebFetchCard entry={row.entry} isLive={row.isLive} />}
-
-      {row.kind === "mcp-tool" && <McpToolCallCard entry={row.entry} isLive={row.isLive} />}
-
       {row.kind === "message" &&
         row.message.role === "user" &&
         (() => {
@@ -310,7 +399,9 @@ const TimelineRowContent = memo(function TimelineRowContent({
                               <img
                                 src={image.previewUrl}
                                 alt={image.name}
-                                className="h-full max-h-[220px] w-full object-cover"
+                                className="block h-auto max-h-[220px] w-full object-cover"
+                                onLoad={onTimelineImageLoad}
+                                onError={onTimelineImageLoad}
                               />
                             </button>
                           ) : (
@@ -332,7 +423,9 @@ const TimelineRowContent = memo(function TimelineRowContent({
                 )}
                 <div className="mt-1.5 flex items-center justify-end gap-2">
                   <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
-                    {visibleText && <MessageCopyButton text={visibleText} />}
+                    {displayedUserMessage.copyText && (
+                      <MessageCopyButton text={displayedUserMessage.copyText} />
+                    )}
                     {canRevertAgentWork && (
                       <Button
                         type="button"
@@ -370,32 +463,12 @@ const TimelineRowContent = memo(function TimelineRowContent({
                   <span className="h-px flex-1 bg-border" />
                 </div>
               )}
-              <div className="group/msg min-w-0 px-1 py-0.5">
+              <div className="min-w-0 px-1 py-0.5">
                 <ChatMarkdown
                   text={messageText}
                   cwd={markdownCwd}
                   isStreaming={Boolean(row.message.streaming)}
                 />
-                <div className="mt-1.5 flex items-center gap-2">
-                  <p className="text-[10px] text-muted-foreground/30">
-                    {row.message.streaming ? (
-                      <StreamingMessageMeta
-                        createdAt={row.message.createdAt}
-                        durationStart={row.durationStart}
-                        timestampFormat={timestampFormat}
-                      />
-                    ) : (
-                      formatMessageMeta(
-                        row.message.createdAt,
-                        formatElapsed(row.durationStart, row.message.completedAt),
-                        timestampFormat,
-                      )
-                    )}
-                  </p>
-                  <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/msg:opacity-100">
-                    <MessageCopyButton text={messageText} />
-                  </div>
-                </div>
                 {(() => {
                   const turnSummary = turnDiffSummaryByAssistantMessageId.get(row.message.id);
                   if (!turnSummary) return null;
@@ -425,6 +498,7 @@ const TimelineRowContent = memo(function TimelineRowContent({
                             type="button"
                             size="xs"
                             variant="outline"
+                            data-scroll-anchor-ignore
                             onClick={() => onToggleAllDirectories(turnSummary.turnId)}
                           >
                             {allDirectoriesExpanded ? "Collapse all" : "Expand all"}
@@ -452,344 +526,48 @@ const TimelineRowContent = memo(function TimelineRowContent({
                     </div>
                   );
                 })()}
+                <p className="mt-1.5 text-[10px] text-muted-foreground/30">
+                  {formatMessageMeta(
+                    row.message.createdAt,
+                    row.message.streaming
+                      ? formatElapsed(row.durationStart, nowIso)
+                      : formatElapsed(row.durationStart, row.message.completedAt),
+                    timestampFormat,
+                  )}
+                </p>
               </div>
             </>
           );
         })()}
 
       {row.kind === "proposed-plan" && (
-        <div className="group min-w-0 px-1 py-0.5">
+        <div className="min-w-0 px-1 py-0.5">
           <ProposedPlanCard
             planMarkdown={row.proposedPlan.planMarkdown}
             cwd={markdownCwd}
             workspaceRoot={workspaceRoot}
           />
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
-              <MessageCopyButton text={row.proposedPlan.planMarkdown} />
-            </div>
-          </div>
         </div>
       )}
 
       {row.kind === "working" && (
         <div className="py-0.5 pl-1.5">
-          <span className="shiny-text pt-1 text-xs font-semibold text-primary/60">
-            {isPreparingWorktree ? (
-              "Preparing worktree\u2026"
-            ) : isSendBusy ? (
-              "Starting\u2026"
-            ) : row.createdAt ? (
-              <WorkingElapsedLabel startIso={row.createdAt} />
-            ) : (
-              "Working\u2026"
-            )}
-          </span>
+          <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground/70">
+            <span className="inline-flex items-center gap-[3px]">
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:200ms]" />
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:400ms]" />
+            </span>
+            <span>
+              {row.createdAt
+                ? `Working for ${formatWorkingTimer(row.createdAt, nowIso) ?? "0s"}`
+                : "Working..."}
+            </span>
+          </div>
         </div>
       )}
     </div>
   );
-});
-
-function estimateWorkRowHeight(groupedEntries: ReadonlyArray<TimelineWorkEntry>): number {
-  const visibleCount = Math.min(groupedEntries.length, MAX_VISIBLE_WORK_LOG_ENTRIES);
-  const baseHeight = WORK_GROUP_OVERHEAD_HEIGHT + visibleCount * WORK_ENTRY_HEIGHT;
-
-  let extraHeight = 0;
-  const visibleEntries =
-    groupedEntries.length > MAX_VISIBLE_WORK_LOG_ENTRIES
-      ? groupedEntries.slice(-MAX_VISIBLE_WORK_LOG_ENTRIES)
-      : groupedEntries;
-
-  for (const entry of visibleEntries) {
-    const previews = entry.diffPreviews;
-    if (!previews || previews.length === 0) continue;
-    for (const hunk of previews) {
-      const bodyHeight = Math.min(
-        hunk.lines.length * DIFF_PREVIEW_LINE_HEIGHT,
-        DIFF_PREVIEW_MAX_HEIGHT,
-      );
-      extraHeight += DIFF_PREVIEW_HEADER_HEIGHT + bodyHeight + DIFF_HUNK_SPACING;
-    }
-  }
-
-  return baseHeight + extraHeight;
-}
-
-interface MessagesTimelineProps {
-  hasMessages: boolean;
-  isWorking: boolean;
-  isSendBusy: boolean;
-  isPreparingWorktree: boolean;
-  activeTurnStartedAt: string | null;
-  timelineEntries: ReturnType<typeof deriveTimelineEntries>;
-  completionDividerBeforeEntryId: string | null;
-  completionSummary: string | null;
-  turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
-  expandedWorkGroups: Record<string, boolean>;
-  onToggleWorkGroup: (groupId: string) => void;
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
-  revertTurnCountByUserMessageId: Map<MessageId, number>;
-  onRevertUserMessage: (messageId: MessageId) => void;
-  isRevertingCheckpoint: boolean;
-  onImageExpand: (preview: ExpandedImagePreview) => void;
-  markdownCwd: string | undefined;
-  resolvedTheme: "light" | "dark";
-  timestampFormat: TimestampFormat;
-  workspaceRoot: string | undefined;
-  onSubagentSelect: (taskId: string) => void;
-}
-
-export const MessagesTimeline = memo(function MessagesTimeline({
-  hasMessages,
-  isWorking,
-  isSendBusy,
-  isPreparingWorktree,
-  activeTurnStartedAt,
-  timelineEntries,
-  completionDividerBeforeEntryId,
-  completionSummary,
-  turnDiffSummaryByAssistantMessageId,
-  expandedWorkGroups,
-  onToggleWorkGroup,
-  onOpenTurnDiff,
-  revertTurnCountByUserMessageId,
-  onRevertUserMessage,
-  isRevertingCheckpoint,
-  onImageExpand,
-  markdownCwd,
-  resolvedTheme,
-  timestampFormat,
-  workspaceRoot,
-  onSubagentSelect,
-}: MessagesTimelineProps) {
-  const timelineRootRef = useRef<HTMLDivElement | null>(null);
-  const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    const timelineRoot = timelineRootRef.current;
-    if (!timelineRoot) return;
-
-    const updateWidth = (nextWidth: number) => {
-      setTimelineWidthPx((previousWidth) => {
-        if (previousWidth !== null && Math.abs(previousWidth - nextWidth) < 0.5) {
-          return previousWidth;
-        }
-        return nextWidth;
-      });
-    };
-
-    updateWidth(timelineRoot.getBoundingClientRect().width);
-
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      updateWidth(timelineRoot.getBoundingClientRect().width);
-    });
-    observer.observe(timelineRoot);
-    return () => {
-      observer.disconnect();
-    };
-  }, [hasMessages, isWorking]);
-
-  const rows = useMemo<TimelineRow[]>(() => {
-    const nextRows: TimelineRow[] = [];
-    const durationStartByMessageId = computeMessageDurationStart(
-      timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
-    );
-
-    for (let index = 0; index < timelineEntries.length; index += 1) {
-      const timelineEntry = timelineEntries[index];
-      if (!timelineEntry) {
-        continue;
-      }
-
-      if (timelineEntry.kind === "work") {
-        let pendingWork: TimelineWorkEntry[] = [];
-        let pendingWorkFirstId: string | null = null;
-        let pendingWorkFirstCreatedAt: string | null = null;
-        let pendingExploration: TimelineWorkEntry[] = [];
-        let pendingExplorationFirstId: string | null = null;
-        let pendingExplorationFirstCreatedAt: string | null = null;
-        let cursor = index;
-
-        const flushPendingWork = () => {
-          if (pendingWork.length > 0) {
-            nextRows.push({
-              kind: "work",
-              id: pendingWorkFirstId!,
-              createdAt: pendingWorkFirstCreatedAt!,
-              groupedEntries: pendingWork,
-            });
-            pendingWork = [];
-            pendingWorkFirstId = null;
-            pendingWorkFirstCreatedAt = null;
-          }
-        };
-
-        const flushPendingExploration = () => {
-          if (pendingExploration.length > 0) {
-            nextRows.push({
-              kind: "exploration",
-              id: pendingExplorationFirstId!,
-              createdAt: pendingExplorationFirstCreatedAt!,
-              entries: pendingExploration,
-              isLive: false,
-            });
-            pendingExploration = [];
-            pendingExplorationFirstId = null;
-            pendingExplorationFirstCreatedAt = null;
-          }
-        };
-
-        while (cursor < timelineEntries.length) {
-          const current = timelineEntries[cursor];
-          if (!current || current.kind !== "work") break;
-
-          if (current.entry.agentGroup) {
-            flushPendingWork();
-            flushPendingExploration();
-            nextRows.push({
-              kind: "agent-group",
-              id: current.id,
-              createdAt: current.createdAt,
-              entry: current.entry,
-              isLive: false,
-            });
-          } else if (isCommandEntry(current.entry)) {
-            flushPendingWork();
-            flushPendingExploration();
-            nextRows.push({
-              kind: "command",
-              id: current.id,
-              createdAt: current.createdAt,
-              entry: current.entry,
-              isLive: false,
-            });
-          } else if (isWebSearchEntry(current.entry)) {
-            flushPendingWork();
-            flushPendingExploration();
-            nextRows.push({
-              kind: "web-search",
-              id: current.id,
-              createdAt: current.createdAt,
-              entry: current.entry,
-              isLive: false,
-            });
-          } else if (isWebFetchEntry(current.entry)) {
-            flushPendingWork();
-            flushPendingExploration();
-            nextRows.push({
-              kind: "web-fetch",
-              id: current.id,
-              createdAt: current.createdAt,
-              entry: current.entry,
-              isLive: false,
-            });
-          } else if (isMcpToolEntry(current.entry)) {
-            flushPendingWork();
-            flushPendingExploration();
-            nextRows.push({
-              kind: "mcp-tool",
-              id: current.id,
-              createdAt: current.createdAt,
-              entry: current.entry,
-              isLive: false,
-            });
-          } else if (
-            current.entry.itemType === "file_change" &&
-            (current.entry.diffPreviews?.length ?? 0) > 0
-          ) {
-            flushPendingWork();
-            flushPendingExploration();
-            nextRows.push({
-              kind: "file-change",
-              id: current.id,
-              createdAt: current.createdAt,
-              entry: current.entry,
-            });
-          } else if (isExplorationEntry(current.entry)) {
-            flushPendingWork();
-            if (pendingExploration.length === 0) {
-              pendingExplorationFirstId = current.id;
-              pendingExplorationFirstCreatedAt = current.createdAt;
-            }
-            pendingExploration.push(current.entry);
-          } else {
-            flushPendingExploration();
-            if (pendingWork.length === 0) {
-              pendingWorkFirstId = current.id;
-              pendingWorkFirstCreatedAt = current.createdAt;
-            }
-            pendingWork.push(current.entry);
-          }
-          cursor += 1;
-        }
-        flushPendingWork();
-        flushPendingExploration();
-        index = cursor - 1;
-        continue;
-      }
-
-      if (timelineEntry.kind === "proposed-plan") {
-        nextRows.push({
-          kind: "proposed-plan",
-          id: timelineEntry.id,
-          createdAt: timelineEntry.createdAt,
-          proposedPlan: timelineEntry.proposedPlan,
-        });
-        continue;
-      }
-
-      nextRows.push({
-        kind: "message",
-        id: timelineEntry.id,
-        createdAt: timelineEntry.createdAt,
-        message: timelineEntry.message,
-        durationStart:
-          durationStartByMessageId.get(timelineEntry.message.id) ?? timelineEntry.message.createdAt,
-        showCompletionDivider:
-          timelineEntry.message.role === "assistant" &&
-          completionDividerBeforeEntryId === timelineEntry.id,
-      });
-    }
-
-    if (isWorking) {
-      for (let i = nextRows.length - 1; i >= 0; i--) {
-        const r = nextRows[i];
-        if (!r) break;
-        if (
-          r.kind === "exploration" ||
-          r.kind === "agent-group" ||
-          r.kind === "command" ||
-          r.kind === "web-search" ||
-          r.kind === "web-fetch" ||
-          r.kind === "mcp-tool"
-        ) {
-          nextRows[i] = { ...r, isLive: true };
-          break;
-        }
-        if (r.kind === "message" || r.kind === "proposed-plan") break;
-      }
-
-      nextRows.push({
-        kind: "working",
-        id: "working-indicator-row",
-        createdAt: activeTurnStartedAt,
-      });
-    }
-
-    return nextRows;
-  }, [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt]);
-
-  const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
-    Record<string, boolean>
-  >({});
-  const onToggleAllDirectories = useCallback((turnId: TurnId) => {
-    setAllDirectoriesExpandedByTurnId((current) => ({
-      ...current,
-      [turnId]: !(current[turnId] ?? true),
-    }));
-  }, []);
 
   if (!hasMessages && !isWorking) {
     return (
@@ -807,63 +585,42 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       data-timeline-root="true"
       className="mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
     >
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          style={{
-            contentVisibility: "auto",
-            containIntrinsicBlockSize: `auto ${estimateRowHeight(row, timelineWidthPx)}px`,
-          }}
-        >
-          <TimelineRowContent
-            row={row}
-            expandedWorkGroups={expandedWorkGroups}
-            onToggleWorkGroup={onToggleWorkGroup}
-            completionSummary={completionSummary}
-            turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
-            allDirectoriesExpandedByTurnId={allDirectoriesExpandedByTurnId}
-            onToggleAllDirectories={onToggleAllDirectories}
-            onOpenTurnDiff={onOpenTurnDiff}
-            revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-            onRevertUserMessage={onRevertUserMessage}
-            isRevertingCheckpoint={isRevertingCheckpoint}
-            isWorking={isWorking}
-            isSendBusy={isSendBusy}
-            isPreparingWorktree={isPreparingWorktree}
-            onImageExpand={onImageExpand}
-            markdownCwd={markdownCwd}
-            resolvedTheme={resolvedTheme}
-            timestampFormat={timestampFormat}
-            workspaceRoot={workspaceRoot}
-            onSubagentSelect={onSubagentSelect}
-          />
+      {virtualizedRowCount > 0 && (
+        <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
+          {virtualRows.map((virtualRow: VirtualItem) => {
+            const row = rows[virtualRow.index];
+            if (!row) return null;
+
+            return (
+              <div
+                key={`virtual-row:${row.id}`}
+                data-index={virtualRow.index}
+                data-virtual-row-id={row.id}
+                data-virtual-row-kind={row.kind}
+                data-virtual-row-size={virtualRow.size}
+                data-virtual-row-start={virtualRow.start}
+                ref={rowVirtualizer.measureElement}
+                className="absolute left-0 top-0 w-full"
+                style={{ transform: `translateY(${virtualRow.start}px)` }}
+              >
+                {renderRowContent(row)}
+              </div>
+            );
+          })}
         </div>
+      )}
+
+      {nonVirtualizedRows.map((row) => (
+        <div key={`non-virtual-row:${row.id}`}>{renderRowContent(row)}</div>
       ))}
     </div>
   );
 });
 
-function estimateTimelineProposedPlanHeight(proposedPlan: TimelineProposedPlan): number {
-  const estimatedLines = Math.max(1, Math.ceil(proposedPlan.planMarkdown.length / 72));
-  return 120 + Math.min(estimatedLines * 22, 880);
-}
-
-function estimateRowHeight(row: TimelineRow, timelineWidthPx: number | null): number {
-  if (row.kind === "work") return estimateWorkRowHeight(row.groupedEntries);
-  if (row.kind === "proposed-plan") return estimateTimelineProposedPlanHeight(row.proposedPlan);
-  if (row.kind === "working") return 40;
-  if (row.kind === "file-change") return FILE_CHANGE_CARD_COLLAPSED_HEIGHT;
-  if (row.kind === "exploration") return EXPLORATION_CARD_COLLAPSED_HEIGHT;
-  if (row.kind === "agent-group") {
-    const taskCount = row.entry.agentGroup?.tasks.length ?? 1;
-    return AGENT_GROUP_HEADER_HEIGHT + taskCount * AGENT_TASK_ROW_HEIGHT + 12;
-  }
-  if (row.kind === "command") return COMMAND_CARD_COLLAPSED_HEIGHT;
-  if (row.kind === "web-search") return WEB_SEARCH_CARD_COLLAPSED_HEIGHT;
-  if (row.kind === "web-fetch") return WEB_FETCH_CARD_COLLAPSED_HEIGHT;
-  if (row.kind === "mcp-tool") return MCP_TOOL_CARD_COLLAPSED_HEIGHT;
-  return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
-}
+type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
+type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
+type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
+type TimelineRow = MessagesTimelineRow;
 
 function formatWorkingTimer(startIso: string, endIso: string): string | null {
   const startedAtMs = Date.parse(startIso);
@@ -896,30 +653,6 @@ function formatMessageMeta(
   if (!duration) return formatTimestamp(createdAt, timestampFormat);
   return `${formatTimestamp(createdAt, timestampFormat)} • ${duration}`;
 }
-
-function useLiveTick(): string {
-  const [tick, setTick] = useState(() => Date.now());
-  useEffect(() => {
-    const id = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-  return new Date(tick).toISOString();
-}
-
-const WorkingElapsedLabel = memo(function WorkingElapsedLabel(props: { startIso: string }) {
-  const nowIso = useLiveTick();
-  return <>Working for {formatWorkingTimer(props.startIso, nowIso) ?? "0s"}</>;
-});
-
-const StreamingMessageMeta = memo(function StreamingMessageMeta(props: {
-  createdAt: string;
-  durationStart: string;
-  timestampFormat: TimestampFormat;
-}) {
-  const nowIso = useLiveTick();
-  const duration = formatElapsed(props.durationStart, nowIso);
-  return <>{formatMessageMeta(props.createdAt, duration, props.timestampFormat)}</>;
-});
 
 const UserMessageTerminalContextInlineLabel = memo(
   function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
@@ -1015,7 +748,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
         }
 
         return (
-          <div className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+          <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
             {inlineNodes}
           </div>
         );
@@ -1043,7 +776,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     }
 
     return (
-      <div className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+      <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
         {inlineNodes}
       </div>
     );
@@ -1053,19 +786,19 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     return null;
   }
 
-  const jiraNodes = renderTextWithJiraChips(props.text, "user-msg-jira", props.jiraContextMap);
-  if (jiraNodes.length > 0) {
+  const jiraChipNodes = renderTextWithJiraChips(props.text, "user-msg", props.jiraContextMap);
+  if (jiraChipNodes.length > 0) {
     return (
-      <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
-        {jiraNodes}
-      </div>
+      <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+        {jiraChipNodes}
+      </pre>
     );
   }
 
   return (
-    <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
+    <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
       {props.text}
-    </div>
+    </pre>
   );
 });
 
@@ -1097,74 +830,6 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   };
 }
 
-const EXPLORATION_LABEL_RE =
-  /^(Read|Search(ed)?|Glob(bed)?|Grep(ped)?|List(ed)?|Find|Found|View(ed)?|Inspect(ed)?)\b/i;
-
-const EXPLORATION_TOOL_NAMES = new Set([
-  "read",
-  "grep",
-  "glob",
-  "search",
-  "find",
-  "list",
-  "view",
-  "ls",
-  "cat",
-  "head",
-  "tail",
-]);
-
-function isExplorationToolName(toolName: string | undefined): boolean {
-  if (!toolName) return false;
-  return EXPLORATION_TOOL_NAMES.has(toolName.toLowerCase());
-}
-
-function isExplorationEntry(entry: TimelineWorkEntry): boolean {
-  if (entry.requestKind === "file-change" || entry.requestKind === "command") return false;
-  if (
-    entry.itemType === "file_change" ||
-    entry.itemType === "command_execution" ||
-    entry.itemType === "web_search" ||
-    entry.itemType === "web_fetch" ||
-    entry.itemType === "mcp_tool_call"
-  )
-    return false;
-  if (entry.command) return false;
-  if ((entry.diffPreviews?.length ?? 0) > 0) return false;
-  if (entry.agentGroup) return false;
-
-  if (entry.requestKind === "file-read") return true;
-  if (entry.itemType === "file_read") return true;
-  if (entry.itemType === "image_view") return true;
-  if (isExplorationToolName(entry.toolName)) return true;
-
-  const heading = (entry.toolTitle ?? entry.label).trim();
-  return EXPLORATION_LABEL_RE.test(heading);
-}
-
-function isCommandEntry(entry: TimelineWorkEntry): boolean {
-  return (
-    entry.requestKind === "command" || entry.itemType === "command_execution" || !!entry.command
-  );
-}
-
-function isWebSearchEntry(entry: TimelineWorkEntry): boolean {
-  if (entry.itemType === "web_search") return true;
-  const lower = entry.toolName?.toLowerCase() ?? "";
-  return lower === "websearch" || lower === "web_search";
-}
-
-function isWebFetchEntry(entry: TimelineWorkEntry): boolean {
-  if (entry.itemType === "web_fetch") return true;
-  const lower = entry.toolName?.toLowerCase() ?? "";
-  return lower === "webfetch" || lower === "web_fetch";
-}
-
-function isMcpToolEntry(entry: TimelineWorkEntry): boolean {
-  if (entry.itemType === "mcp_tool_call") return true;
-  return (entry.toolName ?? "").startsWith("mcp__");
-}
-
 function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
   if (tone === "error") return "text-rose-300/50 dark:text-rose-300/50";
   if (tone === "tool") return "text-muted-foreground/70";
@@ -1173,10 +838,10 @@ function workToneClass(tone: "thinking" | "tool" | "info" | "error"): string {
 }
 
 function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles" | "toolName">,
+  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
 ) {
   if (workEntry.command) return workEntry.command;
-  if (workEntry.detail) return cleanToolDetail(workEntry.detail, workEntry.toolName);
+  if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
   if (!firstPath) return null;
@@ -1185,49 +850,14 @@ function workEntryPreview(
     : `${firstPath} +${workEntry.changedFiles!.length - 1} more`;
 }
 
-const TOOL_DETAIL_PREFIX_RE = /^[A-Za-z_]+:\s*/;
-const JSON_OBJECT_RE = /^\{.*\}$/s;
-
-function cleanToolDetail(detail: string, toolName: string | undefined): string {
-  let cleaned = detail;
-  if (toolName && cleaned.startsWith(`${toolName}:`)) {
-    cleaned = cleaned.slice(toolName.length + 1).trim();
-  } else if (TOOL_DETAIL_PREFIX_RE.test(cleaned)) {
-    cleaned = cleaned.replace(TOOL_DETAIL_PREFIX_RE, "").trim();
-  }
-  if (JSON_OBJECT_RE.test(cleaned)) {
-    const friendly = friendlyJsonDetail(cleaned);
-    if (friendly) return friendly;
-  }
-  return cleaned;
-}
-
-function friendlyJsonDetail(jsonStr: string): string | null {
-  try {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    const filePath =
-      typeof parsed.file_path === "string"
-        ? parsed.file_path
-        : typeof parsed.filePath === "string"
-          ? parsed.filePath
-          : typeof parsed.path === "string"
-            ? parsed.path
-            : null;
-    if (filePath) {
-      const parts = filePath.split("/");
-      return parts.length > 3 ? parts.slice(-3).join("/") : filePath;
-    }
-    const pattern = typeof parsed.pattern === "string" ? parsed.pattern : null;
-    const path = typeof parsed.path === "string" ? parsed.path : null;
-    if (pattern && path) {
-      const shortPath = path.split("/").slice(-3).join("/");
-      return `"${pattern}" in ${shortPath}`;
-    }
-    if (pattern) return `"${pattern}"`;
-    return null;
-  } catch {
+function workEntryRawCommand(
+  workEntry: Pick<TimelineWorkEntry, "command" | "rawCommand">,
+): string | null {
+  const rawCommand = workEntry.rawCommand?.trim();
+  if (!rawCommand || !workEntry.command) {
     return null;
   }
+  return rawCommand === workEntry.command.trim() ? null : rawCommand;
 }
 
 function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
@@ -1241,10 +871,7 @@ function workEntryIcon(workEntry: TimelineWorkEntry): LucideIcon {
   if (workEntry.itemType === "file_change" || (workEntry.changedFiles?.length ?? 0) > 0) {
     return SquarePenIcon;
   }
-  if (workEntry.itemType === "file_read" || isExplorationToolName(workEntry.toolName))
-    return EyeIcon;
   if (workEntry.itemType === "web_search") return GlobeIcon;
-  if (workEntry.itemType === "web_fetch") return GlobeIcon;
   if (workEntry.itemType === "image_view") return EyeIcon;
 
   switch (workEntry.itemType) {
@@ -1267,49 +894,10 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
-  const raw = workEntry.toolTitle ?? workEntry.label;
-  const normalized = normalizeCompactToolLabel(raw);
-  if (isGenericToolLabel(normalized) && workEntry.toolName) {
-    return friendlyToolHeading(workEntry.toolName);
+  if (!workEntry.toolTitle) {
+    return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
-  return capitalizePhrase(normalized);
-}
-
-function isGenericToolLabel(label: string): boolean {
-  const lower = label.toLowerCase().trim();
-  return (
-    lower === "tool call" ||
-    lower === "tool" ||
-    lower === "tool updated" ||
-    lower === "tool started" ||
-    lower === "item"
-  );
-}
-
-function friendlyToolHeading(toolName: string): string {
-  const lower = toolName.toLowerCase();
-  switch (lower) {
-    case "read":
-      return "Read file";
-    case "edit":
-      return "Edit file";
-    case "write":
-      return "Write file";
-    case "grep":
-      return "Grep search";
-    case "glob":
-      return "Glob search";
-    case "bash":
-      return "Run command";
-    case "webfetch":
-    case "web_fetch":
-      return "Fetch URL";
-    case "websearch":
-    case "web_search":
-      return "Web search";
-    default:
-      return capitalizePhrase(toolName);
-  }
+  return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
@@ -1320,11 +908,10 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   const EntryIcon = workEntryIcon(workEntry);
   const heading = toolWorkEntryHeading(workEntry);
   const preview = workEntryPreview(workEntry);
+  const rawCommand = workEntryRawCommand(workEntry);
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const hasChangedFiles = (workEntry.changedFiles?.length ?? 0) > 0;
   const previewIsChangedFiles = hasChangedFiles && !workEntry.command && !workEntry.detail;
-
-  const hasDiffPreviews = (workEntry.diffPreviews?.length ?? 0) > 0;
 
   return (
     <div className="rounded-lg px-1 py-1">
@@ -1335,63 +922,65 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           <EntryIcon className="size-3" />
         </span>
         <div className="min-w-0 flex-1 overflow-hidden">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <p
-                  className={cn(
-                    "truncate text-[11px] leading-5",
-                    workToneClass(workEntry.tone),
-                    preview ? "text-muted-foreground/70" : "",
-                  )}
-                >
-                  <span className={cn("text-foreground/80", workToneClass(workEntry.tone))}>
-                    {heading}
-                  </span>
-                  {preview && <span className="text-muted-foreground/55"> - {preview}</span>}
-                </p>
-              }
-            />
-            <TooltipPopup
-              side="top"
-              className="max-w-lg break-words whitespace-pre-wrap leading-tight"
+          <div className="max-w-full">
+            <p
+              className={cn(
+                "truncate text-[11px] leading-5",
+                workToneClass(workEntry.tone),
+                preview ? "text-muted-foreground/70" : "",
+              )}
+              title={rawCommand ? undefined : displayText}
             >
-              {displayText}
-            </TooltipPopup>
-          </Tooltip>
+              <span className={cn("text-foreground/80", workToneClass(workEntry.tone))}>
+                {heading}
+              </span>
+              {preview &&
+                (rawCommand ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      closeDelay={0}
+                      delay={75}
+                      render={
+                        <span className="max-w-full cursor-default text-muted-foreground/55 transition-colors hover:text-muted-foreground/75 focus-visible:text-muted-foreground/75">
+                          {" "}
+                          - {preview}
+                        </span>
+                      }
+                    />
+                    <TooltipPopup
+                      align="start"
+                      className="max-w-[min(56rem,calc(100vw-2rem))] px-0 py-0"
+                      side="top"
+                    >
+                      <div className="max-w-[min(56rem,calc(100vw-2rem))] overflow-x-auto px-1.5 py-1 font-mono text-[11px] leading-4 whitespace-nowrap">
+                        {rawCommand}
+                      </div>
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <span className="text-muted-foreground/55"> - {preview}</span>
+                ))}
+            </p>
+          </div>
         </div>
       </div>
-      {hasDiffPreviews ? (
-        <div className="mt-0.5 pl-5">
-          {(workEntry.diffPreviews ?? []).map((hunk) => (
-            <InlineDiffPreview key={`${workEntry.id}:diff:${hunk.filePath}`} hunk={hunk} />
+      {hasChangedFiles && !previewIsChangedFiles && (
+        <div className="mt-1 flex flex-wrap gap-1 pl-6">
+          {workEntry.changedFiles?.slice(0, 4).map((filePath) => (
+            <span
+              key={`${workEntry.id}:${filePath}`}
+              className="rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75"
+              title={filePath}
+            >
+              {filePath}
+            </span>
           ))}
+          {(workEntry.changedFiles?.length ?? 0) > 4 && (
+            <span className="px-1 text-[10px] text-muted-foreground/55">
+              +{(workEntry.changedFiles?.length ?? 0) - 4}
+            </span>
+          )}
         </div>
-      ) : (
-        hasChangedFiles &&
-        !previewIsChangedFiles && (
-          <div className="mt-1 flex flex-wrap gap-1 pl-6">
-            {workEntry.changedFiles?.slice(0, 4).map((filePath) => (
-              <Tooltip key={`${workEntry.id}:${filePath}`}>
-                <TooltipTrigger
-                  render={
-                    <span className="max-w-48 truncate rounded-md border border-border/55 bg-background/75 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/75">
-                      {filePath}
-                    </span>
-                  }
-                />
-                <TooltipPopup side="top" className="max-w-lg break-all leading-tight">
-                  {filePath}
-                </TooltipPopup>
-              </Tooltip>
-            ))}
-            {(workEntry.changedFiles?.length ?? 0) > 4 && (
-              <span className="px-1 text-[10px] text-muted-foreground/55">
-                +{(workEntry.changedFiles?.length ?? 0) - 4}
-              </span>
-            )}
-          </div>
-        )
       )}
     </div>
   );

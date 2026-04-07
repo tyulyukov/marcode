@@ -157,3 +157,7 @@ export const JiraGetAttachmentResult = Schema.Struct({
   filename: TrimmedNonEmptyString,
 });
 export type JiraGetAttachmentResult = typeof JiraGetAttachmentResult.Type;
+
+export class JiraRpcError extends Schema.TaggedErrorClass<JiraRpcError>()("JiraRpcError", {
+  message: Schema.String,
+}) {}

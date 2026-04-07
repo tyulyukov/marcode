@@ -10,7 +10,14 @@ MarCode is a web GUI for coding agents, built as a rebrand and major evolution o
 - **Additional directories in composer** — add extra directories to agent context per thread
 - And much more
 
-## How to use
+## Installation
+
+> [!WARNING]
+> MarCode currently supports Codex and Claude.
+> Install and authenticate at least one provider before use:
+>
+> - Codex: install [Codex CLI](https://github.com/openai/codex) and run `codex login`
+> - Claude: install Claude Code and run `claude auth login`
 
 ### Prerequisites
 
@@ -24,6 +31,38 @@ For git host integration:
 - **PRs (GitHub):** [GitHub CLI (`gh`)](https://cli.github.com/) installed and authenticated
 - **MRs (GitLab):** [GitLab CLI (`glab`)](https://gitlab.com/gitlab-org/cli) installed and authenticated (Personal Access Token works for self-hosted instances)
 
-### Via Desktop App
+### Desktop app
 
-Install the [desktop app from the Releases page](https://github.com/tyulyukov/marcode/releases)
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/tyulyukov/marcode/releases), or from your favorite package registry:
+
+#### Windows (`winget`)
+
+```bash
+winget install tyulyukov.MarCode
+```
+
+#### macOS (Homebrew)
+
+```bash
+brew install --cask marcode
+```
+
+#### Arch Linux (AUR)
+
+```bash
+yay -S marcode-bin
+```
+
+## Some notes
+
+We are very very early in this project. Expect bugs.
+
+We are not accepting contributions yet.
+
+Observability guide: [docs/observability.md](./docs/observability.md)
+
+## If you REALLY want to contribute still.... read this first
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+
+Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).

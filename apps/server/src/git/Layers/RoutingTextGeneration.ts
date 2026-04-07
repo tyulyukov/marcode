@@ -15,7 +15,7 @@ import {
   type ModelSelection,
 } from "@marcode/contracts";
 
-import type { TextGenerationError } from "../Errors.ts";
+import type { TextGenerationError } from "@marcode/contracts";
 import {
   TextGeneration,
   type TextGenerationProvider,

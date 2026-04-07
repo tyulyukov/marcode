@@ -7,7 +7,7 @@ import { Effect, Schema } from "effect";
 import { PositiveInt, TrimmedNonEmptyString } from "@marcode/contracts";
 
 import { runProcess } from "../../processRunner";
-import { GitHostCliError } from "../Errors.ts";
+import { GitHostCliError } from "@marcode/contracts";
 import type {
   GitHostCliShape,
   HostPullRequestSummary,

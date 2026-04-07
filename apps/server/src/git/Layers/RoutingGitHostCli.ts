@@ -9,7 +9,7 @@
  */
 import { Effect, Layer, ServiceMap } from "effect";
 
-import { GitHostCliError } from "../Errors.ts";
+import { GitHostCliError } from "@marcode/contracts";
 import { runProcess } from "../../processRunner";
 import { GitCore } from "../Services/GitCore.ts";
 import { GitHubCli } from "../Services/GitHubCli.ts";

@@ -8,11 +8,13 @@
       "scripts"
     ],
     "catalog": {
-      "effect": "4.0.0-beta.42",
-      "@effect/platform-node": "4.0.0-beta.42",
-      "@effect/sql-sqlite-bun": "4.0.0-beta.42",
-      "@effect/vitest": "4.0.0-beta.42",
-      "@effect/language-service": "0.84.1",
+      "effect": "4.0.0-beta.43",
+      "@effect/atom-react": "4.0.0-beta.43",
+      "@effect/platform-bun": "4.0.0-beta.43",
+      "@effect/platform-node": "4.0.0-beta.43",
+      "@effect/sql-sqlite-bun": "4.0.0-beta.43",
+      "@effect/vitest": "4.0.0-beta.43",
+      "@effect/language-service": "0.84.2",
       "@types/bun": "^1.3.9",
       "@types/node": "^24.10.13",
       "tsdown": "^0.20.3",
@@ -29,6 +31,7 @@
     "dev:landing": "turbo run dev --filter=@marcode/landing",
     "start": "turbo run start --filter=marcode",
     "start:desktop": "turbo run start --filter=@marcode/desktop",
+    "start:mock-update-server": "bun run scripts/mock-update-server.ts",
     "build": "turbo run build",
     "build:desktop": "turbo run build --filter=@marcode/desktop --filter=marcode",
     "typecheck": "turbo run typecheck",
@@ -67,5 +70,8 @@
     "workerDirectory": [
       "apps/web/public"
     ]
-  }
+  },
+  "trustedDependencies": [
+    "node-pty"
+  ]
 }

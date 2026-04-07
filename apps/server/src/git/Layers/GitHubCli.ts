@@ -6,7 +6,7 @@ import { Effect, Layer, Schema } from "effect";
 import { PositiveInt, TrimmedNonEmptyString } from "@marcode/contracts";
 
 import { runProcess } from "../../processRunner";
-import { GitHostCliError } from "../Errors.ts";
+import { GitHostCliError } from "@marcode/contracts";
 import {
   GitHubCli,
   type GitHubRepositoryCloneUrls,
