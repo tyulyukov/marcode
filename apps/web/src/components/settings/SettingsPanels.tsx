@@ -60,6 +60,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { JiraSettingsSection } from "./JiraSettingsSection";
+import { VoiceSettingsSection } from "./VoiceSettingsSection";
 import { ThemePicker } from "./ThemePicker";
 
 const TIMESTAMP_FORMAT_LABELS = {
@@ -1023,6 +1024,12 @@ export function GeneralSettingsPanel() {
       <SettingsSection title="Integrations">
         <div className="border-t border-border px-4 py-4 first:border-t-0 sm:px-5">
           <JiraSettingsSection />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection title="Voice">
+        <div className="border-t border-border px-4 py-4 first:border-t-0 sm:px-5">
+          <VoiceSettingsSection />
         </div>
       </SettingsSection>
 

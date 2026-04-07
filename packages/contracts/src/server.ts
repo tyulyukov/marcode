@@ -66,6 +66,9 @@ export const ServerConfig = Schema.Struct({
   providers: ServerProviders,
   availableEditors: Schema.Array(EditorId),
   settings: ServerSettings,
+  whisper: Schema.Struct({
+    installedModels: Schema.Array(Schema.String),
+  }).pipe(Schema.withDecodingDefault(() => ({ installedModels: [] as ReadonlyArray<string> }))),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

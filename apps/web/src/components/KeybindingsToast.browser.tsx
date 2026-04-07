@@ -64,7 +64,9 @@ function createBaseServerConfig(): ServerConfig {
         codex: { enabled: true, binaryPath: "", homePath: "", customModels: [] },
         claudeAgent: { enabled: true, binaryPath: "", customModels: [] },
       },
+      whisperSelectedModel: null,
     },
+    whisper: { installedModels: [] },
   };
 }
 

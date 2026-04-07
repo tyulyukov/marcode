@@ -1,6 +1,7 @@
 import {
   type GitActionProgressEvent,
   type JiraConnectionStatus,
+  type WhisperDownloadProgressPayload,
   ORCHESTRATION_WS_CHANNELS,
   ORCHESTRATION_WS_METHODS,
   type ContextMenuItem,
@@ -21,6 +22,9 @@ const serverConfigUpdatedListeners = new Set<(payload: ServerConfigUpdatedPayloa
 const providersUpdatedListeners = new Set<(payload: ServerProviderUpdatedPayload) => void>();
 const gitActionProgressListeners = new Set<(payload: GitActionProgressEvent) => void>();
 const jiraConnectionStatusListeners = new Set<(payload: JiraConnectionStatus) => void>();
+const whisperDownloadProgressListeners = new Set<
+  (payload: WhisperDownloadProgressPayload) => void
+>();
 
 /**
  * Subscribe to the server welcome message. If a welcome was already received
@@ -143,6 +147,16 @@ export function createWsNativeApi(): NativeApi {
       }
     }
   });
+  transport.subscribe(WS_CHANNELS.whisperDownloadProgress, (message) => {
+    const payload = message.data;
+    for (const listener of whisperDownloadProgressListeners) {
+      try {
+        listener(payload);
+      } catch {
+        // Swallow listener errors
+      }
+    }
+  });
 
   const api: NativeApi = {
     dialogs: {
@@ -255,6 +269,22 @@ export function createWsNativeApi(): NativeApi {
         jiraConnectionStatusListeners.add(callback);
         return () => {
           jiraConnectionStatusListeners.delete(callback);
+        };
+      },
+    },
+    transcription: {
+      transcribe: (input) =>
+        transport.request(WS_METHODS.transcriptionTranscribe, input, { timeoutMs: null }),
+      cleanup: (input) => transport.request(WS_METHODS.transcriptionCleanup, input),
+    },
+    whisper: {
+      installModel: (input) =>
+        transport.request(WS_METHODS.whisperInstallModel, input, { timeoutMs: null }),
+      deleteModel: (input) => transport.request(WS_METHODS.whisperDeleteModel, input),
+      onDownloadProgress: (callback) => {
+        whisperDownloadProgressListeners.add(callback);
+        return () => {
+          whisperDownloadProgressListeners.delete(callback);
         };
       },
     },

@@ -134,6 +134,8 @@ import {
   resolveSelectableProvider,
 } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
+import { useVoiceRecording } from "../hooks/useVoiceRecording";
+import { useWhisperModelStatus } from "../hooks/useWhisperModelStatus";
 import { resolveAppModelSelection } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
@@ -177,6 +179,7 @@ import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ContextWindowMeter } from "./chat/ContextWindowMeter";
+import { VoiceMicButton } from "./chat/VoiceMicButton";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { AVAILABLE_PROVIDER_OPTIONS, ProviderModelPicker } from "./chat/ProviderModelPicker";
 import { ComposerCommandItem, ComposerCommandMenu } from "./chat/ComposerCommandMenu";
@@ -329,6 +332,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const setStoreThreadError = useStore((store) => store.setError);
   const setStoreThreadBranch = useStore((store) => store.setThreadBranch);
   const settings = useSettings();
+  const { modelReady } = useWhisperModelStatus();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -646,6 +650,51 @@ export default function ChatView({ threadId }: ChatViewProps) {
       [activeProjectId],
     ),
   );
+
+  const onVoiceTranscript = useCallback(
+    (transcript: string) => {
+      if (!activeThread) return;
+      const current = promptRef.current;
+      const sep = current.length > 0 && !current.endsWith(" ") ? " " : "";
+      const newPrompt = current + sep + transcript;
+      promptRef.current = newPrompt;
+      setPrompt(newPrompt);
+      requestAnimationFrame(() => {
+        composerEditorRef.current?.focusAtEnd();
+      });
+    },
+    [activeThread, setPrompt],
+  );
+
+  const voiceRecording = useVoiceRecording({
+    onTranscript: onVoiceTranscript,
+    onError: (err) => {
+      if (err.type === "permission-denied") {
+        toastManager.add({
+          type: "error",
+          title: "Microphone access denied",
+          description: "Enable microphone in your browser settings.",
+        });
+      } else if (err.type === "no-microphone") {
+        toastManager.add({ type: "error", title: "No microphone detected" });
+      } else if (err.type === "transcription-failed") {
+        toastManager.add({
+          type: "error",
+          title: "Transcription failed",
+          description: err.message,
+        });
+      } else if (err.type === "cleanup-failed") {
+        toastManager.add({
+          type: "warning",
+          title: "Cleanup skipped",
+          description: "Using raw transcription.",
+        });
+      }
+    },
+    ready: settings.voiceEnabled && modelReady,
+    language: settings.voiceLanguage,
+    llmCleanup: settings.voiceLlmCleanup,
+  });
 
   const openPullRequestDialog = useCallback(
     (reference?: string) => {
@@ -2473,6 +2522,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
         return;
       }
 
+      if (command === "voice.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        voiceRecording.toggleRecording();
+        return;
+      }
+
       const scriptId = projectScriptIdFromCommand(command);
       if (!scriptId || !activeProject) return;
       const script = activeProject.scripts.find((entry) => entry.id === scriptId);
@@ -2496,6 +2552,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     keybindings,
     onToggleDiff,
     toggleTerminalVisibility,
+    voiceRecording,
   ]);
 
   const addComposerImages = useCallback(
@@ -4393,6 +4450,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         {activeContextWindow ? (
                           <ContextWindowMeter usage={activeContextWindow} />
                         ) : null}
+                        <VoiceMicButton
+                          status={voiceRecording.status}
+                          isSupported={voiceRecording.isSupported}
+                          analyserNode={voiceRecording.analyserNode}
+                          onToggle={voiceRecording.toggleRecording}
+                          shortcutLabel={shortcutLabelForCommand(keybindings, "voice.toggle")}
+                          disabled={isSendBusy || isConnecting || phase === "running"}
+                          voiceEnabled={settings.voiceEnabled}
+                          modelReady={modelReady}
+                        />
                         {activePendingProgress ? (
                           <div className="flex items-center gap-2">
                             {activePendingProgress.questionIndex > 0 ? (

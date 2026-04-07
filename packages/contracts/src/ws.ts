@@ -53,6 +53,15 @@ import {
   JIRA_WS_CHANNELS,
   JIRA_WS_METHODS,
 } from "./jira";
+import {
+  TranscribeInput,
+  TranscriptionCleanupInput,
+  WhisperInstallModelInput,
+  WhisperDeleteModelInput,
+  WhisperDownloadProgressPayload,
+  TRANSCRIPTION_WS_METHODS,
+  WHISPER_WS_CHANNELS,
+} from "./transcription";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -105,6 +114,11 @@ export const WS_METHODS = {
   jiraListIssues: JIRA_WS_METHODS.listIssues,
   jiraGetIssue: JIRA_WS_METHODS.getIssue,
   jiraGetAttachment: JIRA_WS_METHODS.getAttachment,
+
+  transcriptionTranscribe: TRANSCRIPTION_WS_METHODS.transcribe,
+  transcriptionCleanup: TRANSCRIPTION_WS_METHODS.cleanup,
+  whisperInstallModel: TRANSCRIPTION_WS_METHODS.installModel,
+  whisperDeleteModel: TRANSCRIPTION_WS_METHODS.deleteModel,
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -116,6 +130,7 @@ export const WS_CHANNELS = {
   serverConfigUpdated: "server.configUpdated",
   serverProvidersUpdated: "server.providersUpdated",
   jiraConnectionStatusChanged: JIRA_WS_CHANNELS.connectionStatusChanged,
+  whisperDownloadProgress: WHISPER_WS_CHANNELS.downloadProgress,
 } as const;
 
 // -- Tagged Union of all request body schemas ─────────────────────────
@@ -186,6 +201,11 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.jiraListIssues, JiraListIssuesInput),
   tagRequestBody(WS_METHODS.jiraGetIssue, JiraGetIssueInput),
   tagRequestBody(WS_METHODS.jiraGetAttachment, JiraGetAttachmentInput),
+
+  tagRequestBody(WS_METHODS.transcriptionTranscribe, TranscribeInput),
+  tagRequestBody(WS_METHODS.transcriptionCleanup, TranscriptionCleanupInput),
+  tagRequestBody(WS_METHODS.whisperInstallModel, WhisperInstallModelInput),
+  tagRequestBody(WS_METHODS.whisperDeleteModel, WhisperDeleteModelInput),
 ]);
 
 export const WebSocketRequest = Schema.Struct({
@@ -224,6 +244,7 @@ export interface WsPushPayloadByChannel {
   readonly [WS_CHANNELS.terminalEvent]: typeof TerminalEvent.Type;
   readonly [ORCHESTRATION_WS_CHANNELS.domainEvent]: OrchestrationEvent;
   readonly [WS_CHANNELS.jiraConnectionStatusChanged]: typeof JiraConnectionStatus.Type;
+  readonly [WS_CHANNELS.whisperDownloadProgress]: typeof WhisperDownloadProgressPayload.Type;
 }
 
 export type WsPushChannel = keyof WsPushPayloadByChannel;
@@ -262,6 +283,10 @@ export const WsPushJiraConnectionStatusChanged = makeWsPushSchema(
   WS_CHANNELS.jiraConnectionStatusChanged,
   JiraConnectionStatus,
 );
+export const WsPushWhisperDownloadProgress = makeWsPushSchema(
+  WS_CHANNELS.whisperDownloadProgress,
+  WhisperDownloadProgressPayload,
+);
 
 export const WsPushChannelSchema = Schema.Literals([
   WS_CHANNELS.gitActionProgress,
@@ -271,6 +296,7 @@ export const WsPushChannelSchema = Schema.Literals([
   WS_CHANNELS.terminalEvent,
   ORCHESTRATION_WS_CHANNELS.domainEvent,
   WS_CHANNELS.jiraConnectionStatusChanged,
+  WS_CHANNELS.whisperDownloadProgress,
 ]);
 export type WsPushChannelSchema = typeof WsPushChannelSchema.Type;
 
@@ -282,6 +308,7 @@ export const WsPush = Schema.Union([
   WsPushTerminalEvent,
   WsPushOrchestrationDomainEvent,
   WsPushJiraConnectionStatusChanged,
+  WsPushWhisperDownloadProgress,
 ]);
 export type WsPush = typeof WsPush.Type;
 

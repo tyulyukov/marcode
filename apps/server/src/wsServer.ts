@@ -66,6 +66,8 @@ import { GitCore } from "./git/Services/GitCore.ts";
 import { tryHandleProjectFaviconRequest } from "./projectFaviconRoute";
 import { JiraApiClient } from "./jira/Services/JiraApiClient";
 import { JiraTokenService } from "./jira/Services/JiraTokenService";
+import { TranscriptionService } from "./transcription/Services/TranscriptionService";
+
 import { tryHandleJiraAuthRequest, tryHandleJiraCallbackRequest } from "./jira/oauthRoutes";
 import {
   ATTACHMENTS_ROUTE_PREFIX,
@@ -232,6 +234,7 @@ export type ServerRuntimeServices =
   | ServerSettingsService
   | JiraApiClient
   | JiraTokenService
+  | TranscriptionService
   | Open;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
@@ -1034,6 +1037,8 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
         const settings = yield* serverSettingsManager.getSettings;
         const providers = yield* Ref.get(providersRef);
+        const transcriptionService = yield* TranscriptionService;
+        const installedModels = yield* transcriptionService.getInstalledModels;
         return {
           cwd,
           keybindingsConfigPath,
@@ -1042,6 +1047,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           providers,
           availableEditors,
           settings,
+          whisper: { installedModels },
         };
       }
 
@@ -1110,6 +1116,75 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         const body = stripRequestTag(request.body);
         const jiraClient = yield* JiraApiClient;
         return yield* jiraClient.getAttachment(body);
+      }
+
+      case WS_METHODS.transcriptionTranscribe: {
+        const body = stripRequestTag(request.body);
+        const transcriptionService = yield* TranscriptionService;
+        const currentSettings = yield* serverSettingsManager.getSettings;
+        const modelId = currentSettings.whisperSelectedModel ?? "Xenova/whisper-small";
+        logger.info(
+          `[voice] transcribe request received, model=${modelId}, audio length=${body.audio.length}, language=${body.language ?? "auto"}`,
+        );
+        const result = yield* transcriptionService.transcribe(body, modelId);
+        logger.info(`[voice] transcribe result: ${JSON.stringify(result)}`);
+        return result;
+      }
+
+      case WS_METHODS.transcriptionCleanup: {
+        const body = stripRequestTag(request.body);
+        const transcriptionService = yield* TranscriptionService;
+        return yield* transcriptionService.cleanup(body);
+      }
+
+      case WS_METHODS.whisperInstallModel: {
+        const body = stripRequestTag(request.body);
+        const transcriptionService = yield* TranscriptionService;
+        Effect.gen(function* () {
+          yield* transcriptionService.installModel(body.modelId, (progress) => {
+            pushBus
+              .publishAll(WS_CHANNELS.whisperDownloadProgress, {
+                modelId: body.modelId,
+                progress: progress.progress,
+                file: progress.file,
+                status: "downloading" as const,
+              })
+              .pipe(Effect.runSync);
+          });
+          yield* pushBus.publishAll(WS_CHANNELS.whisperDownloadProgress, {
+            modelId: body.modelId,
+            progress: 100,
+            file: "",
+            status: "complete" as const,
+          });
+          yield* pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
+            issues: [],
+            settings: yield* serverSettingsManager.getSettings,
+          });
+        }).pipe(
+          Effect.catch(() =>
+            pushBus.publishAll(WS_CHANNELS.whisperDownloadProgress, {
+              modelId: body.modelId,
+              progress: 0,
+              file: "",
+              status: "error" as const,
+              error: "Download failed",
+            }),
+          ),
+          Effect.runPromise,
+        );
+        return {};
+      }
+
+      case WS_METHODS.whisperDeleteModel: {
+        const body = stripRequestTag(request.body);
+        const transcriptionService = yield* TranscriptionService;
+        yield* transcriptionService.deleteModel(body.modelId);
+        yield* pushBus.publishAll(WS_CHANNELS.serverConfigUpdated, {
+          issues: [],
+          settings: yield* serverSettingsManager.getSettings,
+        });
+        return {};
       }
 
       default: {
