@@ -830,16 +830,16 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   const jiraChipNodes = renderTextWithJiraChips(props.text, "user-msg", props.jiraContextMap);
   if (jiraChipNodes.length > 0) {
     return (
-      <pre className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
+      <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
         {jiraChipNodes}
-      </pre>
+      </div>
     );
   }
 
   return (
-    <pre className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
+    <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
       {props.text}
-    </pre>
+    </div>
   );
 });
 
