@@ -287,6 +287,7 @@ export function JiraTaskInlineChip(props: JiraTaskInlineChipProps) {
     return (
       <Popover>
         <PopoverTrigger
+          nativeButton={false}
           render={
             <span className={JIRA_CHIP_CLICKABLE_CLASS_NAME} data-jira-context="true">
               <JiraIcon />
