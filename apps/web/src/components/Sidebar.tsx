@@ -434,7 +434,17 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
               onClick={(event) => event.stopPropagation()}
             />
           ) : (
-            <span className="min-w-0 flex-1 truncate text-xs">{thread.title}</span>
+            <Tooltip>
+              <TooltipTrigger
+                render={<span className="min-w-0 flex-1 truncate text-xs">{thread.title}</span>}
+              />
+              <TooltipPopup
+                side="right"
+                className="max-w-sm break-words whitespace-pre-wrap leading-tight"
+              >
+                {thread.title}
+              </TooltipPopup>
+            </Tooltip>
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
