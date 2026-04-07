@@ -884,7 +884,7 @@ describe("buildGitActionProgressStages", () => {
       "Pushing to origin/feature/test...",
       "Preparing PR...",
       "Generating PR content...",
-      "Creating GitHub pull request...",
+      "Creating PR...",
     ]);
   });
 
@@ -895,11 +895,7 @@ describe("buildGitActionProgressStages", () => {
       hasWorkingTreeChanges: false,
       shouldPushBeforePr: false,
     });
-    assert.deepEqual(stages, [
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating GitHub pull request...",
-    ]);
+    assert.deepEqual(stages, ["Preparing PR...", "Generating PR content...", "Creating PR..."]);
   });
 
   it("includes commit stages for commit+push when working tree is dirty", () => {
@@ -928,7 +924,7 @@ describe("buildGitActionProgressStages", () => {
       "Pushing to origin/feature/test...",
       "Preparing PR...",
       "Generating PR content...",
-      "Creating GitHub pull request...",
+      "Creating PR...",
     ]);
   });
 });

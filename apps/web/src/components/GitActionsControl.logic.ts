@@ -71,10 +71,11 @@ export function buildGitActionProgressStages(input: {
 }): string[] {
   const branchStages = input.featureBranch ? ["Preparing feature branch..."] : [];
   const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
+  const label = prLabel(input.gitHostProvider);
   const prStages = [
-    "Preparing PR...",
-    "Generating PR content...",
-    "Creating GitHub pull request...",
+    `Preparing ${label}...`,
+    `Generating ${label} content...`,
+    `Creating ${label}...`,
   ];
 
   if (input.action === "push") {

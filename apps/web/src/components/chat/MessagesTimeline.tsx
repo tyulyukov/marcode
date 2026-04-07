@@ -596,22 +596,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
       {row.kind === "working" && (
         <div className="py-0.5 pl-1.5">
-          <div className="flex items-center gap-2 pt-1 text-[11px] text-muted-foreground/70">
-            <span className="inline-flex items-center gap-[3px]">
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse" />
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:200ms]" />
-              <span className="h-1 w-1 rounded-full bg-muted-foreground/30 animate-pulse [animation-delay:400ms]" />
-            </span>
-            <span>
-              {isPreparingWorktree
-                ? "Preparing worktree\u2026"
-                : isSendBusy
-                  ? "Starting\u2026"
-                  : row.createdAt
-                    ? `Working for ${formatWorkingTimer(row.createdAt, nowIso) ?? "0s"}`
-                    : "Working\u2026"}
-            </span>
-          </div>
+          <span className="shiny-text pt-1 text-xs font-semibold text-primary/60">
+            {isPreparingWorktree
+              ? "Preparing worktree\u2026"
+              : isSendBusy
+                ? "Starting\u2026"
+                : row.createdAt
+                  ? `Working for ${formatWorkingTimer(row.createdAt, nowIso) ?? "0s"}`
+                  : "Working\u2026"}
+          </span>
         </div>
       )}
     </div>
@@ -796,7 +789,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
         }
 
         return (
-          <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+          <div className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground">
             {inlineNodes}
           </div>
         );
@@ -824,7 +817,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     }
 
     return (
-      <div className="wrap-break-word whitespace-pre-wrap font-mono text-sm leading-relaxed text-foreground">
+      <div className="wrap-break-word whitespace-pre-wrap text-sm leading-relaxed text-foreground">
         {inlineNodes}
       </div>
     );
@@ -837,14 +830,14 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   const jiraChipNodes = renderTextWithJiraChips(props.text, "user-msg", props.jiraContextMap);
   if (jiraChipNodes.length > 0) {
     return (
-      <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+      <pre className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
         {jiraChipNodes}
       </pre>
     );
   }
 
   return (
-    <pre className="whitespace-pre-wrap wrap-break-word font-mono text-sm leading-relaxed text-foreground">
+    <pre className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
       {props.text}
     </pre>
   );

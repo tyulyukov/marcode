@@ -1369,12 +1369,25 @@ function extractToolCommand(payload: Record<string, unknown> | null): {
   const itemInput = asRecord(item?.input);
   const itemType = asTrimmedString(payload?.itemType);
   const detail = asTrimmedString(payload?.detail);
+  const detailCommand =
+    itemType === "command_execution" && detail
+      ? (() => {
+          const cleaned = stripTrailingExitCode(detail).output;
+          if (!cleaned) return null;
+          const split = splitExecutableAndRest(cleaned);
+          if (!split) return null;
+          const basename = executableBasename(split.executable);
+          if (!basename) return null;
+          const spec = findShellWrapperSpec(basename);
+          return spec ? cleaned : null;
+        })()
+      : null;
   const candidates: unknown[] = [
     item?.command,
     itemInput?.command,
     itemResult?.command,
     data?.command,
-    itemType === "command_execution" && detail ? stripTrailingExitCode(detail).output : null,
+    detailCommand,
   ];
 
   for (const candidate of candidates) {
