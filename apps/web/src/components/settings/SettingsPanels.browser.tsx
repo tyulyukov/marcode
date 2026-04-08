@@ -1,6 +1,7 @@
 import "../../index.css";
 
 import { DEFAULT_SERVER_SETTINGS, type NativeApi, type ServerConfig } from "@marcode/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -47,9 +48,11 @@ describe("GeneralSettingsPanel observability", () => {
     setServerConfigSnapshot(createBaseServerConfig());
 
     await render(
-      <AppAtomRegistryProvider>
-        <GeneralSettingsPanel />
-      </AppAtomRegistryProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AppAtomRegistryProvider>
+          <GeneralSettingsPanel />
+        </AppAtomRegistryProvider>
+      </QueryClientProvider>,
     );
 
     await expect.element(page.getByText("About")).toBeInTheDocument();
@@ -78,9 +81,11 @@ describe("GeneralSettingsPanel observability", () => {
     setServerConfigSnapshot(createBaseServerConfig());
 
     await render(
-      <AppAtomRegistryProvider>
-        <GeneralSettingsPanel />
-      </AppAtomRegistryProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AppAtomRegistryProvider>
+          <GeneralSettingsPanel />
+        </AppAtomRegistryProvider>
+      </QueryClientProvider>,
     );
 
     const openLogsButton = page.getByText("Open logs folder");
