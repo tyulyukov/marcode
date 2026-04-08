@@ -505,6 +505,7 @@ function runtimeEventToActivities(
             ...(event.payload.detail
               ? { detail: truncateDetail(event.payload.detail, TOOL_OUTPUT_LIMIT) }
               : {}),
+            ...(event.itemId ? { itemId: event.itemId } : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

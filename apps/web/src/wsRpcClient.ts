@@ -110,6 +110,9 @@ export interface WsRpcClient {
     readonly replayEvents: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.replayEvents>;
     readonly onDomainEvent: RpcStreamMethod<typeof WS_METHODS.subscribeOrchestrationDomainEvents>;
   };
+  readonly commandOutput: {
+    readonly onEvent: RpcStreamMethod<typeof WS_METHODS.subscribeCommandOutput>;
+  };
   readonly jira: {
     readonly getConnectionStatus: RpcUnaryNoArgMethod<typeof WS_METHODS.jiraGetConnectionStatus>;
     readonly disconnect: RpcUnaryNoArgMethod<typeof WS_METHODS.jiraDisconnect>;
@@ -263,6 +266,14 @@ export function createWsRpcClient(transport = new WsTransport()): WsRpcClient {
       onDomainEvent: (listener, options) =>
         transport.subscribe(
           (client) => client[WS_METHODS.subscribeOrchestrationDomainEvents]({}),
+          listener,
+          options,
+        ),
+    },
+    commandOutput: {
+      onEvent: (listener, options) =>
+        transport.subscribe(
+          (client) => client[WS_METHODS.subscribeCommandOutput]({}),
           listener,
           options,
         ),

@@ -80,6 +80,7 @@ const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 const EMPTY_EDIT_IMAGES: ComposerImageAttachment[] = [];
 
 interface MessagesTimelineProps {
+  threadId: string;
   hasMessages: boolean;
   isWorking: boolean;
   activeTurnInProgress: boolean;
@@ -127,6 +128,7 @@ interface MessagesTimelineProps {
 }
 
 export const MessagesTimeline = memo(function MessagesTimeline({
+  threadId,
   hasMessages,
   isWorking,
   activeTurnInProgress,
@@ -406,7 +408,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         />
       )}
 
-      {row.kind === "command" && <CommandExecutionCard entry={row.entry} isLive={row.isLive} />}
+      {row.kind === "command" && (
+        <CommandExecutionCard entry={row.entry} isLive={row.isLive} threadId={threadId} />
+      )}
 
       {row.kind === "web-search" && <WebSearchCard entry={row.entry} isLive={row.isLive} />}
 

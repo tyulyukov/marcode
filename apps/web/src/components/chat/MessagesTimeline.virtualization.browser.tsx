@@ -145,6 +145,7 @@ function createBaseTimelineProps(input: {
   onVirtualizerSnapshot?: ComponentProps<typeof MessagesTimeline>["onVirtualizerSnapshot"];
 }): Omit<ComponentProps<typeof MessagesTimeline>, "scrollContainer"> {
   return {
+    threadId: "test-thread",
     hasMessages: true,
     isWorking: false,
     activeTurnInProgress: false,

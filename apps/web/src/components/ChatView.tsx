@@ -4570,6 +4570,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
             >
               <MessagesTimeline
                 key={activeThread.id}
+                threadId={activeThread.id}
                 hasMessages={timelineEntries.length > 0}
                 isWorking={isWorking}
                 activeTurnInProgress={isWorking || !latestTurnSettled}

@@ -2,6 +2,8 @@ import { Schema } from "effect";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
+import { RuntimeItemId, ThreadId } from "./baseSchemas";
+
 import { OpenError, OpenInEditorInput } from "./editor";
 import {
   GitActionProgressEvent,
@@ -153,6 +155,7 @@ export const WS_METHODS = {
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeJiraConnectionStatus: JIRA_WS_CHANNELS.connectionStatusChanged,
+  subscribeCommandOutput: "subscribeCommandOutput",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -438,6 +441,19 @@ export const WsSubscribeJiraConnectionStatusRpc = Rpc.make(
   },
 );
 
+export const CommandOutputDeltaEvent = Schema.Struct({
+  threadId: ThreadId,
+  itemId: RuntimeItemId,
+  delta: Schema.String,
+});
+export type CommandOutputDeltaEvent = typeof CommandOutputDeltaEvent.Type;
+
+export const WsSubscribeCommandOutputRpc = Rpc.make(WS_METHODS.subscribeCommandOutput, {
+  payload: Schema.Struct({}),
+  success: CommandOutputDeltaEvent,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -485,4 +501,5 @@ export const WsRpcGroup = RpcGroup.make(
   WsJiraGetIssueRpc,
   WsJiraGetAttachmentRpc,
   WsSubscribeJiraConnectionStatusRpc,
+  WsSubscribeCommandOutputRpc,
 );
