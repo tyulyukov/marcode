@@ -25,6 +25,7 @@ import {
 import {
   normalizeCliError,
   sanitizeCommitSubject,
+  sanitizePrBody,
   sanitizePrTitle,
   sanitizeThreadTitle,
   toJsonSchemaObject,
@@ -113,6 +114,8 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
           resolveApiModelId(modelSelection),
           ...(normalizedOptions?.effort ? ["--effort", normalizedOptions.effort] : []),
           ...(Object.keys(settings).length > 0 ? ["--settings", JSON.stringify(settings)] : []),
+          "--max-turns",
+          "1",
           "--dangerously-skip-permissions",
         ],
         {
@@ -268,7 +271,7 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
 
     return {
       title: sanitizePrTitle(generated.title),
-      body: generated.body.trim(),
+      body: sanitizePrBody(generated.body),
     };
   });
 

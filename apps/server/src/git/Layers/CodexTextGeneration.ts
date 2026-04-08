@@ -24,6 +24,7 @@ import {
 import {
   normalizeCliError,
   sanitizeCommitSubject,
+  sanitizePrBody,
   sanitizePrTitle,
   sanitizeThreadTitle,
   toJsonSchemaObject,
@@ -335,7 +336,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
 
     return {
       title: sanitizePrTitle(generated.title),
-      body: generated.body.trim(),
+      body: sanitizePrBody(generated.body),
     };
   });
 

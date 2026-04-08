@@ -27,9 +27,7 @@ export function buildCommitMessagePrompt(input: CommitMessagePromptInput) {
 
   const prompt = [
     "You write concise git commit messages following the Conventional Commits specification.",
-    wantsBranch
-      ? "Return a JSON object with keys: subject, body, branch."
-      : "Return a JSON object with keys: subject, body.",
+    "Produce a subject (commit subject line) and body (commit body text).",
     "Rules:",
     "- subject MUST follow the Conventional Commits format: <type>(<optional scope>): <description>",
     "- allowed types: feat, fix, refactor, perf, test, docs, style, build, ci, chore, revert",
@@ -86,7 +84,7 @@ export interface PrContentPromptInput {
 export function buildPrContentPrompt(input: PrContentPromptInput) {
   const prompt = [
     "You write GitHub pull request content following the Conventional Commits specification.",
-    "Return a JSON object with keys: title, body.",
+    "Produce a title (PR title) and body (PR description in markdown). Do NOT actually create the pull request.",
     "Rules:",
     "- title MUST follow the Conventional Commits format: <type>(<optional scope>): <description>",
     "- allowed types: feat, fix, refactor, perf, test, docs, style, build, ci, chore, revert",
@@ -163,7 +161,7 @@ function buildPromptFromMessage(input: PromptFromMessageInput): string {
 export function buildBranchNamePrompt(input: BranchNamePromptInput) {
   const prompt = buildPromptFromMessage({
     instruction: "You generate concise git branch names.",
-    responseShape: "Return a JSON object with key: branch.",
+    responseShape: "Respond with the branch name only.",
     rules: [
       "Branch should describe the requested work from the user message.",
       "Keep it short and specific (2-6 words).",
@@ -192,7 +190,7 @@ export interface ThreadTitlePromptInput {
 export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
   const prompt = buildPromptFromMessage({
     instruction: "You generate concise thread titles for coding assistant conversations.",
-    responseShape: "Return a JSON object with key: title.",
+    responseShape: "Respond with the title only.",
     rules: [
       "Title should summarize the user's coding intent or task.",
       "Keep it short and specific (3-8 words).",
