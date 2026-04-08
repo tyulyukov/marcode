@@ -1019,11 +1019,7 @@ export function applyOrchestrationEvent(state: AppState, event: OrchestrationEve
     case "thread.reverted": {
       return updateThreadState(state, event.payload.threadId, (thread) => {
         const turnDiffSummaries = thread.turnDiffSummaries
-          .filter(
-            (entry) =>
-              entry.checkpointTurnCount !== undefined &&
-              entry.checkpointTurnCount <= event.payload.turnCount,
-          )
+          .filter((entry) => (entry.checkpointTurnCount ?? 0) <= event.payload.turnCount)
           .toSorted(
             (left, right) =>
               (left.checkpointTurnCount ?? Number.MAX_SAFE_INTEGER) -
