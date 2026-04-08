@@ -104,6 +104,7 @@ interface BranchHeadContext {
   remoteName: string | null;
   headRepositoryNameWithOwner: string | null;
   headRepositoryOwnerLogin: string | null;
+  originRepositoryNameWithOwner: string | null;
   isCrossRepository: boolean;
 }
 
@@ -801,6 +802,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       remoteName,
       headRepositoryNameWithOwner: remoteRepository.repositoryNameWithOwner,
       headRepositoryOwnerLogin: remoteRepository.ownerLogin,
+      originRepositoryNameWithOwner: originRepository.repositoryNameWithOwner,
       isCrossRepository,
     } satisfies BranchHeadContext;
   });
@@ -824,15 +826,18 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       | "headSelectors"
       | "headRepositoryNameWithOwner"
       | "headRepositoryOwnerLogin"
+      | "originRepositoryNameWithOwner"
       | "isCrossRepository"
     >,
   ) {
+    const originRepo = headContext.originRepositoryNameWithOwner;
     for (const headSelector of headContext.headSelectors) {
       const pullRequests = yield* gitHostCli.listPullRequests({
         cwd,
         headSelector,
         state: "open",
         limit: 1,
+        ...(originRepo ? { repo: originRepo } : {}),
       });
       const normalizedPullRequests: PullRequestInfo[] = [];
       for (const pr of pullRequests) {
@@ -871,12 +876,14 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     const headContext = yield* resolveBranchHeadContext(cwd, details);
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
+    const originRepo = headContext.originRepositoryNameWithOwner;
     for (const headSelector of headContext.headSelectors) {
       const pullRequests = yield* gitHostCli.listPullRequests({
         cwd,
         headSelector,
         state: "all",
         limit: 20,
+        ...(originRepo ? { repo: originRepo } : {}),
       });
 
       for (const pr of pullRequests) {
@@ -1262,6 +1269,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       phase: "pr",
       label: prLabel,
     });
+    const originRepo = headContext.originRepositoryNameWithOwner;
     yield* gitHostCli
       .createPullRequest({
         cwd,
@@ -1269,6 +1277,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         headSelector: headContext.preferredHeadSelector,
         title: generated.title,
         body: generated.body,
+        ...(originRepo ? { repo: originRepo } : {}),
       })
       .pipe(
         Effect.retry({
