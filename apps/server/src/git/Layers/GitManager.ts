@@ -968,6 +968,10 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     }
 
     const openPr = latestOpenPr ?? explicitResultPr;
+    const hostProvider = yield* detectHostProvider(cwd).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    const prOrMr = hostProvider === "gitlab" ? "MR" : "PR";
 
     const cta =
       result.action === "commit" && result.commit.status === "created"
@@ -986,7 +990,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               result.pr.status === "opened_existing")
           ? {
               kind: "open_pr" as const,
-              label: "View PR",
+              label: `View ${prOrMr}`,
               url: openPr.url,
             }
           : (result.action === "push" || result.action === "commit_push") &&
@@ -994,7 +998,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               !currentBranchIsDefault
             ? {
                 kind: "run_action" as const,
-                label: "Create PR",
+                label: `Create ${prOrMr}`,
                 action: { kind: "create_pr" as const },
               }
             : {
