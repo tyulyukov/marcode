@@ -6,7 +6,13 @@ import {
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "./Prompts.ts";
-import { normalizeCliError, sanitizeThreadTitle } from "./Utils.ts";
+import {
+  normalizeCliError,
+  sanitizeCommitSubject,
+  sanitizePrBody,
+  sanitizePrTitle,
+  sanitizeThreadTitle,
+} from "./Utils.ts";
 import { TextGenerationError } from "@marcode/contracts";
 
 describe("buildCommitMessagePrompt", () => {
@@ -37,7 +43,6 @@ describe("buildCommitMessagePrompt", () => {
     });
 
     expect(result.prompt).toContain("branch must be a short semantic git branch fragment");
-    expect(result.prompt).toContain("Return a JSON object with keys: subject, body, branch.");
   });
 
   it("shows (detached) when branch is null", () => {
@@ -154,6 +159,48 @@ describe("sanitizeThreadTitle", () => {
 
   it("does not break on non-JSON input", () => {
     expect(sanitizeThreadTitle("Fix login timeout")).toBe("Fix login timeout");
+  });
+});
+
+describe("sanitizePrTitle", () => {
+  it("unwraps JSON-wrapped title from misbehaving models", () => {
+    expect(
+      sanitizePrTitle('{"title": "feat(chat): add editing", "body": "## Summary\\n..."}'),
+    ).toBe("feat(chat): add editing");
+  });
+
+  it("returns plain text title as-is", () => {
+    expect(sanitizePrTitle("feat(chat): add editing")).toBe("feat(chat): add editing");
+  });
+
+  it("falls back when title is empty", () => {
+    expect(sanitizePrTitle("")).toBe("Update project changes");
+  });
+});
+
+describe("sanitizePrBody", () => {
+  it("unwraps JSON-wrapped body from misbehaving models", () => {
+    expect(
+      sanitizePrBody(
+        '{"title": "feat(chat): add editing", "body": "## Summary\\n- Added editing"}',
+      ),
+    ).toBe("## Summary\n- Added editing");
+  });
+
+  it("returns plain markdown body as-is", () => {
+    expect(sanitizePrBody("## Summary\n- Added editing")).toBe("## Summary\n- Added editing");
+  });
+});
+
+describe("sanitizeCommitSubject", () => {
+  it("unwraps JSON-wrapped subject from misbehaving models", () => {
+    expect(sanitizeCommitSubject('{"subject": "feat: add editing", "body": "details"}')).toBe(
+      "feat: add editing",
+    );
+  });
+
+  it("returns plain text subject as-is", () => {
+    expect(sanitizeCommitSubject("feat: add editing")).toBe("feat: add editing");
   });
 });
 

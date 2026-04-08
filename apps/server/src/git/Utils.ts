@@ -32,7 +32,18 @@ export function limitSection(value: string, maxChars: number): string {
 
 /** Normalise a raw commit subject to imperative-mood, ≤72 chars, no trailing period. */
 export function sanitizeCommitSubject(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
+  let unwrapped = raw.trim();
+  try {
+    const parsed: unknown = JSON.parse(unwrapped);
+    if (typeof parsed === "object" && parsed !== null && "subject" in parsed) {
+      const inner = (parsed as Record<string, unknown>).subject;
+      if (typeof inner === "string") unwrapped = inner;
+    }
+  } catch {
+    // not JSON — use as-is
+  }
+
+  const singleLine = unwrapped.split(/\r?\n/g)[0]?.trim() ?? "";
   const withoutTrailingPeriod = singleLine.replace(/[.]+$/g, "").trim();
   if (withoutTrailingPeriod.length === 0) {
     return "Update project files";
@@ -46,11 +57,37 @@ export function sanitizeCommitSubject(raw: string): string {
 
 /** Normalise a raw PR title to a single line with a sensible fallback. */
 export function sanitizePrTitle(raw: string): string {
-  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
+  let unwrapped = raw.trim();
+  try {
+    const parsed: unknown = JSON.parse(unwrapped);
+    if (typeof parsed === "object" && parsed !== null && "title" in parsed) {
+      const inner = (parsed as Record<string, unknown>).title;
+      if (typeof inner === "string") unwrapped = inner;
+    }
+  } catch {
+    // not JSON — use as-is
+  }
+
+  const singleLine = unwrapped.split(/\r?\n/g)[0]?.trim() ?? "";
   if (singleLine.length > 0) {
     return singleLine;
   }
   return "Update project changes";
+}
+
+/** Unwrap a PR body that was accidentally returned as a JSON envelope. */
+export function sanitizePrBody(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed === "object" && parsed !== null && "body" in parsed) {
+      const inner = (parsed as Record<string, unknown>).body;
+      if (typeof inner === "string") return inner.trim();
+    }
+  } catch {
+    // not JSON — use as-is
+  }
+  return trimmed;
 }
 
 /** Normalise a raw thread title to a compact single-line sidebar-safe label. */
