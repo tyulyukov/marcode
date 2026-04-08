@@ -114,9 +114,8 @@ const makeClaudeTextGeneration = Effect.gen(function* () {
           resolveApiModelId(modelSelection),
           ...(normalizedOptions?.effort ? ["--effort", normalizedOptions.effort] : []),
           ...(Object.keys(settings).length > 0 ? ["--settings", JSON.stringify(settings)] : []),
-          "--max-turns",
-          "2",
-          "--dangerously-skip-permissions",
+          "--tools",
+          "",
         ],
         {
           cwd,
