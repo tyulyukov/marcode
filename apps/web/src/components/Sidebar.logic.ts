@@ -184,16 +184,16 @@ export function resolveSidebarNewThreadSeedContext(input: {
   if (input.activeDraftThread?.projectId === input.projectId) {
     return {
       branch: input.activeDraftThread.branch,
-      worktreePath: input.activeDraftThread.worktreePath,
-      envMode: input.activeDraftThread.envMode,
+      worktreePath: null,
+      envMode: input.defaultEnvMode,
     };
   }
 
   if (input.activeThread?.projectId === input.projectId) {
     return {
       branch: input.activeThread.branch,
-      worktreePath: input.activeThread.worktreePath,
-      envMode: input.activeThread.worktreePath ? "worktree" : "local",
+      worktreePath: null,
+      envMode: input.defaultEnvMode,
     };
   }
 

@@ -578,7 +578,8 @@ export function deriveWorkLogEntries(
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
     .filter((activity) => !isSubagentToolActivity(activity))
-    .filter((activity) => !excludeTodos || !isTodoWriteActivity(activity));
+    .filter((activity) => !excludeTodos || !isTodoWriteActivity(activity))
+    .filter((activity) => !activity.kind.startsWith("setup-script."));
 
   const taskCompletionTime = new Map<string, string>();
   for (const activity of filtered) {
