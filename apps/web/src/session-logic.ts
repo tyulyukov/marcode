@@ -87,6 +87,7 @@ export interface WorkLogEntry {
   requestKind?: PendingApproval["requestKind"];
   diffPreviews?: ReadonlyArray<InlineDiffHunk>;
   agentGroup?: AgentGroup;
+  itemId?: string;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -573,7 +574,11 @@ export function deriveWorkLogEntries(
 
   const filtered = ordered
     .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
-    .filter((activity) => activity.kind !== "tool.started")
+    .filter(
+      (activity) =>
+        activity.kind !== "tool.started" ||
+        (activityHasItemType(activity, "command_execution") && activityHasItemId(activity)),
+    )
     .filter((activity) => activity.kind !== "context-window.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
@@ -1014,6 +1019,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (requestKind) {
     entry.requestKind = requestKind;
   }
+  if (payload && typeof payload.itemId === "string" && payload.itemId.length > 0) {
+    entry.itemId = payload.itemId;
+  }
   const diffPreviews = extractDiffPreviews(payload);
   if (diffPreviews.length > 0) {
     entry.diffPreviews = diffPreviews;
@@ -1125,6 +1133,7 @@ function mergeDerivedWorkLogEntries(
   const toolInput = previous.toolInput ?? next.toolInput;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
+  const itemId = next.itemId ?? previous.itemId;
   const collapseKey = next.collapseKey ?? previous.collapseKey;
   const mergedDiffPreviews = mergeDiffPreviews(
     previous.diffPreviews ?? [],
@@ -1145,6 +1154,7 @@ function mergeDerivedWorkLogEntries(
     ...(previous.toolCompleted || next.toolCompleted ? { toolCompleted: true } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
+    ...(itemId ? { itemId } : {}),
     ...(collapseKey ? { collapseKey } : {}),
     ...(mergedDiffPreviews.length > 0 ? { diffPreviews: mergedDiffPreviews } : {}),
   };
@@ -1464,6 +1474,19 @@ function stripTrailingExitCode(value: string): {
     output: normalizedOutput.length > 0 ? normalizedOutput : null,
     ...(Number.isInteger(exitCode) ? { exitCode } : {}),
   };
+}
+
+function activityHasItemType(
+  activity: OrchestrationThreadActivity,
+  expected: ToolLifecycleItemType,
+): boolean {
+  const payload = activity.payload as Record<string, unknown> | null | undefined;
+  return typeof payload?.itemType === "string" && payload.itemType === expected;
+}
+
+function activityHasItemId(activity: OrchestrationThreadActivity): boolean {
+  const payload = activity.payload as Record<string, unknown> | null | undefined;
+  return typeof payload?.itemId === "string" && payload.itemId.length > 0;
 }
 
 function extractWorkLogItemType(

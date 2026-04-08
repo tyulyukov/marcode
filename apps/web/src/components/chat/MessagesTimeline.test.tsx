@@ -51,6 +51,7 @@ describe("MessagesTimeline", () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
+        threadId="test-thread"
         hasMessages
         isWorking={false}
         activeTurnInProgress={false}
@@ -108,6 +109,7 @@ describe("MessagesTimeline", () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
+        threadId="test-thread"
         hasMessages
         isWorking={false}
         activeTurnInProgress={false}

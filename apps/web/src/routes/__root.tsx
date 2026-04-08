@@ -25,6 +25,7 @@ import { Button } from "../components/ui/button";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { readNativeApi } from "../nativeApi";
+import { useRuntimeToolOutputStore } from "../runtimeToolOutputStore";
 import {
   getServerConfigUpdatedNotification,
   ServerConfigUpdatedNotification,
@@ -232,6 +233,7 @@ function EventRouter() {
   const handleWelcome = useEffectEvent((payload: ServerLifecycleWelcomePayload | null) => {
     if (!payload) return;
 
+    useRuntimeToolOutputStore.getState().clearAll();
     migrateLocalSettingsToServer();
     void (async () => {
       await bootstrapFromSnapshotRef.current();
@@ -414,9 +416,15 @@ function EventRouter() {
       for (const threadId of batchEffects.clearDeletedThreadIds) {
         draftStore.clearDraftThread(threadId);
         clearThreadUi(threadId);
+        useRuntimeToolOutputStore.getState().clearThread(threadId);
       }
       for (const threadId of batchEffects.removeTerminalStateThreadIds) {
         removeTerminalState(threadId);
+      }
+      for (const event of nextEvents) {
+        if (event.type === "thread.turn-start-requested") {
+          useRuntimeToolOutputStore.getState().clearThread(event.payload.threadId);
+        }
       }
     };
     const flushPendingDomainEvents = () => {
@@ -561,6 +569,24 @@ function EventRouter() {
       }
       applyTerminalEvent(event);
     });
+
+    const runtimeToolOutputStore = useRuntimeToolOutputStore.getState();
+    runtimeToolOutputStore.clearAll();
+    const rpcClient = getWsRpcClient();
+    const unsubCommandOutput = rpcClient.commandOutput.onEvent(
+      (event) => {
+        useRuntimeToolOutputStore
+          .getState()
+          .appendOutput(event.threadId, event.itemId, event.delta);
+      },
+      {
+        onResubscribe: () => {
+          if (disposed) return;
+          useRuntimeToolOutputStore.getState().clearAll();
+        },
+      },
+    );
+
     return () => {
       disposed = true;
       disposedRef.current = true;
@@ -570,6 +596,7 @@ function EventRouter() {
       queryInvalidationThrottler.cancel();
       unsubDomainEvent();
       unsubTerminalEvent();
+      unsubCommandOutput();
     };
   }, [
     applyOrchestrationEvents,

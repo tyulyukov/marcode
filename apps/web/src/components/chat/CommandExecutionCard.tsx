@@ -4,10 +4,12 @@ import { cn } from "~/lib/utils";
 import { ansiToSpans } from "~/lib/ansiToSpans";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import type { WorkLogEntry } from "../../session-logic";
+import { useRuntimeToolOutput } from "../../runtimeToolOutputStore";
 
 interface CommandExecutionCardProps {
   entry: WorkLogEntry;
   isLive: boolean;
+  threadId: string;
 }
 
 type CommandStatus = "running" | "error" | "success";
@@ -94,20 +96,25 @@ function CommandStatusBadge(props: { entry: WorkLogEntry; status: CommandStatus 
 export const CommandExecutionCard = memo(function CommandExecutionCard(
   props: CommandExecutionCardProps,
 ) {
-  const { entry } = props;
+  const { entry, threadId } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const status = deriveCommandStatus(entry);
+  const liveOutput = useRuntimeToolOutput(threadId, entry.itemId);
   const { displayCommand, output } = useMemo(() => deriveCommandAndOutput(entry), [entry]);
-  const renderedOutput = useMemo(() => (output ? ansiToSpans(output) : null), [output]);
+  const effectiveOutput = status === "running" && liveOutput ? liveOutput : output;
+  const renderedOutput = useMemo(
+    () => (effectiveOutput ? ansiToSpans(effectiveOutput) : null),
+    [effectiveOutput],
+  );
 
   useLayoutEffect(() => {
     const el = previewRef.current;
     if (!el || expanded) return;
     setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
-  }, [expanded, output]);
+  }, [expanded, effectiveOutput]);
 
   const hasMoreContent = expanded || previewOverflows;
   const ExpandIcon = expanded ? ChevronUpIcon : ChevronDownIcon;

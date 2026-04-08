@@ -41,6 +41,7 @@ import {
   observeRpcStreamEffect,
 } from "./observability/RpcInstrumentation";
 import { ProviderRegistry } from "./provider/Services/ProviderRegistry";
+import { ProviderService } from "./provider/Services/ProviderService";
 import { ServerLifecycleEvents } from "./serverLifecycleEvents";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup";
 import { ServerSettingsService } from "./serverSettings";
@@ -74,6 +75,7 @@ const WsRpcLayer = WsRpcGroup.toLayer(
     const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
     const jiraApiClient = yield* JiraApiClient;
     const jiraTokenService = yield* JiraTokenService;
+    const providerService = yield* ProviderService;
     const serverCommandId = (tag: string) =>
       CommandId.makeUnsafe(`server:${tag}:${crypto.randomUUID()}`);
 
@@ -719,6 +721,24 @@ const WsRpcLayer = WsRpcGroup.toLayer(
             ),
           ),
           { "rpc.aggregate": "terminal" },
+        ),
+      [WS_METHODS.subscribeCommandOutput]: (_input) =>
+        observeRpcStream(
+          WS_METHODS.subscribeCommandOutput,
+          providerService.streamEvents.pipe(
+            Stream.filter(
+              (e) =>
+                e.type === "content.delta" &&
+                e.payload.streamKind === "command_output" &&
+                !!e.itemId,
+            ),
+            Stream.map((e) => ({
+              threadId: e.threadId,
+              itemId: e.itemId!,
+              delta: (e.payload as { delta: string }).delta,
+            })),
+          ),
+          { "rpc.aggregate": "commandOutput" },
         ),
       [WS_METHODS.subscribeServerConfig]: (_input) =>
         observeRpcStreamEffect(
