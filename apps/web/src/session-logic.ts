@@ -1056,6 +1056,9 @@ function toolDeduplicationKey(entry: DerivedWorkLogEntry): string | null {
   ) {
     return null;
   }
+  if (entry.itemId) {
+    return `dedup-itemId\x1f${entry.itemId}`;
+  }
   const fingerprint = entry.toolInput ? stableInputFingerprint(entry.toolInput) : null;
   if (!fingerprint) return null;
   const toolName = entry.toolName ?? "";
@@ -1178,6 +1181,9 @@ function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | un
     entry.activityKind !== "tool.completed"
   ) {
     return undefined;
+  }
+  if (entry.itemId) {
+    return `itemId\x1f${entry.itemId}`;
   }
   const normalizedLabel = normalizeCompactToolLabel(entry.toolTitle ?? entry.label);
   const itemType = entry.itemType ?? "";

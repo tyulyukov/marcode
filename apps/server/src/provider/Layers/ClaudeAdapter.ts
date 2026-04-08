@@ -751,6 +751,9 @@ function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStat
   if (errors.includes("cancel")) {
     return "cancelled";
   }
+  if (result.is_error === false) {
+    return "completed";
+  }
   return "failed";
 }
 
@@ -2033,7 +2036,10 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     const status = turnStatusFromResult(message);
-    const errorMessage = message.subtype === "success" ? undefined : message.errors[0];
+    const errorMessage =
+      message.subtype === "success"
+        ? undefined
+        : message.errors.find((e: string) => !e.startsWith("[ede_diagnostic]"));
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
