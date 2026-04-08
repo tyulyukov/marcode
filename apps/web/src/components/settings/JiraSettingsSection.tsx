@@ -14,7 +14,7 @@ export function JiraSettingsSection() {
 
   useEffect(() => {
     const api = readNativeApi();
-    if (!api?.jira.onConnectionStatusChanged) return;
+    if (!api?.jira?.onConnectionStatusChanged) return;
     const unsubscribe = api.jira.onConnectionStatusChanged((status) => {
       queryClient.setQueryData(jiraQueryKeys.connectionStatus(), status);
     });

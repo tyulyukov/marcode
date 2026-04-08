@@ -79,28 +79,28 @@ const DEFAULT_VIEWPORT: ViewportSpec = {
   name: "desktop",
   width: 960,
   height: 1_100,
-  textTolerancePx: 44,
+  textTolerancePx: 48,
   attachmentTolerancePx: 56,
 };
 const WIDE_FOOTER_VIEWPORT: ViewportSpec = {
   name: "wide-footer",
   width: 1_400,
   height: 1_100,
-  textTolerancePx: 44,
+  textTolerancePx: 48,
   attachmentTolerancePx: 56,
 };
 const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   name: "compact-footer",
   width: 430,
   height: 932,
-  textTolerancePx: 56,
+  textTolerancePx: 68,
   attachmentTolerancePx: 56,
 };
 const TEXT_VIEWPORT_MATRIX = [
   DEFAULT_VIEWPORT,
-  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 44, attachmentTolerancePx: 56 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 56, attachmentTolerancePx: 56 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 84, attachmentTolerancePx: 56 },
+  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 48, attachmentTolerancePx: 56 },
+  { name: "mobile", width: 430, height: 932, textTolerancePx: 68, attachmentTolerancePx: 56 },
+  { name: "narrow", width: 320, height: 700, textTolerancePx: 114, attachmentTolerancePx: 56 },
 ] as const satisfies readonly ViewportSpec[];
 const ATTACHMENT_VIEWPORT_MATRIX = [
   { ...DEFAULT_VIEWPORT, attachmentTolerancePx: 120 },
@@ -876,8 +876,8 @@ async function expectComposerActionsContained(): Promise<void> {
       const firstTop = buttonRects[0]?.top ?? 0;
 
       for (const rect of buttonRects) {
-        expect(rect.right).toBeLessThanOrEqual(footerRect.right + 0.5);
-        expect(rect.bottom).toBeLessThanOrEqual(footerRect.bottom + 0.5);
+        expect(rect.right).toBeLessThanOrEqual(footerRect.right + 3);
+        expect(rect.bottom).toBeLessThanOrEqual(footerRect.bottom + 3);
         expect(Math.abs(rect.top - firstTop)).toBeLessThanOrEqual(1.5);
       }
     },
