@@ -27,6 +27,8 @@ import {
   GitStatusInput,
   GitStatusResult,
   GitStatusStreamEvent,
+  GitWorkingTreeDiffInput,
+  GitWorkingTreeDiffResult,
 } from "./git";
 import { KeybindingsConfigError } from "./keybindings";
 import {
@@ -115,6 +117,7 @@ export const WS_METHODS = {
   gitCreateBranch: "git.createBranch",
   gitCheckout: "git.checkout",
   gitInit: "git.init",
+  gitWorkingTreeDiff: "git.workingTreeDiff",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
 
@@ -273,6 +276,12 @@ export const WsGitCheckoutRpc = Rpc.make(WS_METHODS.gitCheckout, {
 
 export const WsGitInitRpc = Rpc.make(WS_METHODS.gitInit, {
   payload: GitInitInput,
+  error: GitCommandError,
+});
+
+export const WsGitWorkingTreeDiffRpc = Rpc.make(WS_METHODS.gitWorkingTreeDiff, {
+  payload: GitWorkingTreeDiffInput,
+  success: GitWorkingTreeDiffResult,
   error: GitCommandError,
 });
 
@@ -451,6 +460,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitCreateBranchRpc,
   WsGitCheckoutRpc,
   WsGitInitRpc,
+  WsGitWorkingTreeDiffRpc,
   WsTerminalOpenRpc,
   WsTerminalWriteRpc,
   WsTerminalResizeRpc,

@@ -22,6 +22,7 @@ import type {
   GitRemoveWorktreeInput,
   GitStatusInput,
   GitStatusResult,
+  GitWorkingTreeDiffResult,
 } from "@marcode/contracts";
 
 import type { GitCommandError } from "@marcode/contracts";
@@ -306,6 +307,14 @@ export interface GitCoreShape {
    * List local branch names (short format).
    */
   readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
+
+  /**
+   * Read a unified diff of all staged + unstaged changes against HEAD.
+   * Falls back to `git diff --cached` when no commits exist yet.
+   */
+  readonly readWorkingTreeDiff: (
+    cwd: string,
+  ) => Effect.Effect<GitWorkingTreeDiffResult, GitCommandError>;
 }
 
 /**

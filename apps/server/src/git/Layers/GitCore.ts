@@ -46,6 +46,7 @@ const RANGE_COMMIT_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
+const WORKING_TREE_DIFF_MAX_OUTPUT_BYTES = 512 * 1024;
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
@@ -2124,6 +2125,36 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
       ),
     );
 
+  const readWorkingTreeDiff: GitCoreShape["readWorkingTreeDiff"] = (cwd) =>
+    Effect.gen(function* () {
+      const headCheck = yield* executeGit(
+        "GitCore.readWorkingTreeDiff.headCheck",
+        cwd,
+        ["rev-parse", "HEAD"],
+        {
+          allowNonZeroExit: true,
+          timeoutMs: 5_000,
+        },
+      );
+      const hasCommits = headCheck.code === 0;
+
+      const diffArgs = hasCommits
+        ? ["diff", "HEAD", "--patch", "--minimal", "--no-color"]
+        : ["diff", "--cached", "--patch", "--minimal", "--no-color"];
+
+      const result = yield* executeGit("GitCore.readWorkingTreeDiff", cwd, diffArgs, {
+        maxOutputBytes: WORKING_TREE_DIFF_MAX_OUTPUT_BYTES,
+        truncateOutputAtMaxBytes: true,
+        fallbackErrorMessage: "git diff failed",
+      });
+
+      const diff = result.stdoutTruncated
+        ? `${result.stdout}${OUTPUT_TRUNCATED_MARKER}`
+        : result.stdout;
+
+      return { diff, truncated: result.stdoutTruncated };
+    });
+
   return {
     execute,
     status,
@@ -2150,6 +2181,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     checkoutBranch,
     initRepo,
     listLocalBranchNames,
+    readWorkingTreeDiff,
   } satisfies GitCoreShape;
 });
 

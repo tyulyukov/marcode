@@ -17,6 +17,8 @@ import type {
   GitStatusInput,
   GitStatusResult,
   GitCreateBranchResult,
+  GitWorkingTreeDiffInput,
+  GitWorkingTreeDiffResult,
 } from "./git";
 import type {
   ProjectBrowseDirectoriesInput,
@@ -187,6 +189,7 @@ export interface NativeApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+    workingTreeDiff: (input: GitWorkingTreeDiffInput) => Promise<GitWorkingTreeDiffResult>;
   };
   contextMenu: {
     show: <T extends string>(

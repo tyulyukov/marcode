@@ -432,6 +432,17 @@ const GitActionFailedEvent = Schema.Struct({
   message: TrimmedNonEmptyStringSchema,
 });
 
+export const GitWorkingTreeDiffInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type GitWorkingTreeDiffInput = typeof GitWorkingTreeDiffInput.Type;
+
+export const GitWorkingTreeDiffResult = Schema.Struct({
+  diff: Schema.String,
+  truncated: Schema.Boolean,
+});
+export type GitWorkingTreeDiffResult = typeof GitWorkingTreeDiffResult.Type;
+
 export const GitActionProgressEvent = Schema.Union([
   GitActionStartedEvent,
   GitActionPhaseStartedEvent,

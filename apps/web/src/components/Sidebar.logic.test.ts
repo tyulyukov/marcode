@@ -187,7 +187,7 @@ describe("resolveSidebarNewThreadSeedContext", () => {
     });
   });
 
-  it("prefers the active draft thread context when it matches the target project", () => {
+  it("inherits only the branch from the active draft thread, never the worktree path", () => {
     expect(
       resolveSidebarNewThreadSeedContext({
         projectId: "project-1",
@@ -206,8 +206,8 @@ describe("resolveSidebarNewThreadSeedContext", () => {
       }),
     ).toEqual({
       branch: "feature/new-draft",
-      worktreePath: "/repo/worktree",
-      envMode: "worktree",
+      worktreePath: null,
+      envMode: "local",
     });
   });
 
