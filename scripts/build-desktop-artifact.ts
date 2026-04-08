@@ -504,8 +504,14 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "linux") {
     buildConfig.linux = {
       target: [target],
+      executableName: "marcode",
       icon: "icon.png",
       category: "Development",
+      desktop: {
+        entry: {
+          StartupWMClass: "marcode",
+        },
+      },
     };
   }
 

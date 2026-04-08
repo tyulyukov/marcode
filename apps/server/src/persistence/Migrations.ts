@@ -33,6 +33,7 @@ import Migration0017 from "./Migrations/017_ProjectionThreadsArchivedAt.ts";
 import Migration0018 from "./Migrations/018_ProjectionThreadsArchivedAtIndex.ts";
 import Migration0019 from "./Migrations/019_ProjectJiraBoard.ts";
 import Migration0020 from "./Migrations/020_ProjectionThreadsAdditionalDirectories.ts";
+import Migration0021 from "./Migrations/019_ProjectionSnapshotLookupIndexes.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -65,6 +66,7 @@ export const migrationEntries = [
   [18, "ProjectionThreadsArchivedAtIndex", Migration0018],
   [19, "ProjectJiraBoard", Migration0019],
   [20, "ProjectionThreadsAdditionalDirectories", Migration0020],
+  [21, "ProjectionSnapshotLookupIndexes", Migration0021],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
@@ -96,19 +98,20 @@ export interface RunMigrationsOptions {
  *
  * @returns Effect containing array of executed migrations
  */
-export const runMigrations = ({ toMigrationInclusive }: RunMigrationsOptions = {}) =>
-  Effect.gen(function* () {
-    yield* Effect.log(
-      toMigrationInclusive === undefined
-        ? "Running all migrations..."
-        : `Running migrations 1 through ${toMigrationInclusive}...`,
-    );
-    const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
-    yield* Effect.log("Migrations ran successfully").pipe(
-      Effect.annotateLogs({ migrations: executedMigrations.map(([id, name]) => `${id}_${name}`) }),
-    );
-    return executedMigrations;
-  });
+export const runMigrations = Effect.fn("runMigrations")(function* ({
+  toMigrationInclusive,
+}: RunMigrationsOptions = {}) {
+  yield* Effect.log(
+    toMigrationInclusive === undefined
+      ? "Running all migrations..."
+      : `Running migrations 1 through ${toMigrationInclusive}...`,
+  );
+  const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  yield* Effect.log("Migrations ran successfully").pipe(
+    Effect.annotateLogs({ migrations: executedMigrations.map(([id, name]) => `${id}_${name}`) }),
+  );
+  return executedMigrations;
+});
 
 /**
  * Layer that runs migrations when the layer is built.

@@ -31,6 +31,7 @@ import { autoUpdater } from "electron-updater";
 import type { ContextMenuItem } from "@marcode/contracts";
 import { NetService } from "@marcode/shared/Net";
 import { RotatingFileSink } from "@marcode/shared/logging";
+import { parsePersistedServerObservabilitySettings } from "@marcode/shared/serverSettings";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { syncShellEnvironment } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
@@ -70,6 +71,8 @@ const ROOT_DIR = Path.resolve(__dirname, "../../..");
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const APP_DISPLAY_NAME = isDevelopment ? "MarCode (Dev)" : "MarCode (Alpha)";
 const APP_USER_MODEL_ID = "com.tyulyukov.marcode";
+const LINUX_DESKTOP_ENTRY_NAME = isDevelopment ? "marcode-dev.desktop" : "marcode.desktop";
+const LINUX_WM_CLASS = isDevelopment ? "marcode-dev" : "marcode";
 const USER_DATA_DIR_NAME = isDevelopment ? "marcode-dev" : "marcode";
 const LEGACY_USER_DATA_DIR_NAME = isDevelopment ? "MarCode (Dev)" : "MarCode (Alpha)";
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
@@ -78,12 +81,16 @@ const LOG_DIR = Path.join(STATE_DIR, "logs");
 const LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_FILE_MAX_FILES = 10;
 const APP_RUN_ID = Crypto.randomBytes(6).toString("hex");
+const SERVER_SETTINGS_PATH = Path.join(STATE_DIR, "settings.json");
 const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
+type LinuxDesktopNamedApp = Electron.App & {
+  setDesktopName?: (desktopName: string) => void;
+};
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess.ChildProcess | null = null;
@@ -98,8 +105,10 @@ let aboutCommitHashCache: string | null | undefined;
 let desktopLogSink: RotatingFileSink | null = null;
 let backendLogSink: RotatingFileSink | null = null;
 let restoreStdIoCapture: (() => void) | null = null;
+let backendObservabilitySettings = readPersistedBackendObservabilitySettings();
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
+const expectedBackendExitChildren = new WeakSet<ChildProcess.ChildProcess>();
 const desktopRuntimeInfo = resolveDesktopRuntimeInfo({
   platform: process.platform,
   processArch: process.arch,
@@ -118,6 +127,21 @@ function logScope(scope: string): string {
 
 function sanitizeLogValue(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function readPersistedBackendObservabilitySettings(): {
+  readonly otlpTracesUrl: string | undefined;
+  readonly otlpMetricsUrl: string | undefined;
+} {
+  try {
+    if (!FS.existsSync(SERVER_SETTINGS_PATH)) {
+      return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined };
+    }
+    return parsePersistedServerObservabilitySettings(FS.readFileSync(SERVER_SETTINGS_PATH, "utf8"));
+  } catch (error) {
+    console.warn("[desktop] failed to read persisted backend observability settings", error);
+    return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined };
+  }
 }
 
 function backendChildEnv(): NodeJS.ProcessEnv {
@@ -278,6 +302,10 @@ function captureBackendOutput(child: ChildProcess.ChildProcess): void {
 
 initializePackagedLogging();
 
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("class", LINUX_WM_CLASS);
+}
+
 function getDestructiveMenuIcon(): Electron.NativeImage | undefined {
   if (process.platform !== "darwin") return undefined;
   if (destructiveMenuIconCache !== undefined) {
@@ -405,7 +433,7 @@ function resolveAboutCommitHash(): string | null {
 }
 
 function resolveBackendEntry(): string {
-  return Path.join(resolveAppRoot(), "apps/server/dist/index.mjs");
+  return Path.join(resolveAppRoot(), "apps/server/dist/bin.mjs");
 }
 
 function resolveBackendCwd(): string {
@@ -730,6 +758,10 @@ function configureAppIdentity(): void {
     app.setAppUserModelId(APP_USER_MODEL_ID);
   }
 
+  if (process.platform === "linux") {
+    (app as LinuxDesktopNamedApp).setDesktopName?.(LINUX_DESKTOP_ENTRY_NAME);
+  }
+
   if (process.platform === "darwin" && app.dock) {
     const iconPath = resolveIconPath("png");
     if (iconPath) {
@@ -990,6 +1022,7 @@ function scheduleBackendRestart(reason: string): void {
 function startBackend(): void {
   if (isQuitting || backendProcess) return;
 
+  backendObservabilitySettings = readPersistedBackendObservabilitySettings();
   const backendEntry = resolveBackendEntry();
   if (!FS.existsSync(backendEntry)) {
     scheduleBackendRestart(`missing server entry at ${backendEntry}`);
@@ -1018,6 +1051,12 @@ function startBackend(): void {
         port: backendPort,
         marcodeHome: BASE_DIR,
         authToken: backendAuthToken,
+        ...(backendObservabilitySettings.otlpTracesUrl
+          ? { otlpTracesUrl: backendObservabilitySettings.otlpTracesUrl }
+          : {}),
+        ...(backendObservabilitySettings.otlpMetricsUrl
+          ? { otlpMetricsUrl: backendObservabilitySettings.otlpMetricsUrl }
+          : {}),
       })}\n`,
     );
     bootstrapStream.end();
@@ -1044,21 +1083,26 @@ function startBackend(): void {
   });
 
   child.on("error", (error) => {
+    const wasExpected = expectedBackendExitChildren.has(child);
     if (backendProcess === child) {
       backendProcess = null;
     }
     closeBackendSession(`pid=${child.pid ?? "unknown"} error=${error.message}`);
+    if (wasExpected) {
+      return;
+    }
     scheduleBackendRestart(error.message);
   });
 
   child.on("exit", (code, signal) => {
+    const wasExpected = expectedBackendExitChildren.has(child);
     if (backendProcess === child) {
       backendProcess = null;
     }
     closeBackendSession(
       `pid=${child.pid ?? "unknown"} code=${code ?? "null"} signal=${signal ?? "null"}`,
     );
-    if (isQuitting) return;
+    if (isQuitting || wasExpected) return;
     const reason = `code=${code ?? "null"} signal=${signal ?? "null"}`;
     scheduleBackendRestart(reason);
   });
@@ -1075,6 +1119,7 @@ function stopBackend(): void {
   if (!child) return;
 
   if (child.exitCode === null && child.signalCode === null) {
+    expectedBackendExitChildren.add(child);
     child.kill("SIGTERM");
     setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) {
@@ -1095,6 +1140,7 @@ async function stopBackendAndWaitForExit(timeoutMs = 5_000): Promise<void> {
   if (!child) return;
   const backendChild = child;
   if (backendChild.exitCode !== null || backendChild.signalCode !== null) return;
+  expectedBackendExitChildren.add(backendChild);
 
   await new Promise<void>((resolve) => {
     let settled = false;

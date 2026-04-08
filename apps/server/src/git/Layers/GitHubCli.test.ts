@@ -24,14 +24,14 @@ layer("GitHubCliLive", (it) => {
         stdout: JSON.stringify({
           number: 42,
           title: "Add PR thread creation",
-          url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+          url: "https://github.com/tyulyukov/marcode/pull/42",
           baseRefName: "main",
           headRefName: "feature/pr-threads",
           state: "OPEN",
           mergedAt: null,
           isCrossRepository: true,
           headRepository: {
-            nameWithOwner: "octocat/codething-mvp",
+            nameWithOwner: "octocat/marcode",
           },
           headRepositoryOwner: {
             login: "octocat",
@@ -54,13 +54,13 @@ layer("GitHubCliLive", (it) => {
       assert.deepStrictEqual(result, {
         number: 42,
         title: "Add PR thread creation",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+        url: "https://github.com/tyulyukov/marcode/pull/42",
         baseRefName: "main",
         headRefName: "feature/pr-threads",
         state: "open",
         updatedAt: null,
         isCrossRepository: true,
-        headRepositoryNameWithOwner: "octocat/codething-mvp",
+        headRepositoryNameWithOwner: "octocat/marcode",
         headRepositoryOwnerLogin: "octocat",
       });
       expect(mockedRunProcess).toHaveBeenCalledWith(
@@ -81,9 +81,9 @@ layer("GitHubCliLive", (it) => {
     Effect.gen(function* () {
       mockedRunProcess.mockResolvedValueOnce({
         stdout: JSON.stringify({
-          nameWithOwner: "octocat/codething-mvp",
-          url: "https://github.com/octocat/codething-mvp",
-          sshUrl: "git@github.com:octocat/codething-mvp.git",
+          nameWithOwner: "octocat/marcode",
+          url: "https://github.com/octocat/marcode",
+          sshUrl: "git@github.com:octocat/marcode.git",
         }),
         stderr: "",
         code: 0,
@@ -95,14 +95,14 @@ layer("GitHubCliLive", (it) => {
         const gh = yield* GitHubCli;
         return yield* gh.getRepositoryCloneUrls({
           cwd: "/repo",
-          repository: "octocat/codething-mvp",
+          repository: "octocat/marcode",
         });
       });
 
       assert.deepStrictEqual(result, {
-        nameWithOwner: "octocat/codething-mvp",
-        url: "https://github.com/octocat/codething-mvp",
-        sshUrl: "git@github.com:octocat/codething-mvp.git",
+        nameWithOwner: "octocat/marcode",
+        url: "https://github.com/octocat/marcode",
+        sshUrl: "git@github.com:octocat/marcode.git",
       });
     }),
   );

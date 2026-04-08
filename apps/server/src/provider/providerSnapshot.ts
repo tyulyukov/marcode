@@ -1,6 +1,7 @@
 import type {
+  ModelCapabilities,
   ServerProvider,
-  ServerProviderAuthStatus,
+  ServerProviderAuth,
   ServerProviderModel,
   ServerProviderState,
 } from "@marcode/contracts";
@@ -21,7 +22,7 @@ export interface ProviderProbeResult {
   readonly installed: boolean;
   readonly version: string | null;
   readonly status: Exclude<ServerProviderState, "disabled">;
-  readonly authStatus: ServerProviderAuthStatus;
+  readonly auth: ServerProviderAuth;
   readonly message?: string;
 }
 
@@ -102,6 +103,7 @@ export function providerModelsFromSettings(
   builtInModels: ReadonlyArray<ServerProviderModel>,
   provider: ServerProvider["provider"],
   customModels: ReadonlyArray<string>,
+  customModelCapabilities: ModelCapabilities,
 ): ReadonlyArray<ServerProviderModel> {
   const resolvedBuiltInModels = [...builtInModels];
   const seen = new Set(resolvedBuiltInModels.map((model) => model.slug));
@@ -117,7 +119,7 @@ export function providerModelsFromSettings(
       slug: normalized,
       name: normalized,
       isCustom: true,
-      capabilities: null,
+      capabilities: customModelCapabilities,
     });
   }
 
@@ -137,7 +139,7 @@ export function buildServerProvider(input: {
     installed: input.probe.installed,
     version: input.probe.version,
     status: input.enabled ? input.probe.status : "disabled",
-    authStatus: input.probe.authStatus,
+    auth: input.probe.auth,
     checkedAt: input.checkedAt,
     ...(input.probe.message ? { message: input.probe.message } : {}),
     models: input.models,

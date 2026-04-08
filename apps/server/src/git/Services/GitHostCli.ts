@@ -9,7 +9,7 @@
 import { ServiceMap } from "effect";
 import type { Effect } from "effect";
 
-import type { GitHostCliError } from "../Errors.ts";
+import type { GitHostCliError } from "@marcode/contracts";
 
 export type GitHostProvider = "github" | "gitlab";
 

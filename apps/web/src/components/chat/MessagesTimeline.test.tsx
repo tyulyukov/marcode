@@ -53,9 +53,9 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         hasMessages
         isWorking={false}
-        isSendBusy={false}
-        isPreparingWorktree={false}
+        activeTurnInProgress={false}
         activeTurnStartedAt={null}
+        scrollContainer={null}
         timelineEntries={[
           {
             id: "entry-1",
@@ -81,6 +81,7 @@ describe("MessagesTimeline", () => {
         completionDividerBeforeEntryId={null}
         completionSummary={null}
         turnDiffSummaryByAssistantMessageId={new Map()}
+        nowIso={new Date().toISOString()}
         expandedWorkGroups={{}}
         onToggleWorkGroup={() => {}}
         onOpenTurnDiff={() => {}}
@@ -92,6 +93,8 @@ describe("MessagesTimeline", () => {
         resolvedTheme="light"
         timestampFormat="locale"
         workspaceRoot={undefined}
+        isSendBusy={false}
+        isPreparingWorktree={false}
         onSubagentSelect={() => {}}
       />,
     );
@@ -107,9 +110,9 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         hasMessages
         isWorking={false}
-        isSendBusy={false}
-        isPreparingWorktree={false}
+        activeTurnInProgress={false}
         activeTurnStartedAt={null}
+        scrollContainer={null}
         timelineEntries={[
           {
             id: "entry-1",
@@ -126,6 +129,7 @@ describe("MessagesTimeline", () => {
         completionDividerBeforeEntryId={null}
         completionSummary={null}
         turnDiffSummaryByAssistantMessageId={new Map()}
+        nowIso={new Date().toISOString()}
         expandedWorkGroups={{}}
         onToggleWorkGroup={() => {}}
         onOpenTurnDiff={() => {}}
@@ -137,6 +141,8 @@ describe("MessagesTimeline", () => {
         resolvedTheme="light"
         timestampFormat="locale"
         workspaceRoot={undefined}
+        isSendBusy={false}
+        isPreparingWorktree={false}
         onSubagentSelect={() => {}}
       />,
     );

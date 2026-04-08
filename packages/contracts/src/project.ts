@@ -43,6 +43,22 @@ export const ProjectBrowseDirectoriesResult = Schema.Struct({
 });
 export type ProjectBrowseDirectoriesResult = typeof ProjectBrowseDirectoriesResult.Type;
 
+export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSearchEntriesError>()(
+  "ProjectSearchEntriesError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class ProjectBrowseDirectoriesError extends Schema.TaggedErrorClass<ProjectBrowseDirectoriesError>()(
+  "ProjectBrowseDirectoriesError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
@@ -54,3 +70,11 @@ export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
+
+export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteFileError>()(
+  "ProjectWriteFileError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
