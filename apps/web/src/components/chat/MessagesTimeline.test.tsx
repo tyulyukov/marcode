@@ -96,6 +96,15 @@ describe("MessagesTimeline", () => {
         isSendBusy={false}
         isPreparingWorktree={false}
         onSubagentSelect={() => {}}
+        editingUserMessageId={null}
+        editingUserMessageText=""
+        editingUserMessageImages={[]}
+        onStartEditUserMessage={() => {}}
+        onChangeEditingUserMessageText={() => {}}
+        onAddEditingUserMessageImages={() => {}}
+        onRemoveEditingUserMessageImage={() => {}}
+        onCancelEditUserMessage={() => {}}
+        onSubmitEditUserMessage={() => {}}
       />,
     );
 
@@ -144,6 +153,15 @@ describe("MessagesTimeline", () => {
         isSendBusy={false}
         isPreparingWorktree={false}
         onSubagentSelect={() => {}}
+        editingUserMessageId={null}
+        editingUserMessageText=""
+        editingUserMessageImages={[]}
+        onStartEditUserMessage={() => {}}
+        onChangeEditingUserMessageText={() => {}}
+        onAddEditingUserMessageImages={() => {}}
+        onRemoveEditingUserMessageImage={() => {}}
+        onCancelEditUserMessage={() => {}}
+        onSubmitEditUserMessage={() => {}}
       />,
     );
 

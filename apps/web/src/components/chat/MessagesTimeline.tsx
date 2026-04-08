@@ -16,7 +16,8 @@ import {
 } from "@tanstack/react-virtual";
 import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
 import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../../chat-scroll";
-import { type TurnDiffSummary } from "../../types";
+import { type ChatMessage, type TurnDiffSummary } from "../../types";
+import { type ComposerImageAttachment } from "../../composerDraftStore";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
 import ChatMarkdown from "../ChatMarkdown";
 import {
@@ -26,14 +27,18 @@ import {
   EyeIcon,
   GlobeIcon,
   HammerIcon,
+  ImagePlusIcon,
   type LucideIcon,
+  SendIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
   WrenchIcon,
+  XIcon,
   ZapIcon,
 } from "lucide-react";
 import { Button } from "../ui/button";
+import { Textarea } from "../ui/textarea";
 import { clamp } from "effect/Number";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
@@ -72,6 +77,7 @@ import {
 } from "./userMessageTerminalContexts";
 
 const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
+const EMPTY_EDIT_IMAGES: ComposerImageAttachment[] = [];
 
 interface MessagesTimelineProps {
   hasMessages: boolean;
@@ -98,6 +104,15 @@ interface MessagesTimelineProps {
   isSendBusy: boolean;
   isPreparingWorktree: boolean;
   onSubagentSelect: (taskId: string) => void;
+  editingUserMessageId: MessageId | null;
+  editingUserMessageText: string;
+  editingUserMessageImages: ComposerImageAttachment[];
+  onStartEditUserMessage: (message: ChatMessage) => void;
+  onChangeEditingUserMessageText: (text: string) => void;
+  onAddEditingUserMessageImages: (files: File[]) => void;
+  onRemoveEditingUserMessageImage: (imageId: string) => void;
+  onCancelEditUserMessage: () => void;
+  onSubmitEditUserMessage: () => void;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -136,6 +151,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isSendBusy,
   isPreparingWorktree,
   onSubagentSelect,
+  editingUserMessageId,
+  editingUserMessageText,
+  editingUserMessageImages,
+  onStartEditUserMessage,
+  onChangeEditingUserMessageText,
+  onAddEditingUserMessageImages,
+  onRemoveEditingUserMessageImage,
+  onCancelEditUserMessage,
+  onSubmitEditUserMessage,
   onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -393,92 +417,28 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       {row.kind === "message" &&
         row.message.role === "user" &&
         (() => {
-          const userImages = row.message.attachments ?? [];
-          const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
-          const terminalContexts = displayedUserMessage.contexts;
-          const jiraExtracted = extractTrailingJiraContexts(displayedUserMessage.visibleText);
-          const visibleText =
-            jiraExtracted.contexts.length > 0
-              ? jiraExtracted.promptText
-              : displayedUserMessage.visibleText;
-          const jiraContextMap = new Map(
-            jiraExtracted.contexts.map((ctx) => {
-              const keyMatch = ctx.header.match(/^\[([A-Z][A-Z0-9]+-\d+)]/);
-              return [keyMatch?.[1]?.toUpperCase() ?? "", ctx] as const;
-            }),
-          );
-          const canRevertAgentWork = revertTurnCountByUserMessageId.has(row.message.id);
+          const isEditingThisMessage = editingUserMessageId === row.message.id;
           return (
-            <div className="flex justify-end">
-              <div className="group relative max-w-[80%] rounded-2xl rounded-br-sm border border-border bg-secondary px-4 py-3">
-                {userImages.length > 0 && (
-                  <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
-                    {userImages.map(
-                      (image: NonNullable<TimelineMessage["attachments"]>[number]) => (
-                        <div
-                          key={image.id}
-                          className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
-                        >
-                          {image.previewUrl ? (
-                            <button
-                              type="button"
-                              className="h-full w-full cursor-zoom-in"
-                              aria-label={`Preview ${image.name}`}
-                              onClick={() => {
-                                const preview = buildExpandedImagePreview(userImages, image.id);
-                                if (!preview) return;
-                                onImageExpand(preview);
-                              }}
-                            >
-                              <img
-                                src={image.previewUrl}
-                                alt={image.name}
-                                className="block h-auto max-h-[220px] w-full object-cover"
-                                onLoad={onTimelineImageLoad}
-                                onError={onTimelineImageLoad}
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-[11px] text-muted-foreground/70">
-                              {image.name}
-                            </div>
-                          )}
-                        </div>
-                      ),
-                    )}
-                  </div>
-                )}
-                {(visibleText.trim().length > 0 || terminalContexts.length > 0) && (
-                  <UserMessageBody
-                    text={visibleText}
-                    terminalContexts={terminalContexts}
-                    jiraContextMap={jiraContextMap}
-                  />
-                )}
-                <div className="mt-1.5 flex items-center justify-end gap-2">
-                  <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
-                    {displayedUserMessage.copyText && (
-                      <MessageCopyButton text={displayedUserMessage.copyText} />
-                    )}
-                    {canRevertAgentWork && (
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant="outline"
-                        disabled={isRevertingCheckpoint || isWorking}
-                        onClick={() => onRevertUserMessage(row.message.id)}
-                        title="Revert to this message"
-                      >
-                        <Undo2Icon className="size-3" />
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-right text-[10px] text-muted-foreground/30">
-                    {formatTimestamp(row.message.createdAt, timestampFormat)}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <EditableUserMessageTimelineRow
+              message={row.message}
+              isEditing={isEditingThisMessage}
+              editText={isEditingThisMessage ? editingUserMessageText : ""}
+              editImages={isEditingThisMessage ? editingUserMessageImages : EMPTY_EDIT_IMAGES}
+              canRevertAgentWork={revertTurnCountByUserMessageId.has(row.message.id)}
+              isRevertingCheckpoint={isRevertingCheckpoint}
+              isWorking={isWorking}
+              isSendBusy={isSendBusy}
+              timestampFormat={timestampFormat}
+              onImageExpand={onImageExpand}
+              onTimelineImageLoad={onTimelineImageLoad}
+              onStartEdit={onStartEditUserMessage}
+              onChangeText={onChangeEditingUserMessageText}
+              onAddImages={onAddEditingUserMessageImages}
+              onRemoveImage={onRemoveEditingUserMessageImage}
+              onCancel={onCancelEditUserMessage}
+              onSubmit={onSubmitEditUserMessage}
+              onRevert={onRevertUserMessage}
+            />
           );
         })()}
 
@@ -739,6 +699,253 @@ function renderTextWithJiraChips(
   }
   return nodes;
 }
+
+const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimelineRow(props: {
+  message: TimelineMessage;
+  isEditing: boolean;
+  editText: string;
+  editImages: ComposerImageAttachment[];
+  canRevertAgentWork: boolean;
+  isRevertingCheckpoint: boolean;
+  isWorking: boolean;
+  isSendBusy: boolean;
+  timestampFormat: TimestampFormat;
+  onImageExpand: (preview: ExpandedImagePreview) => void;
+  onTimelineImageLoad: () => void;
+  onStartEdit: (message: ChatMessage) => void;
+  onChangeText: (text: string) => void;
+  onAddImages: (files: File[]) => void;
+  onRemoveImage: (imageId: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+  onRevert: (messageId: MessageId) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { onSubmit, onCancel, onAddImages } = props;
+
+  useEffect(() => {
+    if (props.isEditing && textareaRef.current) {
+      const el = textareaRef.current;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, [props.isEditing]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        onSubmit();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    },
+    [onSubmit, onCancel],
+  );
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        onAddImages(Array.from(files));
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    },
+    [onAddImages],
+  );
+
+  const isBusy = props.isWorking || props.isSendBusy;
+  const canSubmitEdit =
+    !isBusy && (props.editText.trim().length > 0 || props.editImages.length > 0);
+  const lineCount = props.editText.split("\n").length;
+
+  if (props.isEditing) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-br-sm border border-primary/40 bg-secondary px-4 py-3">
+          <Textarea
+            ref={textareaRef}
+            unstyled
+            rows={Math.max(3, Math.min(10, lineCount + 1))}
+            value={props.editText}
+            onChange={(e) => props.onChangeText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="w-full resize-none bg-transparent text-sm text-foreground outline-none"
+            aria-label="Edit message"
+          />
+          {props.editImages.length > 0 && (
+            <div className="mt-2 grid max-w-[420px] grid-cols-2 gap-2">
+              {props.editImages.map((image) => (
+                <div
+                  key={image.id}
+                  className="group/img relative overflow-hidden rounded-lg border border-border/80 bg-background/70"
+                >
+                  <img
+                    src={image.previewUrl}
+                    alt={image.name}
+                    className="block h-auto max-h-[220px] w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover/img:opacity-100"
+                    onClick={() => props.onRemoveImage(image.id)}
+                    aria-label={`Remove ${image.name}`}
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleFileChange}
+              />
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() => fileInputRef.current?.click()}
+                title="Add image"
+                disabled={isBusy}
+              >
+                <ImagePlusIcon className="size-3.5" />
+              </Button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={props.onCancel}
+                disabled={isBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                variant="default"
+                onClick={props.onSubmit}
+                disabled={!canSubmitEdit}
+                title="Send edited message (⌘+Enter)"
+              >
+                <SendIcon className="size-3" />
+                Send
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const userImages = props.message.attachments ?? [];
+  const displayedUserMessage = deriveDisplayedUserMessageState(props.message.text);
+  const terminalContexts = displayedUserMessage.contexts;
+  const jiraExtracted = extractTrailingJiraContexts(displayedUserMessage.visibleText);
+  const visibleText =
+    jiraExtracted.contexts.length > 0 ? jiraExtracted.promptText : displayedUserMessage.visibleText;
+  const jiraContextMap = new Map(
+    jiraExtracted.contexts.map((ctx) => {
+      const keyMatch = ctx.header.match(/^\[([A-Z][A-Z0-9]+-\d+)]/);
+      return [keyMatch?.[1]?.toUpperCase() ?? "", ctx] as const;
+    }),
+  );
+
+  return (
+    <div className="flex justify-end">
+      <div className="group relative max-w-[80%] rounded-2xl rounded-br-sm border border-border bg-secondary px-4 py-3">
+        {userImages.length > 0 && (
+          <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
+            {userImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (
+              <div
+                key={image.id}
+                className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
+              >
+                {image.previewUrl ? (
+                  <button
+                    type="button"
+                    className="h-full w-full cursor-zoom-in"
+                    aria-label={`Preview ${image.name}`}
+                    onClick={() => {
+                      const preview = buildExpandedImagePreview(userImages, image.id);
+                      if (!preview) return;
+                      props.onImageExpand(preview);
+                    }}
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt={image.name}
+                      className="block h-auto max-h-[220px] w-full object-cover"
+                      onLoad={props.onTimelineImageLoad}
+                      onError={props.onTimelineImageLoad}
+                    />
+                  </button>
+                ) : (
+                  <div className="flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-[11px] text-muted-foreground/70">
+                    {image.name}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {(visibleText.trim().length > 0 || terminalContexts.length > 0) && (
+          <UserMessageBody
+            text={visibleText}
+            terminalContexts={terminalContexts}
+            jiraContextMap={jiraContextMap}
+          />
+        )}
+        <div className="mt-1.5 flex items-center justify-end gap-2">
+          <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+            {displayedUserMessage.copyText && (
+              <MessageCopyButton text={displayedUserMessage.copyText} />
+            )}
+            {props.canRevertAgentWork && (
+              <>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={props.isRevertingCheckpoint || props.isWorking}
+                  onClick={() => props.onStartEdit(props.message)}
+                  title="Edit message"
+                >
+                  <SquarePenIcon className="size-3" />
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  disabled={props.isRevertingCheckpoint || props.isWorking}
+                  onClick={() => props.onRevert(props.message.id)}
+                  title="Revert to this message"
+                >
+                  <Undo2Icon className="size-3" />
+                </Button>
+              </>
+            )}
+          </div>
+          <p className="text-right text-[10px] text-muted-foreground/30">
+            {formatTimestamp(props.message.createdAt, props.timestampFormat)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
