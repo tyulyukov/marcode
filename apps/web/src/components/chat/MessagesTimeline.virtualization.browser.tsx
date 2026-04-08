@@ -172,6 +172,15 @@ function createBaseTimelineProps(input: {
     isSendBusy: false,
     isPreparingWorktree: false,
     onSubagentSelect: () => {},
+    editingUserMessageId: null,
+    editingUserMessageText: "",
+    editingUserMessageImages: [],
+    onStartEditUserMessage: () => {},
+    onChangeEditingUserMessageText: () => {},
+    onAddEditingUserMessageImages: () => {},
+    onRemoveEditingUserMessageImage: () => {},
+    onCancelEditUserMessage: () => {},
+    onSubmitEditUserMessage: () => {},
     ...(input.onVirtualizerSnapshot ? { onVirtualizerSnapshot: input.onVirtualizerSnapshot } : {}),
   };
 }

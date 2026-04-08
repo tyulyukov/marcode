@@ -1,5 +1,17 @@
-import { ProjectId, type ModelSelection, type ThreadId, type TurnId } from "@marcode/contracts";
-import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
+import {
+  type MessageId,
+  ProjectId,
+  type ModelSelection,
+  type ThreadId,
+  type TurnId,
+} from "@marcode/contracts";
+import {
+  type ChatImageAttachment,
+  type ChatMessage,
+  type SessionPhase,
+  type Thread,
+  type ThreadSession,
+} from "../types";
 import { randomUUID } from "~/lib/utils";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import { Schema } from "effect";
@@ -317,4 +329,79 @@ export function hasServerAcknowledgedLocalDispatch(input: {
     input.localDispatch.sessionOrchestrationStatus !== (session?.orchestrationStatus ?? null) ||
     input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
   );
+}
+
+export const EDIT_REVERT_SYNC_TIMEOUT_MS = 3_000;
+
+export async function waitForThreadMessageRemoval(
+  threadId: ThreadId,
+  messageId: MessageId,
+  timeoutMs = EDIT_REVERT_SYNC_TIMEOUT_MS,
+): Promise<boolean> {
+  const getThread = () => useStore.getState().threads.find((thread) => thread.id === threadId);
+
+  const threadContainsMessage = () => {
+    const thread = getThread();
+    return thread ? thread.messages.some((m) => m.id === messageId) : false;
+  };
+
+  if (!threadContainsMessage()) {
+    return true;
+  }
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const finish = (result: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      unsubscribe();
+      resolve(result);
+    };
+
+    const unsubscribe = useStore.subscribe(() => {
+      if (!threadContainsMessage()) {
+        finish(true);
+      }
+    });
+
+    if (!threadContainsMessage()) {
+      finish(true);
+      return;
+    }
+
+    timeoutId = globalThis.setTimeout(() => {
+      finish(false);
+    }, timeoutMs);
+  });
+}
+
+export async function materializeMessageImageAttachmentForEdit(
+  attachment: ChatImageAttachment,
+): Promise<ComposerImageAttachment | null> {
+  if (!attachment.previewUrl) {
+    return null;
+  }
+  try {
+    const response = await fetch(attachment.previewUrl);
+    const blob = await response.blob();
+    const file = new File([blob], attachment.name, { type: attachment.mimeType });
+    const previewUrl = URL.createObjectURL(file);
+    return {
+      type: "image" as const,
+      id: attachment.id,
+      file,
+      name: attachment.name,
+      previewUrl,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.sizeBytes,
+    };
+  } catch {
+    return null;
+  }
 }

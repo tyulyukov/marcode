@@ -92,6 +92,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
+  type ChatImageAttachment,
   type ChatMessage,
   type ProposedPlan,
   type SessionPhase,
@@ -148,6 +149,7 @@ import {
 } from "../composerDraftStore";
 import {
   appendTerminalContextsToPrompt,
+  deriveDisplayedUserMessageState,
   formatTerminalContextLabel,
   insertInlineTerminalContextPlaceholder,
   removeInlineTerminalContextPlaceholder,
@@ -156,6 +158,7 @@ import {
 } from "../lib/terminalContext";
 import {
   appendJiraContextsToPrompt,
+  extractTrailingJiraContexts,
   formatJiraTaskLabel,
   formatJiraTaskInlineLabel,
   INLINE_JIRA_CONTEXT_PLACEHOLDER,
@@ -215,6 +218,7 @@ import {
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
+  materializeMessageImageAttachmentForEdit,
   PullRequestDialogState,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
@@ -222,6 +226,7 @@ import {
   revokeUserMessagePreviewUrls,
   threadHasStarted,
   waitForStartedServerThread,
+  waitForThreadMessageRemoval,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
@@ -396,6 +401,16 @@ function replaceInlineJiraPlaceholdersWithLabels(
     }
   }
   return result;
+}
+
+interface SubmitComposerTurnInput {
+  prompt: string;
+  trimmedPrompt: string;
+  images: ComposerImageAttachment[];
+  terminalContexts: TerminalContextDraft[];
+  jiraTaskContexts: JiraTaskDraft[];
+  expiredTerminalContextCount: number;
+  clearComposerDraft: boolean;
 }
 
 interface ChatViewProps {
@@ -742,6 +757,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  const [editingUserMessageId, setEditingUserMessageId] = useState<MessageId | null>(null);
+  const [editingUserMessageText, setEditingUserMessageText] = useState("");
+  const [editingUserMessageImages, setEditingUserMessageImages] = useState<
+    ComposerImageAttachment[]
+  >([]);
+  const userMessageEditSessionRef = useRef(0);
+  const editingUserMessageIdRef = useRef<MessageId | null>(null);
+  const editingUserMessageTextRef = useRef("");
+  const editingUserMessageImagesRef = useRef<ComposerImageAttachment[]>([]);
+  editingUserMessageIdRef.current = editingUserMessageId;
+  editingUserMessageTextRef.current = editingUserMessageText;
+  editingUserMessageImagesRef.current = editingUserMessageImages;
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
@@ -811,6 +838,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewHandoffTimeoutByMessageIdRef = useRef<Record<string, number>>({});
   const onSendRef = useRef<((e?: { preventDefault: () => void }) => Promise<void>) | null>(null);
+  const submitComposerTurnRef = useRef<((input: SubmitComposerTurnInput) => Promise<void>) | null>(
+    null,
+  );
   const sendInFlightRef = useRef(false);
   const dragDepthRef = useRef(0);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
@@ -3079,8 +3109,293 @@ export default function ChatView({ threadId }: ChatViewProps) {
     focusComposer();
   };
 
+  const submitComposerTurn = async (input: SubmitComposerTurnInput) => {
+    const api = readNativeApi();
+    if (!api || !activeThread || !activeProject) return;
+    const threadIdForSend = activeThread.id;
+    const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
+    const baseBranchForWorktree =
+      isFirstMessage && envMode === "worktree" && !activeThread.worktreePath
+        ? activeThread.branch
+        : null;
+
+    const shouldCreateWorktree =
+      isFirstMessage && envMode === "worktree" && !activeThread.worktreePath;
+    if (shouldCreateWorktree && !activeThread.branch) {
+      setStoreThreadError(
+        threadIdForSend,
+        "Select a base branch before sending in New worktree mode.",
+      );
+      return;
+    }
+
+    sendInFlightRef.current = true;
+    try {
+      beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
+
+      const composerImagesSnapshot = [...input.images];
+      const composerTerminalContextsSnapshot = [...input.terminalContexts];
+      const composerJiraTaskContextsSnapshot = [...input.jiraTaskContexts];
+      const cleanedPromptForSend = replaceInlineJiraPlaceholdersWithLabels(
+        input.prompt,
+        composerJiraTaskContextsSnapshot,
+      );
+      const messageTextForSend = appendJiraContextsToPrompt(
+        appendTerminalContextsToPrompt(cleanedPromptForSend, composerTerminalContextsSnapshot),
+        composerJiraTaskContextsSnapshot,
+      );
+      const messageIdForSend = newMessageId();
+      const messageCreatedAt = new Date().toISOString();
+      const outgoingMessageText = formatOutgoingPrompt({
+        provider: selectedProvider,
+        model: selectedModel,
+        models: selectedProviderModels,
+        effort: selectedPromptEffort,
+        text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      });
+      const composerImageAttachmentsPromise = Promise.all(
+        composerImagesSnapshot.map(async (image) => ({
+          type: "image" as const,
+          name: image.name,
+          mimeType: image.mimeType,
+          sizeBytes: image.sizeBytes,
+          dataUrl: await readFileAsDataUrl(image.file),
+        })),
+      );
+      const jiraImageAttachmentsPromise = (async () => {
+        if (!jiraCloudId) return [];
+        const imageAttachments = composerJiraTaskContextsSnapshot.flatMap((task) =>
+          task.attachments
+            .filter((att) => att.mimeType.startsWith("image/"))
+            .map((att) => Object.assign(att, { taskKey: task.issueKey })),
+        );
+        if (imageAttachments.length === 0) return [];
+        const origin = getServerHttpOrigin();
+        const results = await Promise.all(
+          imageAttachments.map(async (att) => {
+            try {
+              const response = await fetch(
+                `${origin}/api/jira/attachment/${att.id}?cloudId=${encodeURIComponent(jiraCloudId)}`,
+              );
+              if (!response.ok) return null;
+              const blob = await response.blob();
+              return {
+                type: "image" as const,
+                name: `${att.taskKey}-${att.filename}`,
+                mimeType: att.mimeType,
+                sizeBytes: att.size,
+                dataUrl: await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.addEventListener("load", () => resolve(reader.result as string));
+                  reader.addEventListener("error", () => reject(reader.error));
+                  reader.readAsDataURL(blob);
+                }),
+              };
+            } catch {
+              return null;
+            }
+          }),
+        );
+        return results.filter((r): r is NonNullable<typeof r> => r !== null);
+      })();
+      const turnAttachmentsPromise = Promise.all([
+        composerImageAttachmentsPromise,
+        jiraImageAttachmentsPromise,
+      ]).then(([ci, ji]) => [...ci, ...ji]);
+      const optimisticAttachments = composerImagesSnapshot.map((image) => ({
+        type: "image" as const,
+        id: image.id,
+        name: image.name,
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        previewUrl: image.previewUrl,
+      }));
+      setOptimisticUserMessages((existing) => [
+        ...existing,
+        {
+          id: messageIdForSend,
+          role: "user",
+          text: outgoingMessageText,
+          ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+          createdAt: messageCreatedAt,
+          streaming: false,
+        },
+      ]);
+      shouldAutoScrollRef.current = true;
+      forceStickToBottom();
+
+      setThreadError(threadIdForSend, null);
+      if (input.expiredTerminalContextCount > 0) {
+        const toastCopy = buildExpiredTerminalContextToastCopy(
+          input.expiredTerminalContextCount,
+          "omitted",
+        );
+        toastManager.add({
+          type: "warning",
+          title: toastCopy.title,
+          description: toastCopy.description,
+        });
+      }
+      if (input.clearComposerDraft) {
+        promptRef.current = "";
+        clearComposerDraftContent(threadIdForSend);
+        setComposerHighlightedItemId(null);
+        setComposerCursor(0);
+        setComposerTrigger(null);
+      }
+
+      let turnStartSucceeded = false;
+      await (async () => {
+        let firstComposerImageName: string | null = null;
+        if (composerImagesSnapshot.length > 0) {
+          const firstComposerImage = composerImagesSnapshot[0];
+          if (firstComposerImage) {
+            firstComposerImageName = firstComposerImage.name;
+          }
+        }
+        let titleSeed = input.trimmedPrompt;
+        if (!titleSeed) {
+          if (firstComposerImageName) {
+            titleSeed = `Image: ${firstComposerImageName}`;
+          } else if (composerTerminalContextsSnapshot.length > 0) {
+            titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
+          } else if (composerJiraTaskContextsSnapshot.length > 0) {
+            titleSeed = formatJiraTaskLabel(composerJiraTaskContextsSnapshot[0]!);
+          } else {
+            titleSeed = "New thread";
+          }
+        }
+        const title = truncate(titleSeed);
+        const threadCreateModelSelection: ModelSelection = {
+          provider: selectedProvider,
+          model:
+            selectedModel ||
+            activeProject.defaultModelSelection?.model ||
+            DEFAULT_MODEL_BY_PROVIDER[selectedProvider],
+          ...(selectedModelSelection.options ? { options: selectedModelSelection.options } : {}),
+        };
+
+        if (isLocalDraftThread && draftAdditionalDirectories.length > 0) {
+          await api.orchestration.dispatchCommand({
+            type: "thread.meta.update",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            additionalDirectories: draftAdditionalDirectories,
+          });
+          setDraftAdditionalDirectories([]);
+        }
+
+        if (isFirstMessage && isServerThread) {
+          await api.orchestration.dispatchCommand({
+            type: "thread.meta.update",
+            commandId: newCommandId(),
+            threadId: threadIdForSend,
+            title,
+          });
+        }
+
+        if (isServerThread) {
+          await persistThreadSettingsForNextTurn({
+            threadId: threadIdForSend,
+            createdAt: messageCreatedAt,
+            ...(selectedModel ? { modelSelection: selectedModelSelection } : {}),
+            runtimeMode,
+            interactionMode,
+          });
+        }
+
+        const turnAttachments = await turnAttachmentsPromise;
+        const bootstrap =
+          isLocalDraftThread || baseBranchForWorktree
+            ? {
+                ...(isLocalDraftThread
+                  ? {
+                      createThread: {
+                        projectId: activeProject.id,
+                        title,
+                        modelSelection: threadCreateModelSelection,
+                        runtimeMode,
+                        interactionMode,
+                        branch: activeThread.branch,
+                        worktreePath: activeThread.worktreePath,
+                        createdAt: activeThread.createdAt,
+                      },
+                    }
+                  : {}),
+                ...(baseBranchForWorktree
+                  ? {
+                      prepareWorktree: {
+                        projectCwd: activeProject.cwd,
+                        baseBranch: baseBranchForWorktree,
+                        branch: buildTemporaryWorktreeBranchName(),
+                      },
+                      runSetupScript: true,
+                    }
+                  : {}),
+              }
+            : undefined;
+        beginLocalDispatch({ preparingWorktree: false });
+        await api.orchestration.dispatchCommand({
+          type: "thread.turn.start",
+          commandId: newCommandId(),
+          threadId: threadIdForSend,
+          message: {
+            messageId: messageIdForSend,
+            role: "user",
+            text: outgoingMessageText,
+            attachments: turnAttachments,
+          },
+          modelSelection: selectedModelSelection,
+          titleSeed: title,
+          runtimeMode,
+          interactionMode,
+          ...(bootstrap ? { bootstrap } : {}),
+          createdAt: messageCreatedAt,
+        });
+        turnStartSucceeded = true;
+      })().catch(async (err: unknown) => {
+        if (
+          input.clearComposerDraft &&
+          !turnStartSucceeded &&
+          promptRef.current.length === 0 &&
+          composerImagesRef.current.length === 0 &&
+          composerTerminalContextsRef.current.length === 0 &&
+          composerJiraTaskContextsRef.current.length === 0
+        ) {
+          setOptimisticUserMessages((existing) => {
+            const removed = existing.filter((message) => message.id === messageIdForSend);
+            for (const message of removed) {
+              revokeUserMessagePreviewUrls(message);
+            }
+            const next = existing.filter((message) => message.id !== messageIdForSend);
+            return next.length === existing.length ? existing : next;
+          });
+          promptRef.current = input.prompt;
+          setPrompt(input.prompt);
+          setComposerCursor(collapseExpandedComposerCursor(input.prompt, input.prompt.length));
+          addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
+          addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
+          for (const task of composerJiraTaskContextsSnapshot) {
+            addComposerDraftJiraTaskContext(threadId, task);
+          }
+          setComposerTrigger(detectComposerTrigger(input.prompt, input.prompt.length));
+        }
+        setThreadError(
+          threadIdForSend,
+          err instanceof Error ? err.message : "Failed to send message.",
+        );
+      });
+      if (!turnStartSucceeded) {
+        resetLocalDispatch();
+      }
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  };
+  submitComposerTurnRef.current = submitComposerTurn;
+
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (turnCount: number, options?: { confirm?: boolean }) => {
       const api = readNativeApi();
       if (!api || !activeThread || isRevertingCheckpoint) return;
 
@@ -3088,15 +3403,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
         return;
       }
-      const confirmed = await api.dialogs.confirm(
-        [
-          `Revert this thread to checkpoint ${turnCount}?`,
-          "This will discard newer messages and turn diffs in this thread.",
-          "This action cannot be undone.",
-        ].join("\n"),
-      );
-      if (!confirmed) {
-        return;
+      if (options?.confirm !== false) {
+        const confirmed = await api.dialogs.confirm(
+          [
+            `Revert this thread to checkpoint ${turnCount}?`,
+            "This will discard newer messages and turn diffs in this thread.",
+            "This action cannot be undone.",
+          ].join("\n"),
+        );
+        if (!confirmed) {
+          return;
+        }
       }
 
       setIsRevertingCheckpoint(true);
@@ -3185,284 +3502,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
       }
       return;
     }
-    if (!activeProject) return;
-    const threadIdForSend = activeThread.id;
-    const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
-    const baseBranchForWorktree =
-      isFirstMessage && envMode === "worktree" && !activeThread.worktreePath
-        ? activeThread.branch
-        : null;
-
-    // In worktree mode, require an explicit base branch so we don't silently
-    // fall back to local execution when branch selection is missing.
-    const shouldCreateWorktree =
-      isFirstMessage && envMode === "worktree" && !activeThread.worktreePath;
-    if (shouldCreateWorktree && !activeThread.branch) {
-      setStoreThreadError(
-        threadIdForSend,
-        "Select a base branch before sending in New worktree mode.",
-      );
-      return;
-    }
-
-    sendInFlightRef.current = true;
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
-
-    const composerImagesSnapshot = [...composerImages];
-    const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
-    const composerJiraTaskContextsSnapshot = [...composerJiraTaskContexts];
-    const cleanedPromptForSend = replaceInlineJiraPlaceholdersWithLabels(
-      promptForSend,
-      composerJiraTaskContextsSnapshot,
-    );
-    const messageTextForSend = appendJiraContextsToPrompt(
-      appendTerminalContextsToPrompt(cleanedPromptForSend, composerTerminalContextsSnapshot),
-      composerJiraTaskContextsSnapshot,
-    );
-    const messageIdForSend = newMessageId();
-    const messageCreatedAt = new Date().toISOString();
-    const outgoingMessageText = formatOutgoingPrompt({
-      provider: selectedProvider,
-      model: selectedModel,
-      models: selectedProviderModels,
-      effort: selectedPromptEffort,
-      text: messageTextForSend || IMAGE_ONLY_BOOTSTRAP_PROMPT,
+    await submitComposerTurn({
+      prompt: promptForSend,
+      trimmedPrompt: trimmed,
+      images: [...composerImages],
+      terminalContexts: [...sendableComposerTerminalContexts],
+      jiraTaskContexts: [...composerJiraTaskContexts],
+      expiredTerminalContextCount,
+      clearComposerDraft: true,
     });
-    const composerImageAttachmentsPromise = Promise.all(
-      composerImagesSnapshot.map(async (image) => ({
-        type: "image" as const,
-        name: image.name,
-        mimeType: image.mimeType,
-        sizeBytes: image.sizeBytes,
-        dataUrl: await readFileAsDataUrl(image.file),
-      })),
-    );
-    const jiraImageAttachmentsPromise = (async () => {
-      if (!jiraCloudId) return [];
-      const imageAttachments = composerJiraTaskContextsSnapshot.flatMap((task) =>
-        task.attachments
-          .filter((att) => att.mimeType.startsWith("image/"))
-          .map((att) => Object.assign(att, { taskKey: task.issueKey })),
-      );
-      if (imageAttachments.length === 0) return [];
-      const origin = getServerHttpOrigin();
-      const results = await Promise.all(
-        imageAttachments.map(async (att) => {
-          try {
-            const response = await fetch(
-              `${origin}/api/jira/attachment/${att.id}?cloudId=${encodeURIComponent(jiraCloudId)}`,
-            );
-            if (!response.ok) return null;
-            const blob = await response.blob();
-            return {
-              type: "image" as const,
-              name: `${att.taskKey}-${att.filename}`,
-              mimeType: att.mimeType,
-              sizeBytes: att.size,
-              dataUrl: await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.addEventListener("load", () => resolve(reader.result as string));
-                reader.addEventListener("error", () => reject(reader.error));
-                reader.readAsDataURL(blob);
-              }),
-            };
-          } catch {
-            return null;
-          }
-        }),
-      );
-      return results.filter((r): r is NonNullable<typeof r> => r !== null);
-    })();
-    const turnAttachmentsPromise = Promise.all([
-      composerImageAttachmentsPromise,
-      jiraImageAttachmentsPromise,
-    ]).then(([composerImages, jiraImages]) => [...composerImages, ...jiraImages]);
-    const optimisticAttachments = composerImagesSnapshot.map((image) => ({
-      type: "image" as const,
-      id: image.id,
-      name: image.name,
-      mimeType: image.mimeType,
-      sizeBytes: image.sizeBytes,
-      previewUrl: image.previewUrl,
-    }));
-    setOptimisticUserMessages((existing) => [
-      ...existing,
-      {
-        id: messageIdForSend,
-        role: "user",
-        text: outgoingMessageText,
-        ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
-        createdAt: messageCreatedAt,
-        streaming: false,
-      },
-    ]);
-    // Sending a message should always bring the latest user turn into view.
-    shouldAutoScrollRef.current = true;
-    forceStickToBottom();
-
-    setThreadError(threadIdForSend, null);
-    if (expiredTerminalContextCount > 0) {
-      const toastCopy = buildExpiredTerminalContextToastCopy(
-        expiredTerminalContextCount,
-        "omitted",
-      );
-      toastManager.add({
-        type: "warning",
-        title: toastCopy.title,
-        description: toastCopy.description,
-      });
-    }
-    promptRef.current = "";
-    clearComposerDraftContent(threadIdForSend);
-    setComposerHighlightedItemId(null);
-    setComposerCursor(0);
-    setComposerTrigger(null);
-
-    let turnStartSucceeded = false;
-    await (async () => {
-      let firstComposerImageName: string | null = null;
-      if (composerImagesSnapshot.length > 0) {
-        const firstComposerImage = composerImagesSnapshot[0];
-        if (firstComposerImage) {
-          firstComposerImageName = firstComposerImage.name;
-        }
-      }
-      let titleSeed = trimmed;
-      if (!titleSeed) {
-        if (firstComposerImageName) {
-          titleSeed = `Image: ${firstComposerImageName}`;
-        } else if (composerTerminalContextsSnapshot.length > 0) {
-          titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
-        } else if (composerJiraTaskContextsSnapshot.length > 0) {
-          titleSeed = formatJiraTaskLabel(composerJiraTaskContextsSnapshot[0]!);
-        } else {
-          titleSeed = "New thread";
-        }
-      }
-      const title = truncate(titleSeed);
-      const threadCreateModelSelection: ModelSelection = {
-        provider: selectedProvider,
-        model:
-          selectedModel ||
-          activeProject.defaultModelSelection?.model ||
-          DEFAULT_MODEL_BY_PROVIDER[selectedProvider],
-        ...(selectedModelSelection.options ? { options: selectedModelSelection.options } : {}),
-      };
-
-      if (isLocalDraftThread && draftAdditionalDirectories.length > 0) {
-        await api.orchestration.dispatchCommand({
-          type: "thread.meta.update",
-          commandId: newCommandId(),
-          threadId: threadIdForSend,
-          additionalDirectories: draftAdditionalDirectories,
-        });
-        setDraftAdditionalDirectories([]);
-      }
-
-      // Auto-title from first message
-      if (isFirstMessage && isServerThread) {
-        await api.orchestration.dispatchCommand({
-          type: "thread.meta.update",
-          commandId: newCommandId(),
-          threadId: threadIdForSend,
-          title,
-        });
-      }
-
-      if (isServerThread) {
-        await persistThreadSettingsForNextTurn({
-          threadId: threadIdForSend,
-          createdAt: messageCreatedAt,
-          ...(selectedModel ? { modelSelection: selectedModelSelection } : {}),
-          runtimeMode,
-          interactionMode,
-        });
-      }
-
-      const turnAttachments = await turnAttachmentsPromise;
-      const bootstrap =
-        isLocalDraftThread || baseBranchForWorktree
-          ? {
-              ...(isLocalDraftThread
-                ? {
-                    createThread: {
-                      projectId: activeProject.id,
-                      title,
-                      modelSelection: threadCreateModelSelection,
-                      runtimeMode,
-                      interactionMode,
-                      branch: activeThread.branch,
-                      worktreePath: activeThread.worktreePath,
-                      createdAt: activeThread.createdAt,
-                    },
-                  }
-                : {}),
-              ...(baseBranchForWorktree
-                ? {
-                    prepareWorktree: {
-                      projectCwd: activeProject.cwd,
-                      baseBranch: baseBranchForWorktree,
-                      branch: buildTemporaryWorktreeBranchName(),
-                    },
-                    runSetupScript: true,
-                  }
-                : {}),
-            }
-          : undefined;
-      beginLocalDispatch({ preparingWorktree: false });
-      await api.orchestration.dispatchCommand({
-        type: "thread.turn.start",
-        commandId: newCommandId(),
-        threadId: threadIdForSend,
-        message: {
-          messageId: messageIdForSend,
-          role: "user",
-          text: outgoingMessageText,
-          attachments: turnAttachments,
-        },
-        modelSelection: selectedModelSelection,
-        titleSeed: title,
-        runtimeMode,
-        interactionMode,
-        ...(bootstrap ? { bootstrap } : {}),
-        createdAt: messageCreatedAt,
-      });
-      turnStartSucceeded = true;
-    })().catch(async (err: unknown) => {
-      if (
-        !turnStartSucceeded &&
-        promptRef.current.length === 0 &&
-        composerImagesRef.current.length === 0 &&
-        composerTerminalContextsRef.current.length === 0 &&
-        composerJiraTaskContextsRef.current.length === 0
-      ) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
-        promptRef.current = promptForSend;
-        setPrompt(promptForSend);
-        setComposerCursor(collapseExpandedComposerCursor(promptForSend, promptForSend.length));
-        addComposerImagesToDraft(composerImagesSnapshot.map(cloneComposerImageForRetry));
-        addComposerTerminalContextsToDraft(composerTerminalContextsSnapshot);
-        for (const task of composerJiraTaskContextsSnapshot) {
-          addComposerDraftJiraTaskContext(threadId, task);
-        }
-        setComposerTrigger(detectComposerTrigger(promptForSend, promptForSend.length));
-      }
-      setThreadError(
-        threadIdForSend,
-        err instanceof Error ? err.message : "Failed to send message.",
-      );
-    });
-    sendInFlightRef.current = false;
-    if (!turnStartSucceeded) {
-      resetLocalDispatch();
-    }
   };
   onSendRef.current = onSend;
 
@@ -4301,6 +4349,134 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [onRevertToTurnCount, revertTurnCountByUserMessageId],
   );
 
+  const discardUserMessageEditSession = useCallback(() => {
+    setEditingUserMessageImages((prev) => {
+      for (const img of prev) {
+        revokeBlobPreviewUrl(img.previewUrl);
+      }
+      return [];
+    });
+    setEditingUserMessageId(null);
+    setEditingUserMessageText("");
+  }, []);
+
+  const onStartEditUserMessage = useCallback(
+    async (message: ChatMessage) => {
+      discardUserMessageEditSession();
+      const session = ++userMessageEditSessionRef.current;
+
+      const displayed = deriveDisplayedUserMessageState(message.text);
+      const jiraExtracted = extractTrailingJiraContexts(displayed.visibleText);
+      const cleanText =
+        jiraExtracted.contexts.length > 0 ? jiraExtracted.promptText : displayed.visibleText;
+
+      setEditingUserMessageId(message.id);
+      setEditingUserMessageText(cleanText);
+
+      const imageAttachments = (message.attachments ?? []).filter(
+        (a): a is ChatImageAttachment => a.type === "image",
+      );
+      if (imageAttachments.length > 0) {
+        const materialized = await Promise.all(
+          imageAttachments.map(materializeMessageImageAttachmentForEdit),
+        );
+        if (userMessageEditSessionRef.current !== session) return;
+        setEditingUserMessageImages(
+          materialized.filter((img): img is ComposerImageAttachment => img !== null),
+        );
+      }
+    },
+    [discardUserMessageEditSession],
+  );
+
+  const onSubmitEditUserMessage = useCallback(async () => {
+    const messageId = editingUserMessageIdRef.current;
+    if (!messageId || !activeThread) return;
+    if (isRevertingCheckpoint) {
+      toastManager.add({
+        type: "warning",
+        title: "Cannot edit right now",
+        description: "A checkpoint revert is already in progress.",
+      });
+      return;
+    }
+    const session = userMessageEditSessionRef.current;
+    const targetTurnCount = revertTurnCountByUserMessageId.get(messageId);
+    if (typeof targetTurnCount !== "number") return;
+
+    const textToSend = editingUserMessageTextRef.current.trim();
+    const imagesToSend = [...editingUserMessageImagesRef.current];
+    if (textToSend.length === 0 && imagesToSend.length === 0) return;
+
+    await onRevertToTurnCount(targetTurnCount, { confirm: false });
+    const removed = await waitForThreadMessageRemoval(activeThread.id, messageId, 3_000);
+    if (userMessageEditSessionRef.current !== session) return;
+    if (!removed) {
+      discardUserMessageEditSession();
+      return;
+    }
+
+    setEditingUserMessageId(null);
+    setEditingUserMessageText("");
+    setEditingUserMessageImages((prev) => {
+      for (const img of prev) {
+        revokeBlobPreviewUrl(img.previewUrl);
+      }
+      return [];
+    });
+
+    await submitComposerTurnRef.current?.({
+      prompt: textToSend,
+      trimmedPrompt: textToSend,
+      images: imagesToSend,
+      terminalContexts: [],
+      jiraTaskContexts: [],
+      expiredTerminalContextCount: 0,
+      clearComposerDraft: false,
+    });
+  }, [
+    activeThread,
+    isRevertingCheckpoint,
+    revertTurnCountByUserMessageId,
+    onRevertToTurnCount,
+    discardUserMessageEditSession,
+  ]);
+
+  const onAddEditingUserMessageImages = useCallback((files: File[]) => {
+    const newAttachments: ComposerImageAttachment[] = files.map((file) => ({
+      type: "image" as const,
+      id: randomUUID(),
+      file,
+      name: file.name,
+      previewUrl: URL.createObjectURL(file),
+      mimeType: file.type,
+      sizeBytes: file.size,
+    }));
+    setEditingUserMessageImages((prev) => [...prev, ...newAttachments]);
+  }, []);
+
+  const onRemoveEditingUserMessageImage = useCallback((imageId: string) => {
+    setEditingUserMessageImages((prev) => {
+      const target = prev.find((img) => img.id === imageId);
+      if (target) revokeBlobPreviewUrl(target.previewUrl);
+      return prev.filter((img) => img.id !== imageId);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (editingUserMessageId) {
+      discardUserMessageEditSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeThread?.id]);
+
+  useEffect(() => {
+    if (expandedImage && editingUserMessageId) {
+      discardUserMessageEditSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedImage]);
+
   // Empty state: no active thread
   if (!activeThread) {
     return (
@@ -4420,6 +4596,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 isSendBusy={isSendBusy}
                 isPreparingWorktree={isPreparingWorktree}
                 onSubagentSelect={onSubagentSelect}
+                editingUserMessageId={editingUserMessageId}
+                editingUserMessageText={editingUserMessageText}
+                editingUserMessageImages={editingUserMessageImages}
+                onStartEditUserMessage={onStartEditUserMessage}
+                onChangeEditingUserMessageText={setEditingUserMessageText}
+                onAddEditingUserMessageImages={onAddEditingUserMessageImages}
+                onRemoveEditingUserMessageImage={onRemoveEditingUserMessageImage}
+                onCancelEditUserMessage={discardUserMessageEditSession}
+                onSubmitEditUserMessage={onSubmitEditUserMessage}
               />
             </div>
 
