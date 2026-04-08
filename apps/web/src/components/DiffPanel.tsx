@@ -1,12 +1,14 @@
 import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ThreadId, type TurnId } from "@marcode/contracts";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns2Icon,
+  GitBranchIcon,
+  ListIcon,
   Rows3Icon,
   TextWrapIcon,
 } from "lucide-react";
@@ -24,7 +26,8 @@ import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import { cn } from "~/lib/utils";
 import { readNativeApi } from "../nativeApi";
 import { resolvePathLinkTarget } from "../terminal-links";
-import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
+import { parseDiffRouteSearch, stripDiffSearchParams, type DiffScope } from "../diffRouteSearch";
+import { gitWorkingTreeDiffQueryOptions, gitQueryKeys } from "~/lib/gitReactQuery";
 import { useTheme } from "../hooks/useTheme";
 import { buildPatchCacheKey } from "../lib/diffRendering";
 import { resolveDiffThemeName } from "../lib/diffRendering";
@@ -180,6 +183,9 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   });
   const diffSearch = useSearch({ strict: false, select: (search) => parseDiffRouteSearch(search) });
   const diffOpen = diffSearch.diff === "1";
+  const diffScope: DiffScope = diffSearch.diffScope ?? "session";
+  const isGitMode = diffScope === "git";
+  const queryClient = useQueryClient();
   const activeThreadId = routeThreadId;
   const activeThread = useStore((store) =>
     activeThreadId ? store.threads.find((thread) => thread.id === activeThreadId) : undefined,
@@ -266,7 +272,13 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       fromTurnCount: activeCheckpointRange?.fromTurnCount ?? null,
       toTurnCount: activeCheckpointRange?.toTurnCount ?? null,
       cacheScope: selectedTurn ? `turn:${selectedTurn.turnId}` : conversationCacheScope,
-      enabled: isGitRepo,
+      enabled: isGitRepo && !isGitMode,
+    }),
+  );
+  const gitWorkingTreeDiffQuery = useQuery(
+    gitWorkingTreeDiffQueryOptions({
+      cwd: activeCwd ?? null,
+      enabled: isGitRepo && isGitMode && diffOpen,
     }),
   );
   const selectedTurnCheckpointDiff = selectedTurn
@@ -283,12 +295,25 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         ? "Failed to load checkpoint diff."
         : null;
 
-  const selectedPatch = selectedTurn ? selectedTurnCheckpointDiff : conversationCheckpointDiff;
+  const selectedPatch = isGitMode
+    ? gitWorkingTreeDiffQuery.data?.diff
+    : selectedTurn
+      ? selectedTurnCheckpointDiff
+      : conversationCheckpointDiff;
+  const isLoadingDiff = isGitMode ? gitWorkingTreeDiffQuery.isLoading : isLoadingCheckpointDiff;
+  const diffError = isGitMode
+    ? gitWorkingTreeDiffQuery.error instanceof Error
+      ? gitWorkingTreeDiffQuery.error.message
+      : gitWorkingTreeDiffQuery.error
+        ? "Failed to load working tree diff."
+        : null
+    : checkpointDiffError;
+  const isGitDiffTruncated = isGitMode && (gitWorkingTreeDiffQuery.data?.truncated ?? false);
   const hasResolvedPatch = typeof selectedPatch === "string";
   const hasNoNetChanges = hasResolvedPatch && selectedPatch.trim().length === 0;
   const renderablePatch = useMemo(
-    () => getRenderablePatch(selectedPatch, `diff-panel:${resolvedTheme}`),
-    [resolvedTheme, selectedPatch],
+    () => getRenderablePatch(selectedPatch, `diff-panel:${resolvedTheme}:${diffScope}`),
+    [diffScope, resolvedTheme, selectedPatch],
   );
   const renderableFiles = useMemo(() => {
     if (!renderablePatch || renderablePatch.kind !== "files") {
@@ -308,6 +333,14 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     }
     previousDiffOpenRef.current = diffOpen;
   }, [diffOpen, settings.diffWordWrap]);
+
+  useEffect(() => {
+    if (isGitMode && activeCwd) {
+      void queryClient.invalidateQueries({
+        queryKey: gitQueryKeys.workingTreeDiff(activeCwd),
+      });
+    }
+  }, [isGitMode, activeCwd, gitStatusQuery.data, queryClient]);
 
   useEffect(() => {
     if (!selectedFilePath || !patchViewportRef.current) {
@@ -338,7 +371,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       params: { threadId: activeThread.id },
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
-        return { ...rest, diff: "1", diffTurnId: turnId };
+        return { ...rest, diff: "1", diffTurnId: turnId, diffScope: undefined };
       },
     });
   };
@@ -349,7 +382,18 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       params: { threadId: activeThread.id },
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
-        return { ...rest, diff: "1" };
+        return { ...rest, diff: "1", diffScope: undefined };
+      },
+    });
+  };
+  const setDiffScope = (scope: DiffScope) => {
+    if (!activeThread) return;
+    void navigate({
+      to: "/$threadId",
+      params: { threadId: activeThread.id },
+      search: (previous) => {
+        const rest = stripDiffSearchParams(previous);
+        return { ...rest, diff: "1" as const, diffScope: scope === "session" ? undefined : scope };
       },
     });
   };
@@ -417,96 +461,131 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const headerRow = (
     <>
       <div className="relative min-w-0 flex-1 [-webkit-app-region:no-drag]">
-        {canScrollTurnStripLeft && (
-          <div className="pointer-events-none absolute inset-y-0 left-8 z-10 w-7 bg-linear-to-r from-card to-transparent" />
-        )}
-        {canScrollTurnStripRight && (
-          <div className="pointer-events-none absolute inset-y-0 right-8 z-10 w-7 bg-linear-to-l from-card to-transparent" />
-        )}
-        <button
-          type="button"
-          className={cn(
-            "absolute left-0 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors",
-            canScrollTurnStripLeft
-              ? "border-border/70 hover:border-border hover:text-foreground"
-              : "cursor-not-allowed border-border/40 text-muted-foreground/40",
-          )}
-          onClick={() => scrollTurnStripBy(-180)}
-          disabled={!canScrollTurnStripLeft}
-          aria-label="Scroll turn list left"
-        >
-          <ChevronLeftIcon className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          className={cn(
-            "absolute right-0 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors",
-            canScrollTurnStripRight
-              ? "border-border/70 hover:border-border hover:text-foreground"
-              : "cursor-not-allowed border-border/40 text-muted-foreground/40",
-          )}
-          onClick={() => scrollTurnStripBy(180)}
-          disabled={!canScrollTurnStripRight}
-          aria-label="Scroll turn list right"
-        >
-          <ChevronRightIcon className="size-3.5" />
-        </button>
-        <div
-          ref={turnStripRef}
-          className="turn-chip-strip flex gap-1 overflow-x-auto px-8 py-0.5"
-          onWheel={onTurnStripWheel}
-        >
-          <button
-            type="button"
-            className="shrink-0 rounded-md"
-            onClick={selectWholeConversation}
-            data-turn-chip-selected={selectedTurnId === null}
-          >
-            <div
-              className={cn(
-                "rounded-md border px-2 py-1 text-left transition-colors",
-                selectedTurnId === null
-                  ? "border-border bg-accent text-accent-foreground"
-                  : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
-              )}
-            >
-              <div className="text-[10px] leading-tight font-medium">All turns</div>
-            </div>
-          </button>
-          {orderedTurnDiffSummaries.map((summary) => (
+        {isGitMode ? (
+          <div className="flex h-full items-center px-2">
+            <span className="text-[10px] leading-tight font-medium text-muted-foreground">
+              Working tree changes
+            </span>
+          </div>
+        ) : (
+          <>
+            {canScrollTurnStripLeft && (
+              <div className="pointer-events-none absolute inset-y-0 left-8 z-10 w-7 bg-linear-to-r from-card to-transparent" />
+            )}
+            {canScrollTurnStripRight && (
+              <div className="pointer-events-none absolute inset-y-0 right-8 z-10 w-7 bg-linear-to-l from-card to-transparent" />
+            )}
             <button
-              key={summary.turnId}
               type="button"
-              className="shrink-0 rounded-md"
-              onClick={() => selectTurn(summary.turnId)}
-              title={summary.turnId}
-              data-turn-chip-selected={summary.turnId === selectedTurn?.turnId}
+              className={cn(
+                "absolute left-0 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors",
+                canScrollTurnStripLeft
+                  ? "border-border/70 hover:border-border hover:text-foreground"
+                  : "cursor-not-allowed border-border/40 text-muted-foreground/40",
+              )}
+              onClick={() => scrollTurnStripBy(-180)}
+              disabled={!canScrollTurnStripLeft}
+              aria-label="Scroll turn list left"
             >
-              <div
-                className={cn(
-                  "rounded-md border px-2 py-1 text-left transition-colors",
-                  summary.turnId === selectedTurn?.turnId
-                    ? "border-border bg-accent text-accent-foreground"
-                    : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
-                )}
-              >
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] leading-tight font-medium">
-                    Turn{" "}
-                    {summary.checkpointTurnCount ??
-                      inferredCheckpointTurnCountByTurnId[summary.turnId] ??
-                      "?"}
-                  </span>
-                  <span className="text-[9px] leading-tight opacity-70">
-                    {formatShortTimestamp(summary.completedAt, settings.timestampFormat)}
-                  </span>
-                </div>
-              </div>
+              <ChevronLeftIcon className="size-3.5" />
             </button>
-          ))}
-        </div>
+            <button
+              type="button"
+              className={cn(
+                "absolute right-0 top-1/2 z-20 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-md border bg-background/90 text-muted-foreground transition-colors",
+                canScrollTurnStripRight
+                  ? "border-border/70 hover:border-border hover:text-foreground"
+                  : "cursor-not-allowed border-border/40 text-muted-foreground/40",
+              )}
+              onClick={() => scrollTurnStripBy(180)}
+              disabled={!canScrollTurnStripRight}
+              aria-label="Scroll turn list right"
+            >
+              <ChevronRightIcon className="size-3.5" />
+            </button>
+            <div
+              ref={turnStripRef}
+              className="turn-chip-strip flex gap-1 overflow-x-auto px-8 py-0.5"
+              onWheel={onTurnStripWheel}
+            >
+              <button
+                type="button"
+                className="shrink-0 rounded-md"
+                onClick={selectWholeConversation}
+                data-turn-chip-selected={selectedTurnId === null}
+              >
+                <div
+                  className={cn(
+                    "rounded-md border px-2 py-1 text-left transition-colors",
+                    selectedTurnId === null
+                      ? "border-border bg-accent text-accent-foreground"
+                      : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
+                  )}
+                >
+                  <div className="text-[10px] leading-tight font-medium">All turns</div>
+                </div>
+              </button>
+              {orderedTurnDiffSummaries.map((summary) => (
+                <button
+                  key={summary.turnId}
+                  type="button"
+                  className="shrink-0 rounded-md"
+                  onClick={() => selectTurn(summary.turnId)}
+                  title={summary.turnId}
+                  data-turn-chip-selected={summary.turnId === selectedTurn?.turnId}
+                >
+                  <div
+                    className={cn(
+                      "rounded-md border px-2 py-1 text-left transition-colors",
+                      summary.turnId === selectedTurn?.turnId
+                        ? "border-border bg-accent text-accent-foreground"
+                        : "border-border/70 bg-background/70 text-muted-foreground/80 hover:border-border hover:text-foreground/80",
+                    )}
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] leading-tight font-medium">
+                        Turn{" "}
+                        {summary.checkpointTurnCount ??
+                          inferredCheckpointTurnCountByTurnId[summary.turnId] ??
+                          "?"}
+                      </span>
+                      <span className="text-[9px] leading-tight opacity-70">
+                        {formatShortTimestamp(summary.completedAt, settings.timestampFormat)}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]">
+        <ToggleGroup
+          className="shrink-0"
+          variant="outline"
+          size="xs"
+          value={[diffScope]}
+          onValueChange={(value) => {
+            const next = value[0];
+            if (!next) return;
+            if (next === "session" || next === "git") {
+              setDiffScope(next);
+            }
+          }}
+        >
+          <Toggle aria-label="Session turn diffs" title="Session turn diffs" value="session">
+            <ListIcon className="size-3" />
+          </Toggle>
+          <Toggle
+            aria-label="Git working tree diff"
+            title="Git working tree diff"
+            value="git"
+            disabled={!isGitRepo}
+          >
+            <GitBranchIcon className="size-3" />
+          </Toggle>
+        </ToggleGroup>
         <ToggleGroup
           className="shrink-0"
           variant="outline"
@@ -552,7 +631,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           Turn diffs are unavailable because this project is not a git repository.
         </div>
-      ) : orderedTurnDiffSummaries.length === 0 ? (
+      ) : !isGitMode && orderedTurnDiffSummaries.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground/70">
           No completed turns yet.
         </div>
@@ -562,20 +641,33 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
             ref={patchViewportRef}
             className="diff-panel-viewport min-h-0 min-w-0 flex-1 overflow-hidden"
           >
-            {checkpointDiffError && !renderablePatch && (
+            {diffError && !renderablePatch && (
               <div className="px-3">
-                <p className="mb-2 text-[11px] text-red-500/80">{checkpointDiffError}</p>
+                <p className="mb-2 text-[11px] text-red-500/80">{diffError}</p>
+              </div>
+            )}
+            {isGitDiffTruncated && renderablePatch && (
+              <div className="px-3 pt-1">
+                <p className="text-[11px] text-amber-500/80">
+                  Diff output was truncated because it exceeded the size limit.
+                </p>
               </div>
             )}
             {!renderablePatch ? (
-              isLoadingCheckpointDiff ? (
-                <DiffPanelLoadingState label="Loading checkpoint diff..." />
+              isLoadingDiff ? (
+                <DiffPanelLoadingState
+                  label={isGitMode ? "Loading working tree diff..." : "Loading checkpoint diff..."}
+                />
               ) : (
                 <div className="flex h-full items-center justify-center px-3 py-2 text-xs text-muted-foreground/70">
                   <p>
                     {hasNoNetChanges
-                      ? "No net changes in this selection."
-                      : "No patch available for this selection."}
+                      ? isGitMode
+                        ? "No working tree changes."
+                        : "No net changes in this selection."
+                      : isGitMode
+                        ? "No working tree diff available."
+                        : "No patch available for this selection."}
                   </p>
                 </div>
               )

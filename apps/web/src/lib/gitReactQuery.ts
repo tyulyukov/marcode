@@ -21,6 +21,7 @@ export const gitQueryKeys = {
   branches: (cwd: string | null) => ["git", "branches", cwd] as const,
   branchSearch: (cwd: string | null, query: string) =>
     ["git", "branches", cwd, "search", query] as const,
+  workingTreeDiff: (cwd: string | null) => ["git", "workingTreeDiff", cwd] as const,
 };
 
 export const gitMutationKeys = {
@@ -245,6 +246,24 @@ export function gitPreparePullRequestThreadMutationOptions(input: {
     },
     onSuccess: async () => {
       await invalidateGitBranchQueries(input.queryClient, input.cwd);
+    },
+  });
+}
+
+export function gitWorkingTreeDiffQueryOptions(input: { cwd: string | null; enabled?: boolean }) {
+  return queryOptions({
+    queryKey: gitQueryKeys.workingTreeDiff(input.cwd),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      if (!input.cwd) throw new Error("Working tree diff is unavailable.");
+      return api.git.workingTreeDiff({ cwd: input.cwd });
+    },
+    enabled: input.cwd !== null && (input.enabled ?? true),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    retry: (failureCount, error) => {
+      if (isDirectoryMissingError(error)) return false;
+      return failureCount < 3;
     },
   });
 }
