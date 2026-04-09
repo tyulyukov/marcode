@@ -972,25 +972,23 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   };
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
-  if (payload && typeof payload.detail === "string" && payload.detail.length > 0) {
+  const resultText = extractToolResultText(payload);
+  if (resultText) {
+    const { output, exitCode } = stripTrailingExitCode(resultText);
+    if (output) {
+      entry.detail = output;
+    }
+    if (exitCode !== undefined) {
+      entry.exitCode = exitCode;
+    }
+  }
+  if (!entry.detail && payload && typeof payload.detail === "string" && payload.detail.length > 0) {
     const { output: detail, exitCode } = stripTrailingExitCode(payload.detail);
     if (detail) {
       entry.detail = detail;
     }
     if (exitCode !== undefined) {
       entry.exitCode = exitCode;
-    }
-  }
-  if (!entry.detail) {
-    const resultText = extractToolResultText(payload);
-    if (resultText) {
-      const { output, exitCode } = stripTrailingExitCode(resultText);
-      if (output) {
-        entry.detail = output;
-      }
-      if (exitCode !== undefined) {
-        entry.exitCode = exitCode;
-      }
     }
   }
   if (commandPreview.command) {

@@ -28,6 +28,7 @@ import {
   GlobeIcon,
   HammerIcon,
   ImagePlusIcon,
+  LoaderCircleIcon,
   type LucideIcon,
   SendIcon,
   SquarePenIcon,
@@ -113,7 +114,7 @@ interface MessagesTimelineProps {
   onAddEditingUserMessageImages: (files: File[]) => void;
   onRemoveEditingUserMessageImage: (imageId: string) => void;
   onCancelEditUserMessage: () => void;
-  onSubmitEditUserMessage: () => void;
+  onSubmitEditUserMessage: () => void | Promise<void>;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -721,12 +722,19 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
   onAddImages: (files: File[]) => void;
   onRemoveImage: (imageId: string) => void;
   onCancel: () => void;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
   onRevert: (messageId: MessageId) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const { onSubmit, onCancel, onAddImages } = props;
+
+  const handleEditSubmit = useCallback(() => {
+    if (isSubmittingEdit) return;
+    setIsSubmittingEdit(true);
+    Promise.resolve(onSubmit()).finally(() => setIsSubmittingEdit(false));
+  }, [onSubmit, isSubmittingEdit]);
 
   useEffect(() => {
     if (props.isEditing && textareaRef.current) {
@@ -740,13 +748,13 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
-        onSubmit();
+        handleEditSubmit();
       } else if (e.key === "Escape") {
         e.preventDefault();
         onCancel();
       }
     },
-    [onSubmit, onCancel],
+    [handleEditSubmit, onCancel],
   );
 
   const handleFileChange = useCallback(
@@ -762,7 +770,7 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
     [onAddImages],
   );
 
-  const isBusy = props.isWorking || props.isSendBusy;
+  const isBusy = props.isWorking || props.isSendBusy || isSubmittingEdit;
   const canSubmitEdit =
     !isBusy && (props.editText.trim().length > 0 || props.editImages.length > 0);
   const lineCount = props.editText.split("\n").length;
@@ -840,12 +848,16 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
                 type="button"
                 size="xs"
                 variant="default"
-                onClick={props.onSubmit}
+                onClick={handleEditSubmit}
                 disabled={!canSubmitEdit}
                 title="Send edited message (⌘+Enter)"
               >
-                <SendIcon className="size-3" />
-                Send
+                {isSubmittingEdit ? (
+                  <LoaderCircleIcon className="size-3 animate-spin" />
+                ) : (
+                  <SendIcon className="size-3" />
+                )}
+                {isSubmittingEdit ? "Saving..." : "Send"}
               </Button>
             </div>
           </div>

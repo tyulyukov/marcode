@@ -33,7 +33,7 @@ function deriveCommandAndOutput(entry: WorkLogEntry): {
   output: string | null;
 } {
   if (entry.command) {
-    const output = detailIsDistinctOutput(entry.detail, entry.command)
+    const output = detailIsDistinctOutput(entry.detail, entry.command, entry.rawCommand)
       ? (entry.detail ?? null)
       : null;
     return { displayCommand: entry.command, output };
@@ -50,11 +50,20 @@ function deriveCommandAndOutput(entry: WorkLogEntry): {
   return { displayCommand: null, output: entry.detail ?? null };
 }
 
-function detailIsDistinctOutput(detail: string | undefined, command: string): boolean {
+const SHELL_WRAPPER_RE =
+  /^\/(?:bin|usr\/bin|nix\/store\/[^/]+\/bin)\/(?:bash|zsh|sh|dash|fish)\s/;
+
+function detailIsDistinctOutput(
+  detail: string | undefined,
+  command: string,
+  rawCommand: string | undefined,
+): boolean {
   if (!detail || detail.length === 0) return false;
   const stripped = detail.replace(DETAIL_COMMAND_PREFIX_RE, "").trim();
   if (stripped === command.trim()) return false;
+  if (rawCommand && stripped === rawCommand.trim()) return false;
   if (stripped.startsWith("{") && stripped.includes(command.slice(0, 20))) return false;
+  if (SHELL_WRAPPER_RE.test(stripped)) return false;
   return true;
 }
 

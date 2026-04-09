@@ -226,7 +226,7 @@ import {
   revokeUserMessagePreviewUrls,
   threadHasStarted,
   waitForStartedServerThread,
-  waitForThreadMessageRemoval,
+  waitForRevertOutcome,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import {
@@ -3393,13 +3393,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
   submitComposerTurnRef.current = submitComposerTurn;
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number, options?: { confirm?: boolean }) => {
+    async (turnCount: number, options?: { confirm?: boolean }): Promise<boolean> => {
       const api = readNativeApi();
-      if (!api || !activeThread || isRevertingCheckpoint) return;
+      if (!api || !activeThread || isRevertingCheckpoint) return false;
 
       if (phase === "running" || isSendBusy || isConnecting) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
-        return;
+        return false;
       }
       if (options?.confirm !== false) {
         const confirmed = await api.dialogs.confirm(
@@ -3410,7 +3410,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           ].join("\n"),
         );
         if (!confirmed) {
-          return;
+          return false;
         }
       }
 
@@ -3424,13 +3424,16 @@ export default function ChatView({ threadId }: ChatViewProps) {
           turnCount,
           createdAt: new Date().toISOString(),
         });
+        return true;
       } catch (err) {
         setThreadError(
           activeThread.id,
           err instanceof Error ? err.message : "Failed to revert thread state.",
         );
+        return false;
+      } finally {
+        setIsRevertingCheckpoint(false);
       }
-      setIsRevertingCheckpoint(false);
     },
     [activeThread, isConnecting, isRevertingCheckpoint, isSendBusy, phase, setThreadError],
   );
@@ -4406,10 +4409,27 @@ export default function ChatView({ threadId }: ChatViewProps) {
     const imagesToSend = [...editingUserMessageImagesRef.current];
     if (textToSend.length === 0 && imagesToSend.length === 0) return;
 
-    await onRevertToTurnCount(targetTurnCount, { confirm: false });
-    const removed = await waitForThreadMessageRemoval(activeThread.id, messageId, 3_000);
+    const reverted = await onRevertToTurnCount(targetTurnCount, { confirm: false });
+    if (!reverted) {
+      toastManager.add({
+        type: "error",
+        title: "Edit failed",
+        description: "Could not revert to the checkpoint. The thread may be busy or disconnected.",
+      });
+      return;
+    }
+
+    const outcome = await waitForRevertOutcome(activeThread.id, messageId);
     if (userMessageEditSessionRef.current !== session) return;
-    if (!removed) {
+    if (!outcome.ok) {
+      toastManager.add({
+        type: "error",
+        title: "Edit failed",
+        description:
+          outcome.reason === "revert-failed"
+            ? outcome.detail
+            : "Timed out waiting for the revert to complete. Please try again.",
+      });
       discardUserMessageEditSession();
       return;
     }

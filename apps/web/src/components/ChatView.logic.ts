@@ -321,52 +321,80 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   );
 }
 
-export const EDIT_REVERT_SYNC_TIMEOUT_MS = 3_000;
+export const EDIT_REVERT_SYNC_TIMEOUT_MS = 15_000;
 
-export async function waitForThreadMessageRemoval(
+export type RevertOutcome =
+  | { ok: true }
+  | { ok: false; reason: "timeout" }
+  | { ok: false; reason: "revert-failed"; detail: string };
+
+export async function waitForRevertOutcome(
   threadId: ThreadId,
   messageId: MessageId,
   timeoutMs = EDIT_REVERT_SYNC_TIMEOUT_MS,
-): Promise<boolean> {
+): Promise<RevertOutcome> {
   const getThread = () => useStore.getState().threads.find((thread) => thread.id === threadId);
+
+  const initialActivityCount = getThread()?.activities.length ?? 0;
 
   const threadContainsMessage = () => {
     const thread = getThread();
     return thread ? thread.messages.some((m) => m.id === messageId) : false;
   };
 
+  const detectRevertFailure = (): string | null => {
+    const thread = getThread();
+    if (!thread) return null;
+    const newActivities = thread.activities.slice(initialActivityCount);
+    const failure = newActivities.find(
+      (a) => a.kind === "checkpoint.revert.failed",
+    );
+    if (!failure) return null;
+    const payload = failure.payload as Record<string, unknown> | null;
+    return (
+      (typeof payload?.detail === "string" ? payload.detail : null) ??
+      failure.summary
+    );
+  };
+
   if (!threadContainsMessage()) {
-    return true;
+    return { ok: true };
   }
 
-  return await new Promise<boolean>((resolve) => {
+  return await new Promise<RevertOutcome>((resolve) => {
     let settled = false;
     let timeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
-    const finish = (result: boolean) => {
-      if (settled) {
-        return;
-      }
+    const finish = (result: RevertOutcome) => {
+      if (settled) return;
       settled = true;
-      if (timeoutId !== null) {
-        globalThis.clearTimeout(timeoutId);
-      }
+      if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
       unsubscribe();
       resolve(result);
     };
 
     const unsubscribe = useStore.subscribe(() => {
       if (!threadContainsMessage()) {
-        finish(true);
+        finish({ ok: true });
+        return;
+      }
+      const failureDetail = detectRevertFailure();
+      if (failureDetail !== null) {
+        finish({ ok: false, reason: "revert-failed", detail: failureDetail });
       }
     });
 
     if (!threadContainsMessage()) {
-      finish(true);
+      finish({ ok: true });
+      return;
+    }
+    const immediateFailure = detectRevertFailure();
+    if (immediateFailure !== null) {
+      finish({ ok: false, reason: "revert-failed", detail: immediateFailure });
       return;
     }
 
     timeoutId = globalThis.setTimeout(() => {
-      finish(false);
+      finish({ ok: false, reason: "timeout" });
     }, timeoutMs);
   });
 }
