@@ -26,6 +26,7 @@ import {
   normalizeTerminalContextText,
 } from "./lib/terminalContext";
 import { type JiraTaskDraft, jiraTaskDedupKey } from "./lib/jiraContext";
+import { type QuotedContext, quotedContextDedupKey } from "./lib/quotedContext";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
@@ -177,6 +178,7 @@ export interface ComposerThreadDraftState {
   persistedAttachments: PersistedComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
   jiraTaskContexts: JiraTaskDraft[];
+  quotedContexts: QuotedContext[];
   modelSelectionByProvider: Partial<Record<ProviderKind, ModelSelection>>;
   activeProvider: ProviderKind | null;
   runtimeMode: RuntimeMode | null;
@@ -274,6 +276,9 @@ interface ComposerDraftStoreState {
   removeJiraTaskContext: (threadId: ThreadId, taskId: string) => void;
   setJiraTaskContexts: (threadId: ThreadId, tasks: JiraTaskDraft[]) => void;
   clearJiraTaskContexts: (threadId: ThreadId) => void;
+  addQuotedContext: (threadId: ThreadId, context: QuotedContext) => void;
+  removeQuotedContext: (threadId: ThreadId, contextId: string) => void;
+  clearQuotedContexts: (threadId: ThreadId) => void;
   clearPersistedAttachments: (threadId: ThreadId) => void;
   syncPersistedAttachments: (
     threadId: ThreadId,
@@ -325,6 +330,7 @@ const EMPTY_IDS: string[] = [];
 const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_JIRA_TASK_CONTEXTS: JiraTaskDraft[] = [];
+const EMPTY_QUOTED_CONTEXTS: QuotedContext[] = [];
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
@@ -338,6 +344,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   persistedAttachments: EMPTY_PERSISTED_ATTACHMENTS,
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
   jiraTaskContexts: EMPTY_JIRA_TASK_CONTEXTS,
+  quotedContexts: EMPTY_QUOTED_CONTEXTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
   runtimeMode: null,
@@ -352,6 +359,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     persistedAttachments: [],
     terminalContexts: [],
     jiraTaskContexts: [],
+    quotedContexts: [],
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,
@@ -423,6 +431,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.persistedAttachments.length === 0 &&
     draft.terminalContexts.length === 0 &&
     draft.jiraTaskContexts.length === 0 &&
+    draft.quotedContexts.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
@@ -1305,6 +1314,7 @@ function toHydratedThreadDraft(
         ...task,
         attachments: [],
       })) ?? [],
+    quotedContexts: [],
     modelSelectionByProvider,
     activeProvider,
     runtimeMode: persistedDraft.runtimeMode ?? null,
@@ -2186,6 +2196,71 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
           return { draftsByThreadId: nextDraftsByThreadId };
         });
       },
+      addQuotedContext: (threadId, context) => {
+        if (threadId.length === 0) {
+          return;
+        }
+        set((state) => {
+          const existing = state.draftsByThreadId[threadId] ?? createEmptyThreadDraft();
+          const dedupKey = quotedContextDedupKey(context);
+          if (existing.quotedContexts.some((c) => quotedContextDedupKey(c) === dedupKey)) {
+            return state;
+          }
+          return {
+            draftsByThreadId: {
+              ...state.draftsByThreadId,
+              [threadId]: {
+                ...existing,
+                quotedContexts: [...existing.quotedContexts, context],
+              },
+            },
+          };
+        });
+      },
+      removeQuotedContext: (threadId, contextId) => {
+        if (threadId.length === 0) {
+          return;
+        }
+        set((state) => {
+          const current = state.draftsByThreadId[threadId];
+          if (!current) {
+            return state;
+          }
+          const nextDraft: ComposerThreadDraftState = {
+            ...current,
+            quotedContexts: current.quotedContexts.filter((c) => c.id !== contextId),
+          };
+          const nextDraftsByThreadId = { ...state.draftsByThreadId };
+          if (shouldRemoveDraft(nextDraft)) {
+            delete nextDraftsByThreadId[threadId];
+          } else {
+            nextDraftsByThreadId[threadId] = nextDraft;
+          }
+          return { draftsByThreadId: nextDraftsByThreadId };
+        });
+      },
+      clearQuotedContexts: (threadId) => {
+        if (threadId.length === 0) {
+          return;
+        }
+        set((state) => {
+          const current = state.draftsByThreadId[threadId];
+          if (!current || current.quotedContexts.length === 0) {
+            return state;
+          }
+          const nextDraft: ComposerThreadDraftState = {
+            ...current,
+            quotedContexts: [],
+          };
+          const nextDraftsByThreadId = { ...state.draftsByThreadId };
+          if (shouldRemoveDraft(nextDraft)) {
+            delete nextDraftsByThreadId[threadId];
+          } else {
+            nextDraftsByThreadId[threadId] = nextDraft;
+          }
+          return { draftsByThreadId: nextDraftsByThreadId };
+        });
+      },
       clearPersistedAttachments: (threadId) => {
         if (threadId.length === 0) {
           return;
@@ -2256,6 +2331,7 @@ export const useComposerDraftStore = create<ComposerDraftStoreState>()(
             persistedAttachments: [],
             terminalContexts: [],
             jiraTaskContexts: [],
+            quotedContexts: [],
           };
           const nextDraftsByThreadId = { ...state.draftsByThreadId };
           if (shouldRemoveDraft(nextDraft)) {

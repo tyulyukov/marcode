@@ -169,6 +169,12 @@ import {
   removeInlineJiraContextPlaceholder,
 } from "../lib/jiraContext";
 import {
+  appendQuotedContextsToPrompt,
+  formatQuotedContextPreview,
+  type QuotedContext,
+} from "../lib/quotedContext";
+import { QuotedContextInlineChip } from "./chat/QuotedContextInlineChip";
+import {
   jiraConnectionStatusQueryOptions,
   jiraIssueSearchQueryOptions,
   jiraIssueQueryOptions,
@@ -409,6 +415,7 @@ interface SubmitComposerTurnInput {
   images: ComposerImageAttachment[];
   terminalContexts: TerminalContextDraft[];
   jiraTaskContexts: JiraTaskDraft[];
+  quotedContexts: QuotedContext[];
   expiredTerminalContextCount: number;
   clearComposerDraft: boolean;
 }
@@ -684,6 +691,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerJiraTaskContexts = composerDraft.jiraTaskContexts;
+  const composerQuotedContexts = composerDraft.quotedContexts;
   const composerSendState = useMemo(
     () =>
       deriveComposerSendState({
@@ -691,8 +699,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
         imageCount: composerImages.length,
         terminalContexts: composerTerminalContexts,
         jiraTaskContexts: composerJiraTaskContexts,
+        quotedContextCount: composerQuotedContexts.length,
       }),
-    [composerImages.length, composerTerminalContexts, composerJiraTaskContexts, prompt],
+    [
+      composerImages.length,
+      composerTerminalContexts,
+      composerJiraTaskContexts,
+      composerQuotedContexts.length,
+      prompt,
+    ],
   );
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
@@ -719,8 +734,12 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const addComposerDraftJiraTaskContext = useComposerDraftStore(
     (store) => store.addJiraTaskContext,
   );
+  const addComposerDraftQuotedContext = useComposerDraftStore((store) => store.addQuotedContext);
   const removeComposerDraftJiraTaskContext = useComposerDraftStore(
     (store) => store.removeJiraTaskContext,
+  );
+  const removeComposerDraftQuotedContext = useComposerDraftStore(
+    (store) => store.removeQuotedContext,
   );
   const clearComposerDraftPersistedAttachments = useComposerDraftStore(
     (store) => store.clearPersistedAttachments,
@@ -3134,13 +3153,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const composerImagesSnapshot = [...input.images];
       const composerTerminalContextsSnapshot = [...input.terminalContexts];
       const composerJiraTaskContextsSnapshot = [...input.jiraTaskContexts];
+      const composerQuotedContextsSnapshot = [...input.quotedContexts];
       const cleanedPromptForSend = replaceInlineJiraPlaceholdersWithLabels(
         input.prompt,
         composerJiraTaskContextsSnapshot,
       );
-      const messageTextForSend = appendJiraContextsToPrompt(
+      const withTerminalAndJira = appendJiraContextsToPrompt(
         appendTerminalContextsToPrompt(cleanedPromptForSend, composerTerminalContextsSnapshot),
         composerJiraTaskContextsSnapshot,
+      );
+      const messageTextForSend = appendQuotedContextsToPrompt(
+        withTerminalAndJira,
+        composerQuotedContextsSnapshot,
       );
       const messageIdForSend = newMessageId();
       const messageCreatedAt = new Date().toISOString();
@@ -3457,6 +3481,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       imageCount: composerImages.length,
       terminalContexts: composerTerminalContexts,
       jiraTaskContexts: composerJiraTaskContexts,
+      quotedContextCount: composerQuotedContexts.length,
     });
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
@@ -3509,6 +3534,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       images: [...composerImages],
       terminalContexts: [...sendableComposerTerminalContexts],
       jiraTaskContexts: [...composerJiraTaskContexts],
+      quotedContexts: [...composerQuotedContexts],
       expiredTerminalContextCount,
       clearComposerDraft: true,
     });
@@ -4304,6 +4330,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
       [groupId]: !existing[groupId],
     }));
   }, []);
+  const onReplyToSelection = useCallback(
+    (context: QuotedContext) => {
+      if (!activeThread) return;
+      addComposerDraftQuotedContext(activeThread.id, context);
+      focusComposer();
+    },
+    [activeThread, addComposerDraftQuotedContext, focusComposer],
+  );
   const onSubagentSelect = useCallback((taskId: string) => {
     setSelectedSubagentTaskId(taskId);
   }, []);
@@ -4452,6 +4486,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       images: imagesToSend,
       terminalContexts: [],
       jiraTaskContexts: [],
+      quotedContexts: [],
       expiredTerminalContextCount: 0,
       clearComposerDraft: false,
     });
@@ -4627,6 +4662,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 onRemoveEditingUserMessageImage={onRemoveEditingUserMessageImage}
                 onCancelEditUserMessage={discardUserMessageEditSession}
                 onSubmitEditUserMessage={onSubmitEditUserMessage}
+                onReplyToSelection={onReplyToSelection}
               />
             </div>
 
@@ -4786,6 +4822,22 @@ export default function ChatView({ threadId }: ChatViewProps) {
                                 <XIcon />
                               </Button>
                             </div>
+                          ))}
+                        </div>
+                      )}
+                    {!isComposerApprovalState &&
+                      pendingUserInputs.length === 0 &&
+                      composerQuotedContexts.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1">
+                          {composerQuotedContexts.map((ctx) => (
+                            <QuotedContextInlineChip
+                              key={ctx.id}
+                              preview={formatQuotedContextPreview(ctx)}
+                              tooltipText={
+                                ctx.text.length > 300 ? `${ctx.text.slice(0, 300)}…` : ctx.text
+                              }
+                              onRemove={() => removeComposerDraftQuotedContext(threadId, ctx.id)}
+                            />
                           ))}
                         </div>
                       )}

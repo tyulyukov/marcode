@@ -69,6 +69,9 @@ import {
 import { cn } from "~/lib/utils";
 import { extractTrailingJiraContexts, type ParsedJiraContextEntry } from "~/lib/jiraContext";
 import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
+import { SelectionReplyToolbar } from "./SelectionReplyToolbar";
+import { extractLeadingQuotedContexts, type ParsedQuotedContextEntry } from "~/lib/quotedContext";
+import { UserMessageQuotedContextLabel } from "./UserMessageQuotedContextLabel";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
 import {
@@ -115,6 +118,7 @@ interface MessagesTimelineProps {
   onRemoveEditingUserMessageImage: (imageId: string) => void;
   onCancelEditUserMessage: () => void;
   onSubmitEditUserMessage: () => void | Promise<void>;
+  onReplyToSelection: (context: import("../../lib/quotedContext").QuotedContext) => void;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -163,6 +167,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onRemoveEditingUserMessageImage,
   onCancelEditUserMessage,
   onSubmitEditUserMessage,
+  onReplyToSelection,
   onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -463,11 +468,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 </div>
               )}
               <div className="group/msg min-w-0 px-1 py-0.5">
-                <ChatMarkdown
-                  text={messageText}
-                  cwd={markdownCwd}
-                  isStreaming={Boolean(row.message.streaming)}
-                />
+                <AssistantMessageContentWithReply
+                  messageId={row.message.id}
+                  turnId={row.message.turnId ?? null}
+                  onReplyToSelection={onReplyToSelection}
+                >
+                  <ChatMarkdown
+                    text={messageText}
+                    cwd={markdownCwd}
+                    isStreaming={Boolean(row.message.streaming)}
+                  />
+                </AssistantMessageContentWithReply>
                 {(() => {
                   const turnSummary = turnDiffSummaryByAssistantMessageId.get(row.message.id);
                   if (!turnSummary) return null;
@@ -867,7 +878,10 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
   }
 
   const userImages = props.message.attachments ?? [];
-  const displayedUserMessage = deriveDisplayedUserMessageState(props.message.text);
+  const quotedExtracted = extractLeadingQuotedContexts(props.message.text);
+  const afterQuotedText =
+    quotedExtracted.contextCount > 0 ? quotedExtracted.promptText : props.message.text;
+  const displayedUserMessage = deriveDisplayedUserMessageState(afterQuotedText);
   const terminalContexts = displayedUserMessage.contexts;
   const jiraExtracted = extractTrailingJiraContexts(displayedUserMessage.visibleText);
   const visibleText =
@@ -916,6 +930,9 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
               </div>
             ))}
           </div>
+        )}
+        {quotedExtracted.contexts.length > 0 && (
+          <UserMessageQuotedContextLabel contexts={quotedExtracted.contexts} />
         )}
         {(visibleText.trim().length > 0 || terminalContexts.length > 0) && (
           <UserMessageBody
@@ -1062,6 +1079,27 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   return (
     <div className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-foreground">
       {props.text}
+    </div>
+  );
+});
+
+const AssistantMessageContentWithReply = memo(function AssistantMessageContentWithReply(props: {
+  messageId: MessageId;
+  turnId: TurnId | null;
+  children: ReactNode;
+  onReplyToSelection: (context: import("../../lib/quotedContext").QuotedContext) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  return (
+    <div ref={containerRef} className="relative">
+      {props.children}
+      <SelectionReplyToolbar
+        messageId={props.messageId}
+        turnId={props.turnId}
+        containerRef={containerRef}
+        onReply={props.onReplyToSelection}
+      />
     </div>
   );
 });

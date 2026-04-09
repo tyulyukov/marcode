@@ -106,6 +106,7 @@ describe("MessagesTimeline", () => {
         onRemoveEditingUserMessageImage={() => {}}
         onCancelEditUserMessage={() => {}}
         onSubmitEditUserMessage={() => {}}
+        onReplyToSelection={() => {}}
       />,
     );
 
@@ -164,6 +165,7 @@ describe("MessagesTimeline", () => {
         onRemoveEditingUserMessageImage={() => {}}
         onCancelEditUserMessage={() => {}}
         onSubmitEditUserMessage={() => {}}
+        onReplyToSelection={() => {}}
       />,
     );
 

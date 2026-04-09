@@ -24,6 +24,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
     persistedAttachments: [],
     terminalContexts: [],
     jiraTaskContexts: [],
+    quotedContexts: [],
     modelSelectionByProvider: {
       [provider]: {
         provider,

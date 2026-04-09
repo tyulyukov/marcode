@@ -246,3 +246,25 @@ Board selection stored per project via `jiraBoard` field on `OrchestrationProjec
 - `ComposerPromptSegment` union includes `"jira-context"` type alongside `"terminal-context"`
 - `ComposerCommandItem` union includes `"jira-task"` type for menu autocomplete
 - `Project` type in `types.ts` includes `jiraBoard: JiraBoardReference | null`
+
+## Reply to Selection (Quoted Context)
+
+MarCode supports replying to specific text selections within assistant messages. Users can select text in an agent response, click "Reply" in a floating toolbar, and the selected text is quoted as structured context in the composer.
+
+### Architecture
+
+- **`apps/web/src/lib/quotedContext.ts`** — `QuotedContext` type, prompt assembly (`appendQuotedContextsToPrompt`), extraction (`extractLeadingQuotedContexts`), dedup, truncation (5000 char limit).
+- **`apps/web/src/components/chat/SelectionReplyToolbar.tsx`** — Floating toolbar that appears on text selection within assistant messages. Renders via `createPortal` to `document.body`. Detects code block selections and extracts language.
+- **`apps/web/src/components/chat/QuotedContextInlineChip.tsx`** — Visual chip rendered in the composer above the editor showing quoted text preview with remove button. Uses violet color scheme.
+- **`apps/web/src/components/chat/UserMessageQuotedContextLabel.tsx`** — Expandable label in the message timeline showing quoted context when a sent message includes it.
+- **`apps/web/src/components/chat/MessagesTimeline.tsx`** — `AssistantMessageContentWithReply` wraps assistant message content with a ref for selection tracking and renders `SelectionReplyToolbar`.
+
+### Key Patterns
+
+- `QuotedContext` is stored in `composerDraftStore` as `quotedContexts: QuotedContext[]` on `ComposerThreadDraftState`.
+- Quoted context blocks are **prepended** to the prompt (unlike terminal/jira which are appended) as `<quoted_context message_id="..." language="...">` XML blocks.
+- `extractLeadingQuotedContexts()` parses leading quoted blocks from stored message text for timeline display.
+- Keyboard shortcut: `Cmd/Ctrl+Shift+R` to reply to current selection, `Escape` to dismiss toolbar.
+- Quoted contexts are **not** persisted to localStorage (transient draft state) — they are cleared on thread switch or send.
+- Selection spanning multiple messages captures only text from the message where selection started.
+- Truncation at 5000 chars with `...[truncated]` suffix.

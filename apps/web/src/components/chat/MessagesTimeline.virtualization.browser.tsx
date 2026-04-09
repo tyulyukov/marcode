@@ -182,6 +182,7 @@ function createBaseTimelineProps(input: {
     onRemoveEditingUserMessageImage: () => {},
     onCancelEditUserMessage: () => {},
     onSubmitEditUserMessage: () => {},
+    onReplyToSelection: () => {},
     ...(input.onVirtualizerSnapshot ? { onVirtualizerSnapshot: input.onVirtualizerSnapshot } : {}),
   };
 }
