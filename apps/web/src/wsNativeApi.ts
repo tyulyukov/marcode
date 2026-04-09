@@ -1,8 +1,4 @@
-import {
-  type ContextMenuItem,
-  type JiraConnectionStatus,
-  type NativeApi,
-} from "@marcode/contracts";
+import { type ContextMenuItem, type NativeApi } from "@marcode/contracts";
 
 import { resetGitStatusStateForTests } from "./lib/gitStatusState";
 import { showContextMenuFallback } from "./contextMenuFallback";
@@ -22,31 +18,6 @@ export async function __resetWsNativeApiForTests() {
   resetRequestLatencyStateForTests();
   resetServerStateForTests();
   resetWsConnectionStateForTests();
-}
-
-function createJiraHttpBridge(): NativeApi["jira"] {
-  const connectionStatusListeners = new Set<(status: JiraConnectionStatus) => void>();
-
-  return {
-    getConnectionStatus: async () => ({ connected: false, sites: [] }),
-    disconnect: async () => {},
-    listSites: async () => [],
-    listBoards: async () => ({ boards: [] }),
-    listSprints: async () => ({ sprints: [] }),
-    listIssues: async () => ({ issues: [], total: 0 as never }),
-    getIssue: async () => {
-      throw new Error("Jira integration is not yet available over WebSocket transport.");
-    },
-    getAttachment: async () => {
-      throw new Error("Jira integration is not yet available over WebSocket transport.");
-    },
-    onConnectionStatusChanged: (callback) => {
-      connectionStatusListeners.add(callback);
-      return () => {
-        connectionStatusListeners.delete(callback);
-      };
-    },
-  };
 }
 
 export function createWsNativeApi(): NativeApi {
@@ -141,7 +112,17 @@ export function createWsNativeApi(): NativeApi {
       onDomainEvent: (callback, options) =>
         rpcClient.orchestration.onDomainEvent(callback, options),
     },
-    jira: createJiraHttpBridge(),
+    jira: {
+      getConnectionStatus: rpcClient.jira.getConnectionStatus,
+      disconnect: rpcClient.jira.disconnect,
+      listSites: async () => (await rpcClient.jira.listSites()).sites,
+      listBoards: rpcClient.jira.listBoards,
+      listSprints: rpcClient.jira.listSprints,
+      listIssues: rpcClient.jira.listIssues,
+      getIssue: rpcClient.jira.getIssue,
+      getAttachment: rpcClient.jira.getAttachment,
+      onConnectionStatusChanged: (callback) => rpcClient.jira.onConnectionStatusChanged(callback),
+    },
   };
 
   instance = { api };
