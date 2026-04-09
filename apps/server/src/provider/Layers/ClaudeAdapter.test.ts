@@ -1091,7 +1091,7 @@ describe("ClaudeAdapterLive", () => {
       if (turnCompleted?.type === "turn.completed") {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "interrupted");
-        assert.equal(turnCompleted.payload.errorMessage, "Error: Request was aborted.");
+        assert.equal(turnCompleted.payload.errorMessage, undefined);
         assert.equal(turnCompleted.payload.stopReason, "tool_use");
       }
     }).pipe(

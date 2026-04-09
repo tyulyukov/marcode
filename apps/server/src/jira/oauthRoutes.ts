@@ -1,9 +1,11 @@
 import * as crypto from "node:crypto";
 import * as http from "node:http";
-import type { IncomingMessage, ServerResponse } from "node:http";
-import { Effect } from "effect";
-import type { ServerConfigShape } from "../config";
-import type { JiraTokenServiceShape, JiraTokenSet } from "./Services/JiraTokenService";
+import { Effect, Option } from "effect";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+
+import { ServerConfig, type ServerConfigShape } from "../config";
+import { JiraTokenService } from "./Services/JiraTokenService";
+import type { JiraTokenSet } from "./Services/JiraTokenService";
 import { JiraOAuthError, JiraTokenError } from "./Errors";
 
 const ATLASSIAN_AUTHORIZE_URL = "https://auth.atlassian.com/authorize";
@@ -105,48 +107,69 @@ async function fetchJiraClientId(proxyUrl: string): Promise<string | null> {
   }
 }
 
-export function tryHandleJiraAuthRequest(
-  url: URL,
-  _req: IncomingMessage,
-  res: ServerResponse,
-  config: ServerConfigShape,
-): boolean {
-  if (url.pathname !== "/api/jira/auth") return false;
+const RESULT_PAGE_STYLE =
+  "body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#fafafa}.card{text-align:center;padding:3rem;border-radius:1rem;border:1px solid #262626;background:#111;max-width:480px}.icon{font-size:3rem;margin-bottom:1rem}h1{margin:0 0 .5rem;font-size:1.25rem}p{margin:0;color:#a1a1aa;font-size:.875rem}.detail{margin-top:1rem;padding:.75rem;border-radius:.5rem;background:#1a1a1a;color:#a1a1aa;font-size:.75rem;text-align:left;word-break:break-all;max-height:120px;overflow:auto}";
 
-  if (!config.jiraTokenProxyUrl) {
-    res.writeHead(500, { "Content-Type": "text/plain" });
-    res.end("MARCODE_JIRA_TOKEN_PROXY_URL is not configured");
-    return true;
-  }
+function resultPage(
+  icon: string,
+  title: string,
+  subtitle: string,
+  detail?: string,
+): HttpServerResponse.HttpServerResponse {
+  const detailHtml = detail
+    ? `<div class="detail">${detail.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`
+    : "";
+  const html = `<!DOCTYPE html><html><head><title>${title}</title><style>${RESULT_PAGE_STYLE}</style></head><body><div class="card"><div class="icon">${icon}</div><h1>${title}</h1><p>${subtitle}</p>${detailHtml}</div></body></html>`;
+  return HttpServerResponse.text(html, { contentType: "text/html; charset=utf-8" });
+}
 
-  cleanExpiredStates();
+export const jiraAuthRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/jira/auth",
+  Effect.gen(function* () {
+    const config = yield* ServerConfig;
 
-  const state = crypto.randomBytes(16).toString("hex");
-  const { codeVerifier, codeChallenge } = generatePkce();
-
-  pendingStates.set(state, { codeVerifier, createdAt: Date.now() });
-
-  const redirectUri = getRedirectUri(config);
-  const proxyUrl = config.jiraTokenProxyUrl;
-
-  const doAuth = async () => {
-    try {
-      await startCallbackServer(config);
-    } catch (err) {
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end(
-        err instanceof Error
-          ? err.message
-          : `Failed to start OAuth callback server on port ${OAUTH_CALLBACK_PORT}`,
-      );
-      return;
+    if (!config.jiraTokenProxyUrl) {
+      return HttpServerResponse.text("MARCODE_JIRA_TOKEN_PROXY_URL is not configured", {
+        status: 500,
+      });
     }
 
-    const clientId = await fetchJiraClientId(proxyUrl);
+    cleanExpiredStates();
+
+    const state = crypto.randomBytes(16).toString("hex");
+    const { codeVerifier, codeChallenge } = generatePkce();
+
+    pendingStates.set(state, { codeVerifier, createdAt: Date.now() });
+
+    const redirectUri = getRedirectUri(config);
+    const proxyUrl = config.jiraTokenProxyUrl;
+
+    yield* Effect.tryPromise({
+      try: () => startCallbackServer(config),
+      catch: (err) =>
+        new JiraOAuthError({
+          operation: "startCallbackServer",
+          detail:
+            err instanceof Error
+              ? err.message
+              : `Failed to start OAuth callback server on port ${OAUTH_CALLBACK_PORT}`,
+        }),
+    });
+
+    const clientId = yield* Effect.tryPromise({
+      try: () => fetchJiraClientId(proxyUrl),
+      catch: () =>
+        new JiraOAuthError({
+          operation: "fetchClientId",
+          detail: "Failed to fetch Jira client ID from token proxy",
+        }),
+    });
+
     if (!clientId) {
-      res.writeHead(500, { "Content-Type": "text/plain" });
-      res.end("Failed to fetch Jira client ID from token proxy");
-      return;
+      return HttpServerResponse.text("Failed to fetch Jira client ID from token proxy", {
+        status: 500,
+      });
     }
 
     const params = new URLSearchParams({
@@ -161,101 +184,68 @@ export function tryHandleJiraAuthRequest(
       code_challenge_method: "S256",
     });
 
-    res.writeHead(302, { Location: `${ATLASSIAN_AUTHORIZE_URL}?${params.toString()}` });
-    res.end();
-  };
+    return HttpServerResponse.redirect(`${ATLASSIAN_AUTHORIZE_URL}?${params.toString()}`);
+  }).pipe(
+    Effect.catch((error: JiraOAuthError) =>
+      Effect.succeed(
+        HttpServerResponse.text(`Jira OAuth error: ${error.message}`, { status: 500 }),
+      ),
+    ),
+  ),
+);
 
-  void doAuth();
-  return true;
-}
+export const jiraCallbackRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/jira/callback",
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
 
-export function tryHandleJiraCallbackRequest(
-  url: URL,
-  req: IncomingMessage,
-  res: ServerResponse,
-  config: ServerConfigShape,
-  tokenService: {
-    saveTokens: JiraTokenServiceShape["saveTokens"];
-  },
-): Effect.Effect<boolean, JiraOAuthError | JiraTokenError> {
-  if (url.pathname !== "/api/jira/callback") return Effect.succeed(false);
-  return handleJiraCallback(url, req, res, config, tokenService);
-}
+    const config = yield* ServerConfig;
+    const tokenService = yield* JiraTokenService;
 
-const RESULT_PAGE_STYLE =
-  "body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#0a0a0a;color:#fafafa}.card{text-align:center;padding:3rem;border-radius:1rem;border:1px solid #262626;background:#111;max-width:480px}.icon{font-size:3rem;margin-bottom:1rem}h1{margin:0 0 .5rem;font-size:1.25rem}p{margin:0;color:#a1a1aa;font-size:.875rem}.detail{margin-top:1rem;padding:.75rem;border-radius:.5rem;background:#1a1a1a;color:#a1a1aa;font-size:.75rem;text-align:left;word-break:break-all;max-height:120px;overflow:auto}";
-
-function sendResultPage(
-  res: ServerResponse,
-  icon: string,
-  title: string,
-  subtitle: string,
-  detail?: string,
-): void {
-  const detailHtml = detail
-    ? `<div class="detail">${detail.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`
-    : "";
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(
-    `<!DOCTYPE html><html><head><title>${title}</title><style>${RESULT_PAGE_STYLE}</style></head><body><div class="card"><div class="icon">${icon}</div><h1>${title}</h1><p>${subtitle}</p>${detailHtml}</div></body></html>`,
-  );
-}
-
-function handleJiraCallback(
-  url: URL,
-  _req: IncomingMessage,
-  res: ServerResponse,
-  config: ServerConfigShape,
-  tokenService: { saveTokens: JiraTokenServiceShape["saveTokens"] },
-): Effect.Effect<boolean, JiraOAuthError | JiraTokenError> {
-  return Effect.gen(function* () {
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    const error = url.searchParams.get("error");
+    const code = url.value.searchParams.get("code");
+    const state = url.value.searchParams.get("state");
+    const error = url.value.searchParams.get("error");
 
     if (error) {
-      const description = url.searchParams.get("error_description") ?? error;
-      sendResultPage(
-        res,
+      const description = url.value.searchParams.get("error_description") ?? error;
+      return resultPage(
         "\u274C",
         "Jira connection failed",
         "Atlassian returned an error.",
         description,
       );
-      return true;
     }
 
     if (!code || !state) {
-      sendResultPage(
-        res,
+      return resultPage(
         "\u274C",
         "Jira connection failed",
         "Missing code or state parameter in callback.",
       );
-      return true;
     }
 
     const pkceState = pendingStates.get(state);
     pendingStates.delete(state);
 
     if (!pkceState || Date.now() - pkceState.createdAt > STATE_TTL_MS) {
-      sendResultPage(
-        res,
+      return resultPage(
         "\u274C",
         "Jira connection failed",
         "Session expired. Please try connecting again from MarCode.",
       );
-      return true;
     }
 
     if (!config.jiraTokenProxyUrl) {
-      sendResultPage(
-        res,
+      return resultPage(
         "\u274C",
         "Jira connection failed",
         "MARCODE_JIRA_TOKEN_PROXY_URL is not configured.",
       );
-      return true;
     }
 
     const clientId = yield* Effect.tryPromise({
@@ -268,8 +258,7 @@ function handleJiraCallback(
     });
 
     if (!clientId) {
-      sendResultPage(res, "\u274C", "Jira connection failed", "Failed to resolve Jira client ID.");
-      return true;
+      return resultPage("\u274C", "Jira connection failed", "Failed to resolve Jira client ID.");
     }
 
     const tokenUrl = `${config.jiraTokenProxyUrl}/api/jira/token-exchange`;
@@ -305,14 +294,12 @@ function handleJiraCallback(
             detail: `Token exchange failed with status ${tokenResponse.status}`,
           }),
       });
-      sendResultPage(
-        res,
+      return resultPage(
         "\u274C",
         "Jira connection failed",
         "Token exchange failed.",
         body.slice(0, 500),
       );
-      return true;
     }
 
     const json = yield* Effect.tryPromise({
@@ -340,12 +327,21 @@ function handleJiraCallback(
 
     yield* tokenService.saveTokens(tokens);
 
-    sendResultPage(
-      res,
+    return resultPage(
       "\u2705",
       "Jira connected successfully",
       "You can close this tab and return to MarCode.",
     );
-    return true;
-  });
-}
+  }).pipe(
+    Effect.catch((error: JiraOAuthError | JiraTokenError) =>
+      Effect.succeed(
+        resultPage(
+          "\u274C",
+          "Jira connection failed",
+          "An unexpected error occurred.",
+          error.message,
+        ),
+      ),
+    ),
+  ),
+);

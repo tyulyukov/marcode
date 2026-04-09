@@ -52,6 +52,7 @@ import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScrip
 import { ObservabilityLive } from "./observability/Layers/Observability";
 import { JiraTokenServiceLive } from "./jira/Layers/JiraTokenService";
 import { JiraApiClientLive } from "./jira/Layers/JiraApiClient";
+import { jiraAuthRouteLayer, jiraCallbackRouteLayer } from "./jira/oauthRoutes";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -225,6 +226,8 @@ export const makeRoutesLayer = Layer.mergeAll(
   attachmentsRouteLayer,
   otlpTracesProxyRouteLayer,
   projectFaviconRouteLayer,
+  jiraAuthRouteLayer,
+  jiraCallbackRouteLayer,
   staticAndDevRouteLayer,
   websocketRpcRouteLayer,
 );
