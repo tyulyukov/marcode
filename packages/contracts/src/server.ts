@@ -6,6 +6,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas";
+import { ServerProviderUsageLimits } from "./providerUsageLimits";
 import { KeybindingRule, ResolvedKeybindingsConfig } from "./keybindings";
 import { EditorId } from "./editor";
 import { ModelCapabilities } from "./model";
@@ -66,6 +67,7 @@ export const ServerProvider = Schema.Struct({
   checkedAt: IsoDateTime,
   message: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
+  usageLimits: Schema.optional(ServerProviderUsageLimits),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 

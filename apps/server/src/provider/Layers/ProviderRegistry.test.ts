@@ -23,6 +23,8 @@ import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { deepMerge } from "@marcode/shared/Struct";
 
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { UsageLimitsRepositoryLive } from "./UsageLimitsRepository.ts";
 import {
   checkCodexProviderStatus,
   hasCustomModelProvider,
@@ -520,6 +522,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
           const scope = yield* Scope.make();
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
+            Layer.provideMerge(
+              UsageLimitsRepositoryLive.pipe(Layer.provide(SqlitePersistenceMemory)),
+            ),
             Layer.provideMerge(Layer.succeed(ServerSettingsService, serverSettings)),
             Layer.provideMerge(
               mockCommandSpawnerLayer((command, args) => {

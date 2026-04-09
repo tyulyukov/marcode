@@ -169,6 +169,19 @@ MarCode supports 24+ themes across 12 families (MarCode branded, Catppuccin, Sol
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
 
+## Provider Usage Limits
+
+Displays provider rate limits and usage in Settings > Providers. Each provider card shows usage limit bars (session + weekly) with remaining percentages and reset times. Updates flow in real-time via WebSocket push when `account.rate-limits.updated` runtime events arrive.
+
+### Architecture
+
+- **Contracts**: `packages/contracts/src/providerUsageLimits.ts` — `ServerProviderUsageWindow` (session/weekly union) and `ServerProviderUsageLimits` schemas. Added as `usageLimits: Schema.optional(...)` on `ServerProvider`.
+- **Persistence**: SQLite `provider_usage_limits` table (migration 022). `UsageLimitsRepository` service (`apps/server/src/provider/Services/UsageLimitsRepository.ts`) with upsert (stale-write protection via `WHERE excluded.updated_at > ...`), get, and `streamChanges` PubSub.
+- **Normalizers**: `apps/server/src/provider/normalizeUsageLimits.ts` — `normalizeClaudeUsageLimits()` (five_hour → session, seven_day → weekly) and `normalizeCodexUsageLimits()` (primary/secondary with duration-based inference).
+- **Event interception**: `ProviderService.processRuntimeEvent` persists usage limits when it sees `account.rate-limits.updated` events.
+- **Registry overlay**: `ProviderRegistry.syncProviders` overlays persisted usage limits onto provider snapshots. `UsageLimitsRepository.streamChanges` triggers a registry re-sync → WebSocket push.
+- **UI**: `apps/web/src/components/settings/ProviderUsageLimitsSection.tsx` — renders color-coded progress bars (green >50%, amber 20-50%, red <20%) with relative/absolute reset times.
+
 ## Additional Directories (Thread Context)
 
 Directories can be added to agent context at the thread level via a toolbar popover (`DirectoryPickerPopover`). They persist as `additionalDirectories` on `OrchestrationThread` metadata (survive server restart).
