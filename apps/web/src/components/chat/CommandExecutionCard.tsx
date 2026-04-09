@@ -27,6 +27,7 @@ function deriveCommandStatus(entry: WorkLogEntry): CommandStatus {
 }
 
 const DETAIL_COMMAND_PREFIX_RE = /^(?:Bash|Shell|Sh|Read|Edit|Write|Grep|Glob):\s*/i;
+const PLACEHOLDER_JSON_RE = /^\{[\s"{}]*\}$/;
 
 function deriveCommandAndOutput(entry: WorkLogEntry): {
   displayCommand: string | null;
@@ -43,11 +44,25 @@ function deriveCommandAndOutput(entry: WorkLogEntry): {
     const firstLine = firstNewline === -1 ? entry.detail : entry.detail.slice(0, firstNewline);
     if (DETAIL_COMMAND_PREFIX_RE.test(firstLine)) {
       const cmd = firstLine.replace(DETAIL_COMMAND_PREFIX_RE, "").trim();
-      const rest = firstNewline === -1 ? null : entry.detail.slice(firstNewline + 1).trim() || null;
-      return { displayCommand: cmd || null, output: rest };
+      if (cmd && !isPlaceholderJson(cmd)) {
+        const rest =
+          firstNewline === -1 ? null : entry.detail.slice(firstNewline + 1).trim() || null;
+        return { displayCommand: cmd, output: rest };
+      }
     }
   }
-  return { displayCommand: null, output: entry.detail ?? null };
+  const fallbackOutput = entry.detail ?? null;
+  if (fallbackOutput) {
+    const stripped = fallbackOutput.replace(DETAIL_COMMAND_PREFIX_RE, "").trim();
+    if (isPlaceholderJson(stripped)) {
+      return { displayCommand: null, output: null };
+    }
+  }
+  return { displayCommand: null, output: fallbackOutput };
+}
+
+function isPlaceholderJson(value: string): boolean {
+  return PLACEHOLDER_JSON_RE.test(value);
 }
 
 const SHELL_WRAPPER_RE =
@@ -113,7 +128,7 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
   const status = deriveCommandStatus(entry);
   const liveOutput = useRuntimeToolOutput(threadId, entry.itemId);
   const { displayCommand, output } = useMemo(() => deriveCommandAndOutput(entry), [entry]);
-  const effectiveOutput = status === "running" && liveOutput ? liveOutput : output;
+  const effectiveOutput = liveOutput ?? output;
   const renderedOutput = useMemo(
     () => (effectiveOutput ? ansiToSpans(effectiveOutput) : null),
     [effectiveOutput],
@@ -124,6 +139,10 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
     if (!el || expanded) return;
     setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
   }, [expanded, effectiveOutput]);
+
+  if (!displayCommand && !renderedOutput && status === "running") {
+    return null;
+  }
 
   const hasMoreContent = expanded || previewOverflows;
   const ExpandIcon = expanded ? ChevronUpIcon : ChevronDownIcon;
