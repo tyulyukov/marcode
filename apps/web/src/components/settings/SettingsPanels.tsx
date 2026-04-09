@@ -901,73 +901,81 @@ function TurnNotificationSettingsSection({
               >
                 <PlayIcon className="size-3.5" />
               </Button>
-              <Switch
-                checked={advancedSounds}
-                onCheckedChange={handleToggleAdvanced}
-                aria-label="Per-event sounds"
-              />
             </div>
           }
         />
       )}
 
       {mode === "sound" && advancedSounds && (
-        <>
-          <SettingsRow
-            title="Per-event sounds"
-            description="Assign a different sound to each notification event."
-            resetAction={
-              isSoundDirty ? (
-                <SettingResetButton
-                  label="notification sounds"
-                  onClick={() => {
-                    updateSettings({
-                      turnNotificationSoundId: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundId,
-                      turnNotificationCustomSounds: [],
-                      turnNotificationAdvancedSounds: false,
-                      turnNotificationSoundMap: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundMap,
-                    });
-                  }}
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={advancedSounds}
-                onCheckedChange={handleToggleAdvanced}
-                aria-label="Per-event sounds"
+        <SettingsRow
+          title="Notification sound"
+          description="Choose a sound to play when notifications fire."
+          resetAction={
+            isSoundDirty ? (
+              <SettingResetButton
+                label="notification sounds"
+                onClick={() => {
+                  updateSettings({
+                    turnNotificationSoundId: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundId,
+                    turnNotificationCustomSounds: [],
+                    turnNotificationAdvancedSounds: false,
+                    turnNotificationSoundMap: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundMap,
+                  });
+                }}
               />
-            }
-          />
-          {EVENT_GROUP_KEYS.map((group) => (
-            <SettingsRow
-              key={group}
-              title={EVENT_GROUP_LABELS[group]}
-              description=""
-              control={
-                <div className="flex items-center gap-2">
-                  <SoundPickerSelect
-                    value={soundMap[group]}
-                    customSounds={customSounds}
-                    onValueChange={(v) => handleGroupSoundChange(group, v)}
-                    onDeleteCustomSound={handleDeleteCustomSound}
-                    onUpload={() => triggerUpload(group)}
-                    ariaLabel={`${EVENT_GROUP_LABELS[group]} sound`}
-                  />
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-                    onClick={() => previewSound(soundMap[group], customSounds)}
-                    aria-label={`Preview ${EVENT_GROUP_LABELS[group]} sound`}
-                  >
-                    <PlayIcon className="size-3.5" />
-                  </Button>
-                </div>
-              }
+            ) : null
+          }
+        />
+      )}
+
+      {mode === "sound" && (
+        <div className="border-t border-border/60">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground sm:px-5"
+            onClick={() => handleToggleAdvanced(!advancedSounds)}
+            aria-expanded={advancedSounds}
+          >
+            <ChevronDownIcon
+              className={cn("size-3.5 transition-transform", !advancedSounds && "-rotate-90")}
             />
-          ))}
-        </>
+            Customize per event
+          </button>
+          <Collapsible open={advancedSounds} onOpenChange={handleToggleAdvanced}>
+            <CollapsibleContent>
+              <div className="space-y-0">
+                {EVENT_GROUP_KEYS.map((group) => (
+                  <SettingsRow
+                    key={group}
+                    title={EVENT_GROUP_LABELS[group]}
+                    description=""
+                    control={
+                      <div className="flex items-center gap-2">
+                        <SoundPickerSelect
+                          value={soundMap[group]}
+                          customSounds={customSounds}
+                          onValueChange={(v) => handleGroupSoundChange(group, v)}
+                          onDeleteCustomSound={handleDeleteCustomSound}
+                          onUpload={() => triggerUpload(group)}
+                          ariaLabel={`${EVENT_GROUP_LABELS[group]} sound`}
+                        />
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                          onClick={() => previewSound(soundMap[group], customSounds)}
+                          aria-label={`Preview ${EVENT_GROUP_LABELS[group]} sound`}
+                        >
+                          <PlayIcon className="size-3.5" />
+                        </Button>
+                      </div>
+                    }
+                  />
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
       )}
       <input
         ref={fileInputRef}
