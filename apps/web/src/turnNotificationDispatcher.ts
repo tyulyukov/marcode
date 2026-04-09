@@ -64,12 +64,18 @@ function resolveSoundIdForTrigger(
   return settings.soundMap[group];
 }
 
+const SILENT_NOTIFICATION_REASONS: ReadonlySet<TurnNotificationTrigger["reason"]> = new Set([
+  "turn-stopped",
+  "turn-interrupted",
+]);
+
 function playSoundsForTriggers(
   triggers: readonly TurnNotificationTrigger[],
   settings: TurnNotificationSettings,
 ): void {
   const playedSrcs = new Set<string>();
   for (const trigger of triggers) {
+    if (SILENT_NOTIFICATION_REASONS.has(trigger.reason)) continue;
     const soundId = resolveSoundIdForTrigger(trigger, settings);
     const src = resolveAudioSrc(soundId, settings.customSounds);
     if (!src || playedSrcs.has(src)) continue;
