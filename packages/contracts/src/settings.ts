@@ -23,6 +23,39 @@ export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
+export const TurnNotificationMode = Schema.Literals(["off", "sound", "notification"]);
+export type TurnNotificationMode = typeof TurnNotificationMode.Type;
+export const DEFAULT_TURN_NOTIFICATION_MODE: TurnNotificationMode = "off";
+
+export const CustomNotificationSound = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  dataUrl: Schema.String,
+});
+export type CustomNotificationSound = typeof CustomNotificationSound.Type;
+
+export const NotificationEventGroup = Schema.Literals([
+  "turn-events",
+  "approval-needed",
+  "user-input-needed",
+]);
+export type NotificationEventGroup = typeof NotificationEventGroup.Type;
+
+export const DEFAULT_NOTIFICATION_SOUND_ID = "gentle-chime";
+
+export const NotificationSoundMap = Schema.Struct({
+  "turn-events": Schema.String.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+  ),
+  "approval-needed": Schema.String.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+  ),
+  "user-input-needed": Schema.String.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+  ),
+});
+export type NotificationSoundMap = typeof NotificationSoundMap.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
@@ -35,6 +68,17 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   timestampFormat: TimestampFormat.pipe(Schema.withDecodingDefault(() => DEFAULT_TIMESTAMP_FORMAT)),
   showTodosInComposer: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  turnNotificationMode: TurnNotificationMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_TURN_NOTIFICATION_MODE),
+  ),
+  turnNotificationSoundId: Schema.String.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+  ),
+  turnNotificationCustomSounds: Schema.Array(CustomNotificationSound).pipe(
+    Schema.withDecodingDefault(() => []),
+  ),
+  turnNotificationAdvancedSounds: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  turnNotificationSoundMap: NotificationSoundMap.pipe(Schema.withDecodingDefault(() => ({}))),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 

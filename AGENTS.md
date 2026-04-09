@@ -29,6 +29,15 @@ MarCode is a minimal web GUI for using coding agents like Codex and Claude.
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 
+## Research-First Rule
+
+When working with Claude API/SDK, Codex, Electron, or any external library/API, **always fetch and read the official documentation first** (via context7 or web fetch) before writing any integration code. Do not guess at API shapes, event names, or configuration options from memory — docs may have changed. This applies especially to:
+
+- Claude API / Anthropic SDK / Claude Agent SDK
+- Codex App Server protocol and JSON-RPC methods
+- Electron APIs (BrowserWindow, screen, ipcMain, etc.)
+- Any third-party library or service integration
+
 ## Core Priorities
 
 1. Performance first.

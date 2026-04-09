@@ -16,6 +16,7 @@ import {
   nativeImage,
   nativeTheme,
   protocol,
+  screen,
   shell,
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
@@ -86,6 +87,68 @@ const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
+const WINDOW_STATE_PATH = Path.join(STATE_DIR, "window-state.json");
+const WINDOW_STATE_SAVE_DEBOUNCE_MS = 500;
+
+interface WindowState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isMaximized: boolean;
+}
+
+function loadWindowState(): WindowState | null {
+  try {
+    if (!FS.existsSync(WINDOW_STATE_PATH)) return null;
+    const raw = JSON.parse(FS.readFileSync(WINDOW_STATE_PATH, "utf-8")) as WindowState;
+    if (
+      typeof raw.x !== "number" ||
+      typeof raw.y !== "number" ||
+      typeof raw.width !== "number" ||
+      typeof raw.height !== "number"
+    ) {
+      return null;
+    }
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function saveWindowState(win: BrowserWindow): void {
+  const isMaximized = win.isMaximized();
+  const bounds = isMaximized ? win.getNormalBounds() : win.getBounds();
+  const state: WindowState = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    isMaximized,
+  };
+  try {
+    FS.mkdirSync(Path.dirname(WINDOW_STATE_PATH), { recursive: true });
+    FS.writeFileSync(WINDOW_STATE_PATH, JSON.stringify(state));
+  } catch {
+    // best-effort persistence
+  }
+}
+
+function isWindowStateVisible(state: WindowState): boolean {
+  const windowRect = {
+    x: state.x,
+    y: state.y,
+    width: state.width,
+    height: state.height,
+  };
+  const display = screen.getDisplayMatching(windowRect);
+  const { x, y, width, height } = display.workArea;
+  const overlapX = Math.max(0, Math.min(state.x + state.width, x + width) - Math.max(state.x, x));
+  const overlapY = Math.max(0, Math.min(state.y + state.height, y + height) - Math.max(state.y, y));
+  const overlapArea = overlapX * overlapY;
+  const windowArea = state.width * state.height;
+  return overlapArea > windowArea * 0.25;
+}
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
 type LinuxDesktopNamedApp = Electron.App & {
@@ -1353,9 +1416,13 @@ function getIconOption(): { icon: string } | Record<string, never> {
 }
 
 function createWindow(): BrowserWindow {
+  const savedState = loadWindowState();
+  const useSaved = savedState !== null && isWindowStateVisible(savedState);
+
   const window = new BrowserWindow({
-    width: 1100,
-    height: 780,
+    width: useSaved ? savedState.width : 1100,
+    height: useSaved ? savedState.height : 780,
+    ...(useSaved ? { x: savedState.x, y: savedState.y } : {}),
     minWidth: 840,
     minHeight: 620,
     show: false,
@@ -1370,6 +1437,22 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
     },
+  });
+
+  if (useSaved && savedState.isMaximized) {
+    window.maximize();
+  }
+
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  const debouncedSave = (): void => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => saveWindowState(window), WINDOW_STATE_SAVE_DEBOUNCE_MS);
+  };
+  window.on("resize", debouncedSave);
+  window.on("move", debouncedSave);
+  window.on("close", () => {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveWindowState(window);
   });
 
   window.webContents.on("context-menu", (event, params) => {

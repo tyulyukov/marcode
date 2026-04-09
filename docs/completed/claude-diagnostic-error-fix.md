@@ -34,8 +34,7 @@ The error message extraction grabbed the first entry from the `errors` array wit
 
 ```ts
 // BEFORE — blindly grabbed first error, including [ede_diagnostic] entries
-const errorMessage =
-  message.subtype === "success" ? undefined : message.errors[0];
+const errorMessage = message.subtype === "success" ? undefined : message.errors[0];
 ```
 
 ## The Fix
@@ -81,12 +80,12 @@ They are Claude SDK-internal diagnostic/telemetry messages. The `ede_` prefix in
 
 ## Before / After
 
-| Scenario | Before | After |
-|---|---|---|
-| Turn completes with `is_error: false`, non-`"success"` subtype, `[ede_diagnostic]` in errors | Red error popup: `"[ede_diagnostic] internal state dump..."` | Turn marked `"completed"`, no error shown |
-| Turn completes with `is_error: false`, `[ede_diagnostic]` entries only | Status: `"failed"`, error toast fires | Status: `"completed"`, clean completion |
-| Genuine error with real error message + `[ede_diagnostic]` entries | Shows `[ede_diagnostic]` string (wrong one) | Shows the real error message (first non-diagnostic entry) |
-| Genuine error with only `[ede_diagnostic]` entries | Shows `[ede_diagnostic]` string | Shows generic `"Claude turn failed."` fallback |
+| Scenario                                                                                     | Before                                                       | After                                                     |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------- |
+| Turn completes with `is_error: false`, non-`"success"` subtype, `[ede_diagnostic]` in errors | Red error popup: `"[ede_diagnostic] internal state dump..."` | Turn marked `"completed"`, no error shown                 |
+| Turn completes with `is_error: false`, `[ede_diagnostic]` entries only                       | Status: `"failed"`, error toast fires                        | Status: `"completed"`, clean completion                   |
+| Genuine error with real error message + `[ede_diagnostic]` entries                           | Shows `[ede_diagnostic]` string (wrong one)                  | Shows the real error message (first non-diagnostic entry) |
+| Genuine error with only `[ede_diagnostic]` entries                                           | Shows `[ede_diagnostic]` string                              | Shows generic `"Claude turn failed."` fallback            |
 
 ## Implementation Notes for MarCode
 

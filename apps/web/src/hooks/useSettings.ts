@@ -131,6 +131,18 @@ export function useUpdateSettings() {
   };
 }
 
+// ── Synchronous reader (non-React) ──────────────────────────────────
+
+export function readClientSettingsSync(): ClientSettings {
+  const raw = localStorage.getItem(CLIENT_SETTINGS_STORAGE_KEY);
+  if (!raw) return DEFAULT_CLIENT_SETTINGS;
+  try {
+    return Schema.decodeSync(ClientSettingsSchema)(JSON.parse(raw));
+  } catch {
+    return DEFAULT_CLIENT_SETTINGS;
+  }
+}
+
 // ── One-time migration from localStorage ─────────────────────────────
 
 export function buildLegacyServerSettingsMigrationPatch(legacySettings: Record<string, unknown>) {
