@@ -3,7 +3,7 @@
  *
  * @module ProviderRegistryLive
  */
-import type { ProviderKind, ServerProvider } from "@marcode/contracts";
+import type { ProviderKind, ServerProvider, ServerProviderUsageLimits } from "@marcode/contracts";
 import { Effect, Equal, Layer, PubSub, Ref, Stream } from "effect";
 
 import { ClaudeProviderLive } from "./ClaudeProvider";
@@ -13,6 +13,7 @@ import { ClaudeProvider } from "../Services/ClaudeProvider";
 import type { CodexProviderShape } from "../Services/CodexProvider";
 import { CodexProvider } from "../Services/CodexProvider";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry";
+import { UsageLimitsRepository } from "../Services/UsageLimitsRepository";
 
 const loadProviders = (
   codexProvider: CodexProviderShape,
@@ -27,24 +28,40 @@ export const haveProvidersChanged = (
   nextProviders: ReadonlyArray<ServerProvider>,
 ): boolean => !Equal.equals(previousProviders, nextProviders);
 
+const overlayUsageLimits = (
+  providers: ReadonlyArray<ServerProvider>,
+  usageLimitsRepo: {
+    readonly get: (provider: ProviderKind) => Effect.Effect<ServerProviderUsageLimits | undefined>;
+  },
+): Effect.Effect<ReadonlyArray<ServerProvider>> =>
+  Effect.forEach(providers, (provider) =>
+    usageLimitsRepo
+      .get(provider.provider)
+      .pipe(Effect.map((usageLimits) => (usageLimits ? { ...provider, usageLimits } : provider))),
+  );
+
 export const ProviderRegistryLive = Layer.effect(
   ProviderRegistry,
   Effect.gen(function* () {
     const codexProvider = yield* CodexProvider;
     const claudeProvider = yield* ClaudeProvider;
+    const usageLimitsRepo = yield* UsageLimitsRepository;
     const changesPubSub = yield* Effect.acquireRelease(
       PubSub.unbounded<ReadonlyArray<ServerProvider>>(),
       PubSub.shutdown,
     );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(
-      yield* loadProviders(codexProvider, claudeProvider),
+      yield* loadProviders(codexProvider, claudeProvider).pipe(
+        Effect.flatMap((providers) => overlayUsageLimits(providers, usageLimitsRepo)),
+      ),
     );
 
     const syncProviders = Effect.fn("syncProviders")(function* (options?: {
       readonly publish?: boolean;
     }) {
       const previousProviders = yield* Ref.get(providersRef);
-      const providers = yield* loadProviders(codexProvider, claudeProvider);
+      const rawProviders = yield* loadProviders(codexProvider, claudeProvider);
+      const providers = yield* overlayUsageLimits(rawProviders, usageLimitsRepo);
       yield* Ref.set(providersRef, providers);
 
       if (options?.publish !== false && haveProvidersChanged(previousProviders, providers)) {
@@ -58,6 +75,10 @@ export const ProviderRegistryLive = Layer.effect(
       Effect.forkScoped,
     );
     yield* Stream.runForEach(claudeProvider.streamChanges, () => syncProviders()).pipe(
+      Effect.forkScoped,
+    );
+
+    yield* Stream.runForEach(usageLimitsRepo.streamChanges, () => syncProviders()).pipe(
       Effect.forkScoped,
     );
 

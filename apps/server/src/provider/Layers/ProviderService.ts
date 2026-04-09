@@ -44,6 +44,8 @@ import {
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { UsageLimitsRepository } from "../Services/UsageLimitsRepository.ts";
+import { normalizeClaudeUsageLimits, normalizeCodexUsageLimits } from "../normalizeUsageLimits.ts";
 
 export interface ProviderServiceLiveOptions {
   readonly canonicalEventLogPath?: string;
@@ -156,6 +158,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const registry = yield* ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory;
+  const usageLimitsRepo = yield* UsageLimitsRepository;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
@@ -185,13 +188,31 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       runtimePayload: toRuntimePayloadFromSession(session, extra),
     });
 
+  const persistUsageLimitEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> => {
+    if (event.type !== "account.rate-limits.updated") return Effect.void;
+
+    const rawPayload = (event.payload as Record<string, unknown>).rateLimits;
+    const usageLimits =
+      event.provider === "codex"
+        ? normalizeCodexUsageLimits(rawPayload, event.createdAt)
+        : event.provider === "claudeAgent"
+          ? normalizeClaudeUsageLimits(rawPayload, event.createdAt)
+          : undefined;
+
+    if (!usageLimits) return Effect.void;
+    return usageLimitsRepo.upsert({ provider: event.provider, usageLimits }).pipe(Effect.asVoid);
+  };
+
   const providers = yield* registry.listProviders();
   const adapters = yield* Effect.forEach(providers, (provider) => registry.getByProvider(provider));
   const processRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     increment(providerRuntimeEventsTotal, {
       provider: event.provider,
       eventType: event.type,
-    }).pipe(Effect.andThen(publishRuntimeEvent(event)));
+    }).pipe(
+      Effect.andThen(publishRuntimeEvent(event)),
+      Effect.andThen(persistUsageLimitEvent(event)),
+    );
 
   yield* Effect.forEach(adapters, (adapter) =>
     Stream.runForEach(adapter.streamEvents, processRuntimeEvent).pipe(Effect.forkScoped),

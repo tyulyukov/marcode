@@ -44,8 +44,17 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
+import { UsageLimitsRepository } from "../Services/UsageLimitsRepository.ts";
 
 const defaultServerSettingsLayer = ServerSettingsService.layerTest();
+
+const usageLimitsStubLayer = Layer.succeed(UsageLimitsRepository, {
+  upsert: () => Effect.succeed(false),
+  get: () => Effect.succeed(undefined),
+  get streamChanges() {
+    return Stream.empty;
+  },
+});
 
 const asRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.makeUnsafe(value);
 const asEventId = (value: string): EventId => EventId.makeUnsafe(value);
@@ -269,6 +278,7 @@ function makeProviderServiceLayer() {
         Layer.provide(directoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provideMerge(AnalyticsService.layerTest),
+        Layer.provide(usageLimitsStubLayer),
       ),
       directoryLayer,
 
@@ -314,6 +324,7 @@ it.effect("ProviderServiceLive rejects new sessions for disabled providers", () 
       Layer.provide(directoryLayer),
       Layer.provide(serverSettingsLayer),
       Layer.provide(AnalyticsService.layerTest),
+      Layer.provide(usageLimitsStubLayer),
     );
 
     const failure = yield* Effect.flip(
@@ -367,6 +378,7 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
       Layer.provide(directoryLayer),
       Layer.provide(defaultServerSettingsLayer),
       Layer.provide(AnalyticsService.layerTest),
+      Layer.provide(usageLimitsStubLayer),
     );
 
     yield* Effect.gen(function* () {
@@ -427,6 +439,7 @@ it.effect(
         Layer.provide(firstDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(usageLimitsStubLayer),
       );
       const updatedResumeCursor = {
         threadId: asThreadId("thread-1"),
@@ -479,6 +492,7 @@ it.effect(
         Layer.provide(secondDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(usageLimitsStubLayer),
       );
 
       secondCodex.startSession.mockClear();
@@ -840,6 +854,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         Layer.provide(firstDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(usageLimitsStubLayer),
       );
 
       const initial = yield* Effect.gen(function* () {
@@ -873,6 +888,7 @@ routing.layer("ProviderServiceLive routing", (it) => {
         Layer.provide(secondDirectoryLayer),
         Layer.provide(defaultServerSettingsLayer),
         Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(usageLimitsStubLayer),
       );
 
       secondClaude.startSession.mockClear();

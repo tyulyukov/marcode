@@ -82,6 +82,7 @@ import {
   requestNotificationPermission,
 } from "../../turnNotificationDispatcher";
 import { JiraSettingsSection } from "./JiraSettingsSection";
+import { ProviderUsageLimitsSection } from "./ProviderUsageLimitsSection";
 import { ThemePicker } from "./ThemePicker";
 import {
   useServerAvailableEditors,
@@ -1678,6 +1679,13 @@ export function GeneralSettingsPanel() {
                   </div>
                 </div>
               </div>
+
+              {providerCard.liveProvider ? (
+                <ProviderUsageLimitsSection
+                  provider={providerCard.liveProvider}
+                  timestampFormat={settings.timestampFormat}
+                />
+              ) : null}
 
               <Collapsible
                 open={openProviderDetails[providerCard.provider]}
