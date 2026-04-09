@@ -70,6 +70,7 @@ const rpcClientMock = {
     init: vi.fn(),
     resolvePullRequest: vi.fn(),
     preparePullRequestThread: vi.fn(),
+    workingTreeDiff: vi.fn(),
   },
   server: {
     getConfig: vi.fn(),
@@ -79,6 +80,17 @@ const rpcClientMock = {
     updateSettings: vi.fn(),
     subscribeConfig: vi.fn(),
     subscribeLifecycle: vi.fn(),
+  },
+  jira: {
+    getConnectionStatus: vi.fn(),
+    disconnect: vi.fn(),
+    listSites: vi.fn(),
+    listBoards: vi.fn(),
+    listSprints: vi.fn(),
+    listIssues: vi.fn(),
+    getIssue: vi.fn(),
+    getAttachment: vi.fn(),
+    onConnectionStatusChanged: vi.fn(),
   },
   orchestration: {
     getSnapshot: vi.fn(),
