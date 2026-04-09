@@ -41,7 +41,7 @@ import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSes
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { AnalyticsService } from "../src/telemetry/Services/AnalyticsService.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
-import { UsageLimitsRepositoryLive } from "../src/provider/Layers/UsageLimitsRepository.ts";
+import { UsageLimitsRepository } from "../src/provider/Services/UsageLimitsRepository.ts";
 import { makeCodexAdapterLive } from "../src/provider/Layers/CodexAdapter.ts";
 import { CodexAdapter } from "../src/provider/Services/CodexAdapter.ts";
 import { ProviderService } from "../src/provider/Services/ProviderService.ts";
@@ -277,18 +277,25 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(providerSessionDirectoryLayer),
     );
+    const usageLimitsStub = Layer.succeed(UsageLimitsRepository, {
+      upsert: () => Effect.succeed(false),
+      get: () => Effect.succeed(undefined),
+      get streamChanges() {
+        return Stream.empty;
+      },
+    });
     const providerLayer = useRealCodex
       ? makeProviderServiceLive().pipe(
           Layer.provide(providerSessionDirectoryLayer),
           Layer.provide(realCodexRegistry),
           Layer.provide(AnalyticsService.layerTest),
-          Layer.provide(UsageLimitsRepositoryLive),
+          Layer.provide(usageLimitsStub),
         )
       : makeProviderServiceLive().pipe(
           Layer.provide(providerSessionDirectoryLayer),
           Layer.provide(fakeRegistry!),
           Layer.provide(AnalyticsService.layerTest),
-          Layer.provide(UsageLimitsRepositoryLive),
+          Layer.provide(usageLimitsStub),
         );
 
     const checkpointStoreLayer = CheckpointStoreLive.pipe(Layer.provide(GitCoreLive));

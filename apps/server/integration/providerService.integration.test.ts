@@ -9,7 +9,7 @@ import { ProviderUnsupportedError } from "../src/provider/Errors.ts";
 import { ProviderAdapterRegistry } from "../src/provider/Services/ProviderAdapterRegistry.ts";
 import { ProviderSessionDirectoryLive } from "../src/provider/Layers/ProviderSessionDirectory.ts";
 import { makeProviderServiceLive } from "../src/provider/Layers/ProviderService.ts";
-import { UsageLimitsRepositoryLive } from "../src/provider/Layers/UsageLimitsRepository.ts";
+import { UsageLimitsRepository } from "../src/provider/Services/UsageLimitsRepository.ts";
 import {
   ProviderService,
   type ProviderServiceShape,
@@ -60,12 +60,20 @@ const makeIntegrationFixture = Effect.gen(function* () {
     Layer.provide(ProviderSessionRuntimeRepositoryLive),
   );
 
+  const usageLimitsStub = Layer.succeed(UsageLimitsRepository, {
+    upsert: () => Effect.succeed(false),
+    get: () => Effect.succeed(undefined),
+    get streamChanges() {
+      return Stream.empty;
+    },
+  });
+
   const shared = Layer.mergeAll(
     directoryLayer,
     Layer.succeed(ProviderAdapterRegistry, registry),
     ServerSettingsService.layerTest(DEFAULT_SERVER_SETTINGS),
     AnalyticsService.layerTest,
-    UsageLimitsRepositoryLive,
+    usageLimitsStub,
   ).pipe(Layer.provide(SqlitePersistenceMemory));
 
   const layer = makeProviderServiceLive().pipe(Layer.provide(shared));
