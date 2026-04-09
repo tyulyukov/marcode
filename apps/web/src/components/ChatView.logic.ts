@@ -174,6 +174,7 @@ export function deriveComposerSendState(options: {
   imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   jiraTaskContexts?: ReadonlyArray<JiraTaskDraft>;
+  quotedContextCount?: number;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -187,6 +188,7 @@ export function deriveComposerSendState(options: {
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
   const jiraTaskContexts = options.jiraTaskContexts ?? [];
+  const quotedContextCount = options.quotedContextCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
@@ -195,7 +197,8 @@ export function deriveComposerSendState(options: {
       trimmedPrompt.length > 0 ||
       options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      jiraTaskContexts.length > 0,
+      jiraTaskContexts.length > 0 ||
+      quotedContextCount > 0,
   };
 }
 
