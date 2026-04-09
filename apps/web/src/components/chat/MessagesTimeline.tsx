@@ -70,7 +70,11 @@ import { cn } from "~/lib/utils";
 import { extractTrailingJiraContexts, type ParsedJiraContextEntry } from "~/lib/jiraContext";
 import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
 import { SelectionReplyToolbar } from "./SelectionReplyToolbar";
-import { extractLeadingQuotedContexts, type ParsedQuotedContextEntry } from "~/lib/quotedContext";
+import {
+  extractLeadingQuotedContexts,
+  type ParsedQuotedContextEntry,
+  type QuotedContext,
+} from "~/lib/quotedContext";
 import { UserMessageQuotedContextLabel } from "./UserMessageQuotedContextLabel";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
@@ -118,7 +122,7 @@ interface MessagesTimelineProps {
   onRemoveEditingUserMessageImage: (imageId: string) => void;
   onCancelEditUserMessage: () => void;
   onSubmitEditUserMessage: () => void | Promise<void>;
-  onReplyToSelection: (context: import("../../lib/quotedContext").QuotedContext) => void;
+  onReplyToSelection: (context: QuotedContext) => void;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -1087,7 +1091,7 @@ const AssistantMessageContentWithReply = memo(function AssistantMessageContentWi
   messageId: MessageId;
   turnId: TurnId | null;
   children: ReactNode;
-  onReplyToSelection: (context: import("../../lib/quotedContext").QuotedContext) => void;
+  onReplyToSelection: (context: QuotedContext) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 

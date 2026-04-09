@@ -19,8 +19,6 @@ const LEADING_QUOTED_CONTEXT_BLOCK_PATTERN =
 const SINGLE_QUOTED_CONTEXT_BLOCK_PATTERN =
   /<quoted_context([^>]*)>\n([\s\S]*?)\n<\/quoted_context>/g;
 
-const ALL_QUOTED_CONTEXT_BLOCKS_PATTERN = /<quoted_context[^>]*>\n[\s\S]*?\n<\/quoted_context>\n*/g;
-
 export interface ParsedQuotedContextEntry {
   readonly header: string;
   readonly body: string;
@@ -52,9 +50,27 @@ export function formatQuotedContextPreview(context: QuotedContext): string {
   return singleLine.length > maxPreview ? `${singleLine.slice(0, maxPreview - 1)}…` : singleLine;
 }
 
+const MAX_TOOLTIP_LENGTH = 300;
+
+export function formatQuotedContextTooltip(context: QuotedContext): string {
+  return context.text.length > MAX_TOOLTIP_LENGTH
+    ? `${context.text.slice(0, MAX_TOOLTIP_LENGTH)}…`
+    : context.text;
+}
+
+function sanitizeCodeLanguage(language: string): string {
+  return language.replace(/[^a-zA-Z0-9+.\-_#]/g, "");
+}
+
+function escapeQuotedContextBody(text: string): string {
+  return text.replace(/<\/quoted_context>/gi, "[/quoted_context]");
+}
+
 function formatSingleQuotedContextBlock(context: QuotedContext): string {
-  const langAttr = context.codeLanguage ? ` language="${context.codeLanguage}"` : "";
-  return `<quoted_context message_id="${context.messageId}"${langAttr}>\n${context.text}\n</quoted_context>`;
+  const safeLang = context.codeLanguage ? sanitizeCodeLanguage(context.codeLanguage) : undefined;
+  const langAttr = safeLang ? ` language="${safeLang}"` : "";
+  const safeText = escapeQuotedContextBody(context.text);
+  return `<quoted_context message_id="${context.messageId}"${langAttr}>\n${safeText}\n</quoted_context>`;
 }
 
 export function buildQuotedContextBlock(contexts: ReadonlyArray<QuotedContext>): string {
@@ -94,8 +110,4 @@ export function extractLeadingQuotedContexts(text: string): ExtractedQuotedConte
   }
 
   return { promptText, contextCount: contexts.length, contexts };
-}
-
-export function stripAllQuotedContextBlocks(text: string): string {
-  return text.replace(ALL_QUOTED_CONTEXT_BLOCKS_PATTERN, "").trim();
 }

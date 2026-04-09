@@ -171,6 +171,7 @@ import {
 import {
   appendQuotedContextsToPrompt,
   formatQuotedContextPreview,
+  formatQuotedContextTooltip,
   type QuotedContext,
 } from "../lib/quotedContext";
 import { QuotedContextInlineChip } from "./chat/QuotedContextInlineChip";
@@ -4833,9 +4834,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                             <QuotedContextInlineChip
                               key={ctx.id}
                               preview={formatQuotedContextPreview(ctx)}
-                              tooltipText={
-                                ctx.text.length > 300 ? `${ctx.text.slice(0, 300)}…` : ctx.text
-                              }
+                              tooltipText={formatQuotedContextTooltip(ctx)}
                               onRemove={() => removeComposerDraftQuotedContext(threadId, ctx.id)}
                             />
                           ))}

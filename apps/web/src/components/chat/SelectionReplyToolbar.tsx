@@ -1,10 +1,11 @@
-import { CopyIcon, ReplyIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, ReplyIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MessageId, TurnId } from "@marcode/contracts";
 import type { QuotedContext } from "../../lib/quotedContext";
 import { truncateQuotedText } from "../../lib/quotedContext";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { randomUUID } from "../../lib/utils";
 
 interface SelectionReplyToolbarProps {
   messageId: MessageId;
@@ -18,19 +19,15 @@ interface ToolbarPosition {
   left: number;
 }
 
-let nextQuotedContextId = 0;
-function newQuotedContextId(): string {
-  nextQuotedContextId += 1;
-  return `quoted-${Date.now()}-${nextQuotedContextId}`;
-}
+const TOOLBAR_HEIGHT_PX = 32;
+const TOOLBAR_GAP_PX = 6;
 
-function getSelectionTextAndMeta(
-  containerEl: HTMLElement,
-): {
+function getSelectionMeta(containerEl: HTMLElement): {
   text: string;
   startOffset: number;
   endOffset: number;
   codeLanguage: string | undefined;
+  rect: DOMRect;
 } | null {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
@@ -50,7 +47,9 @@ function getSelectionTextAndMeta(
   const startOffset = preRange.toString().length;
   const endOffset = startOffset + text.length;
 
-  return { text, startOffset, endOffset, codeLanguage };
+  const rect = range.getBoundingClientRect();
+
+  return { text, startOffset, endOffset, codeLanguage, rect };
 }
 
 function findAncestorCodeBlock(node: Node, boundary: HTMLElement): HTMLElement | null {
@@ -87,31 +86,15 @@ export const SelectionReplyToolbar = memo(function SelectionReplyToolbar(
         return;
       }
 
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      const meta = getSelectionMeta(container);
+      if (!meta) {
         setPosition(null);
         return;
       }
-
-      const range = selection.getRangeAt(0);
-      if (!range || !container.contains(range.startContainer)) {
-        setPosition(null);
-        return;
-      }
-
-      const text = selection.toString().trim();
-      if (text.length === 0) {
-        setPosition(null);
-        return;
-      }
-
-      const rect = range.getBoundingClientRect();
-      const toolbarHeight = 32;
-      const gap = 6;
 
       setPosition({
-        top: rect.top - toolbarHeight - gap + window.scrollY,
-        left: rect.left + rect.width / 2 + window.scrollX,
+        top: meta.rect.top - TOOLBAR_HEIGHT_PX - TOOLBAR_GAP_PX,
+        left: meta.rect.left + meta.rect.width / 2,
       });
     };
 
@@ -123,7 +106,7 @@ export const SelectionReplyToolbar = memo(function SelectionReplyToolbar(
     const container = containerRef.current;
     if (!container) return;
 
-    const meta = getSelectionTextAndMeta(container);
+    const meta = getSelectionMeta(container);
     if (!meta) return;
 
     const { text: rawText, wasTruncated } = truncateQuotedText(meta.text);
@@ -132,7 +115,7 @@ export const SelectionReplyToolbar = memo(function SelectionReplyToolbar(
     }
 
     const context: QuotedContext = {
-      id: newQuotedContextId(),
+      id: randomUUID(),
       messageId,
       turnId,
       text: rawText,
@@ -179,12 +162,12 @@ export const SelectionReplyToolbar = memo(function SelectionReplyToolbar(
   return createPortal(
     <div
       ref={toolbarRef}
-      className="pointer-events-auto fixed z-50 flex items-center gap-0.5 rounded-lg border border-border bg-popover px-1 py-0.5 shadow-lg"
+      className="pointer-events-auto z-50 flex items-center gap-0.5 rounded-lg border border-border bg-popover px-1 py-0.5 shadow-lg"
       style={{
+        position: "fixed",
         top: position.top,
         left: position.left,
         transform: "translateX(-50%)",
-        position: "absolute",
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
@@ -203,7 +186,7 @@ export const SelectionReplyToolbar = memo(function SelectionReplyToolbar(
         onClick={handleCopy}
         title="Copy selection"
       >
-        <CopyIcon className="size-3" />
+        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
       </button>
     </div>,
     document.body,
