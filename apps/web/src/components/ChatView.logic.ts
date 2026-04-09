@@ -346,15 +346,10 @@ export async function waitForRevertOutcome(
     const thread = getThread();
     if (!thread) return null;
     const newActivities = thread.activities.slice(initialActivityCount);
-    const failure = newActivities.find(
-      (a) => a.kind === "checkpoint.revert.failed",
-    );
+    const failure = newActivities.find((a) => a.kind === "checkpoint.revert.failed");
     if (!failure) return null;
     const payload = failure.payload as Record<string, unknown> | null;
-    return (
-      (typeof payload?.detail === "string" ? payload.detail : null) ??
-      failure.summary
-    );
+    return (typeof payload?.detail === "string" ? payload.detail : null) ?? failure.summary;
   };
 
   if (!threadContainsMessage()) {

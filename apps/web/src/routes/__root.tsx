@@ -42,13 +42,15 @@ import {
 import { useStore } from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import { useTerminalStateStore } from "../terminalStateStore";
-import { migrateLocalSettingsToServer } from "../hooks/useSettings";
+import { migrateLocalSettingsToServer, readClientSettingsSync } from "../hooks/useSettings";
 import { providerQueryKeys } from "../lib/providerReactQuery";
 import { projectQueryKeys } from "../lib/projectReactQuery";
 import { collectActiveTerminalThreadIds } from "../lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "../orchestrationEventEffects";
 import { createOrchestrationRecoveryCoordinator } from "../orchestrationRecovery";
 import { deriveReplayRetryDecision } from "../orchestrationRecovery";
+import { buildNotificationContent, deriveTurnNotificationTriggers } from "../turnNotification";
+import { dispatchTurnNotifications } from "../turnNotificationDispatcher";
 import { getWsRpcClient } from "~/wsRpcClient";
 
 export const Route = createRootRouteWithContext<{
@@ -392,7 +394,37 @@ function EventRouter() {
         void queryInvalidationThrottler.maybeExecute();
       }
 
+      const isRecovering = recovery.getState().inFlight !== null;
+      const notificationTriggers = isRecovering
+        ? []
+        : deriveTurnNotificationTriggers(
+            nextEvents,
+            (id) => useStore.getState().threads.find((t) => t.id === id),
+            (id) => useStore.getState().projects.find((p) => p.id === id),
+          );
+
       applyOrchestrationEvents(uiEvents);
+
+      if (notificationTriggers.length > 0) {
+        const cs = readClientSettingsSync();
+        const { toastFallbacks } = dispatchTurnNotifications(notificationTriggers, {
+          mode: cs.turnNotificationMode,
+          soundId: cs.turnNotificationSoundId,
+          customSounds: cs.turnNotificationCustomSounds,
+          advancedSounds: cs.turnNotificationAdvancedSounds,
+          soundMap: cs.turnNotificationSoundMap,
+        });
+        for (const fallback of toastFallbacks) {
+          const content = buildNotificationContent(fallback);
+          toastManager.add({
+            type: fallback.reason === "turn-errored" ? "error" : "success",
+            title: content.title,
+            description: content.body,
+            data: { threadId: fallback.threadId, dismissAfterVisibleMs: 5_000 },
+          });
+        }
+      }
+
       if (needsProjectUiSync) {
         const projects = useStore.getState().projects;
         syncProjects(projects.map((project) => ({ id: project.id, cwd: project.cwd })));

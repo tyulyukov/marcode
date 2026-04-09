@@ -65,8 +65,7 @@ function isPlaceholderJson(value: string): boolean {
   return PLACEHOLDER_JSON_RE.test(value);
 }
 
-const SHELL_WRAPPER_RE =
-  /^\/(?:bin|usr\/bin|nix\/store\/[^/]+\/bin)\/(?:bash|zsh|sh|dash|fish)\s/;
+const SHELL_WRAPPER_RE = /^\/(?:bin|usr\/bin|nix\/store\/[^/]+\/bin)\/(?:bash|zsh|sh|dash|fish)\s/;
 
 function detailIsDistinctOutput(
   detail: string | undefined,

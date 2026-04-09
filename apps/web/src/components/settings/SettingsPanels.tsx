@@ -4,9 +4,12 @@ import {
   ChevronDownIcon,
   InfoIcon,
   LoaderIcon,
+  PlayIcon,
   PlusIcon,
   RefreshCwIcon,
+  Trash2Icon,
   Undo2Icon,
+  UploadIcon,
   XIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -18,7 +21,11 @@ import {
   type ServerProviderModel,
   ThreadId,
 } from "@marcode/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@marcode/contracts/settings";
+import {
+  type CustomNotificationSound,
+  DEFAULT_UNIFIED_SETTINGS,
+  type TurnNotificationMode,
+} from "@marcode/contracts/settings";
 import { normalizeModelSlug } from "@marcode/shared/model";
 import { Equal } from "effect";
 import { APP_VERSION } from "../../branding";
@@ -53,11 +60,27 @@ import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent } from "../ui/collapsible";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { Input } from "../ui/input";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import {
+  Select,
+  SelectGroup,
+  SelectGroupLabel,
+  SelectItem,
+  SelectPopup,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { isValidAudioFile } from "../../audioValidation";
+import { BUILT_IN_SOUNDS } from "../../turnNotification";
+import {
+  notificationsSupported,
+  previewSound,
+  requestNotificationPermission,
+} from "../../turnNotificationDispatcher";
 import { JiraSettingsSection } from "./JiraSettingsSection";
 import { ThemePicker } from "./ThemePicker";
 import {
@@ -500,6 +523,461 @@ export function useSettingsRestore(onRestored?: () => void) {
     changedSettingLabels,
     restoreDefaults,
   };
+}
+
+const NOTIFICATION_MODE_LABELS: Record<TurnNotificationMode, string> = {
+  off: "Off",
+  sound: "Sound only",
+  notification: "OS notification",
+};
+
+const MAX_CUSTOM_SOUND_BYTES = 1_048_576;
+const MAX_CUSTOM_SOUNDS = 5;
+const UPLOAD_ACTION_VALUE = "__upload__";
+
+const EVENT_GROUP_LABELS: Record<
+  import("@marcode/contracts/settings").NotificationEventGroup,
+  string
+> = {
+  "turn-events": "Turn events",
+  "approval-needed": "Approval needed",
+  "user-input-needed": "User input needed",
+};
+
+const EVENT_GROUP_KEYS = Object.keys(EVENT_GROUP_LABELS) as Array<
+  import("@marcode/contracts/settings").NotificationEventGroup
+>;
+
+function resolveSoundDisplayName(
+  soundId: string,
+  customSounds: readonly CustomNotificationSound[],
+): string {
+  const builtIn = BUILT_IN_SOUNDS.find((s) => s.id === soundId);
+  if (builtIn) return builtIn.label;
+  const custom = customSounds.find((s) => s.id === soundId);
+  if (custom) return custom.name;
+  return soundId;
+}
+
+function SoundPickerSelect({
+  value,
+  customSounds,
+  onValueChange,
+  onDeleteCustomSound,
+  onUpload,
+  ariaLabel,
+}: {
+  value: string;
+  customSounds: readonly CustomNotificationSound[];
+  onValueChange: (value: string) => void;
+  onDeleteCustomSound: (id: string) => void;
+  onUpload: () => void;
+  ariaLabel: string;
+}) {
+  const handleChange = useCallback(
+    (next: string | null) => {
+      if (!next) return;
+      if (next === UPLOAD_ACTION_VALUE) {
+        onUpload();
+        return;
+      }
+      onValueChange(next);
+    },
+    [onValueChange, onUpload],
+  );
+
+  return (
+    <Select value={value} onValueChange={handleChange}>
+      <SelectTrigger className="w-full sm:w-44" aria-label={ariaLabel}>
+        <SelectValue>{resolveSoundDisplayName(value, customSounds)}</SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        <SelectGroup>
+          <SelectGroupLabel>Built-in</SelectGroupLabel>
+          {BUILT_IN_SOUNDS.map((sound) => (
+            <SelectItem key={sound.id} hideIndicator value={sound.id}>
+              {sound.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        {customSounds.length > 0 && (
+          <SelectGroup>
+            <SelectSeparator />
+            <SelectGroupLabel>Custom</SelectGroupLabel>
+            {customSounds.map((sound) => (
+              <SelectItem key={sound.id} hideIndicator value={sound.id}>
+                <span className="flex w-full items-center justify-between gap-2">
+                  <span className="truncate">{sound.name}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteCustomSound(sound.id);
+                    }}
+                    aria-label={`Delete ${sound.name}`}
+                  >
+                    <Trash2Icon className="size-3" />
+                  </button>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        {customSounds.length < MAX_CUSTOM_SOUNDS && (
+          <>
+            <SelectSeparator />
+            <SelectItem hideIndicator value={UPLOAD_ACTION_VALUE}>
+              <span className="flex items-center gap-1.5 text-muted-foreground">
+                <UploadIcon className="size-3.5" />
+                Upload sound...
+              </span>
+            </SelectItem>
+          </>
+        )}
+      </SelectPopup>
+    </Select>
+  );
+}
+
+function TurnNotificationSettingsSection({
+  settings,
+  updateSettings,
+}: {
+  settings: ReturnType<typeof useSettings>;
+  updateSettings: ReturnType<typeof useUpdateSettings>["updateSettings"];
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetRef = useRef<
+    "single" | import("@marcode/contracts/settings").NotificationEventGroup
+  >("single");
+  const mode = settings.turnNotificationMode;
+  const soundId = settings.turnNotificationSoundId;
+  const customSounds = settings.turnNotificationCustomSounds;
+  const advancedSounds = settings.turnNotificationAdvancedSounds;
+  const soundMap = settings.turnNotificationSoundMap;
+
+  const handleModeChange = useCallback(
+    (value: string | null) => {
+      if (!value) return;
+      const nextMode = value as TurnNotificationMode;
+      updateSettings({ turnNotificationMode: nextMode });
+
+      if (nextMode === "notification" && notificationsSupported()) {
+        if (Notification.permission === "default") {
+          void requestNotificationPermission().then((permission) => {
+            if (permission === "denied") {
+              toastManager.add({
+                type: "warning",
+                title: "Notifications blocked",
+                description:
+                  "Browser notifications are blocked. Notifications will appear as in-app toasts instead.",
+              });
+            }
+          });
+        } else if (Notification.permission === "denied") {
+          toastManager.add({
+            type: "info",
+            title: "Notifications blocked",
+            description:
+              "Browser notifications are blocked. Notifications will appear as in-app toasts instead.",
+          });
+        }
+      }
+    },
+    [updateSettings],
+  );
+
+  const handleToggleAdvanced = useCallback(
+    (checked: boolean) => {
+      if (checked) {
+        updateSettings({
+          turnNotificationAdvancedSounds: true,
+          turnNotificationSoundMap: {
+            "turn-events": soundId,
+            "approval-needed": soundId,
+            "user-input-needed": soundId,
+          },
+        });
+      } else {
+        updateSettings({
+          turnNotificationAdvancedSounds: false,
+          turnNotificationSoundId: soundMap["turn-events"],
+        });
+      }
+    },
+    [soundId, soundMap, updateSettings],
+  );
+
+  const triggerUpload = useCallback(
+    (target: "single" | import("@marcode/contracts/settings").NotificationEventGroup) => {
+      uploadTargetRef.current = target;
+      fileInputRef.current?.click();
+    },
+    [],
+  );
+
+  const handleFileUpload = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (fileInputRef.current) fileInputRef.current.value = "";
+
+      if (file.size > MAX_CUSTOM_SOUND_BYTES) {
+        toastManager.add({
+          type: "error",
+          title: "File too large",
+          description: "Custom notification sounds must be under 1 MB.",
+        });
+        return;
+      }
+
+      void isValidAudioFile(file).then((valid) => {
+        if (!valid) {
+          toastManager.add({
+            type: "error",
+            title: "Invalid audio file",
+            description: "The selected file is not a recognized audio format.",
+          });
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.addEventListener("load", () => {
+          const dataUrl = reader.result;
+          if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:audio/")) return;
+
+          const id = `custom-${Date.now()}`;
+          const name = file.name.replace(/\.[^.]+$/, "");
+          const newSound: CustomNotificationSound = { id, name, dataUrl };
+          const target = uploadTargetRef.current;
+
+          if (target === "single") {
+            updateSettings({
+              turnNotificationSoundId: id,
+              turnNotificationCustomSounds: [...customSounds, newSound],
+            });
+          } else {
+            updateSettings({
+              turnNotificationSoundMap: { ...soundMap, [target]: id },
+              turnNotificationCustomSounds: [...customSounds, newSound],
+            });
+          }
+        });
+        reader.addEventListener("error", () => {
+          toastManager.add({
+            type: "error",
+            title: "Upload failed",
+            description: "Could not read the selected audio file.",
+          });
+        });
+        reader.readAsDataURL(file);
+      });
+    },
+    [customSounds, soundMap, updateSettings],
+  );
+
+  const handleDeleteCustomSound = useCallback(
+    (targetId: string) => {
+      const next = customSounds.filter((s) => s.id !== targetId);
+      const patch: Record<string, unknown> = {
+        turnNotificationCustomSounds: next,
+      };
+      if (soundId === targetId) {
+        patch.turnNotificationSoundId = DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundId;
+      }
+      const mapPatch = { ...soundMap };
+      let mapChanged = false;
+      for (const key of EVENT_GROUP_KEYS) {
+        if (mapPatch[key] === targetId) {
+          mapPatch[key] = DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundMap[key];
+          mapChanged = true;
+        }
+      }
+      if (mapChanged) {
+        patch.turnNotificationSoundMap = mapPatch;
+      }
+      updateSettings(patch);
+    },
+    [customSounds, soundId, soundMap, updateSettings],
+  );
+
+  const handleSingleSoundChange = useCallback(
+    (value: string) => {
+      updateSettings({ turnNotificationSoundId: value });
+    },
+    [updateSettings],
+  );
+
+  const handleGroupSoundChange = useCallback(
+    (group: import("@marcode/contracts/settings").NotificationEventGroup, value: string) => {
+      updateSettings({
+        turnNotificationSoundMap: { ...soundMap, [group]: value },
+      });
+    },
+    [soundMap, updateSettings],
+  );
+
+  const handlePreviewSingle = useCallback(() => {
+    previewSound(soundId, customSounds);
+  }, [soundId, customSounds]);
+
+  const isModeDirty =
+    settings.turnNotificationMode !== DEFAULT_UNIFIED_SETTINGS.turnNotificationMode;
+  const isSoundDirty =
+    settings.turnNotificationSoundId !== DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundId ||
+    customSounds.length > 0 ||
+    settings.turnNotificationAdvancedSounds;
+
+  return (
+    <SettingsSection title="Notifications">
+      <SettingsRow
+        title="Turn notifications"
+        description="Get notified when a turn completes, approval is needed, or input is requested."
+        resetAction={
+          isModeDirty ? (
+            <SettingResetButton
+              label="notification mode"
+              onClick={() =>
+                updateSettings({
+                  turnNotificationMode: DEFAULT_UNIFIED_SETTINGS.turnNotificationMode,
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <Select value={mode} onValueChange={handleModeChange}>
+            <SelectTrigger className="w-full sm:w-44" aria-label="Turn notification mode">
+              <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {(Object.entries(NOTIFICATION_MODE_LABELS) as [TurnNotificationMode, string][]).map(
+                ([value, label]) => (
+                  <SelectItem key={value} hideIndicator value={value}>
+                    {label}
+                  </SelectItem>
+                ),
+              )}
+            </SelectPopup>
+          </Select>
+        }
+      />
+
+      {mode === "sound" && !advancedSounds && (
+        <SettingsRow
+          title="Notification sound"
+          description="Choose a sound to play when notifications fire."
+          resetAction={
+            isSoundDirty ? (
+              <SettingResetButton
+                label="notification sound"
+                onClick={() => {
+                  updateSettings({
+                    turnNotificationSoundId: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundId,
+                    turnNotificationCustomSounds: [],
+                    turnNotificationAdvancedSounds: false,
+                  });
+                }}
+              />
+            ) : null
+          }
+          control={
+            <div className="flex items-center gap-2">
+              <SoundPickerSelect
+                value={soundId}
+                customSounds={customSounds}
+                onValueChange={handleSingleSoundChange}
+                onDeleteCustomSound={handleDeleteCustomSound}
+                onUpload={() => triggerUpload("single")}
+                ariaLabel="Notification sound"
+              />
+              <Button
+                size="icon-xs"
+                variant="ghost"
+                className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                onClick={handlePreviewSingle}
+                aria-label="Preview notification sound"
+              >
+                <PlayIcon className="size-3.5" />
+              </Button>
+              <Switch
+                checked={advancedSounds}
+                onCheckedChange={handleToggleAdvanced}
+                aria-label="Per-event sounds"
+              />
+            </div>
+          }
+        />
+      )}
+
+      {mode === "sound" && advancedSounds && (
+        <>
+          <SettingsRow
+            title="Per-event sounds"
+            description="Assign a different sound to each notification event."
+            resetAction={
+              isSoundDirty ? (
+                <SettingResetButton
+                  label="notification sounds"
+                  onClick={() => {
+                    updateSettings({
+                      turnNotificationSoundId: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundId,
+                      turnNotificationCustomSounds: [],
+                      turnNotificationAdvancedSounds: false,
+                      turnNotificationSoundMap: DEFAULT_UNIFIED_SETTINGS.turnNotificationSoundMap,
+                    });
+                  }}
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={advancedSounds}
+                onCheckedChange={handleToggleAdvanced}
+                aria-label="Per-event sounds"
+              />
+            }
+          />
+          {EVENT_GROUP_KEYS.map((group) => (
+            <SettingsRow
+              key={group}
+              title={EVENT_GROUP_LABELS[group]}
+              description=""
+              control={
+                <div className="flex items-center gap-2">
+                  <SoundPickerSelect
+                    value={soundMap[group]}
+                    customSounds={customSounds}
+                    onValueChange={(v) => handleGroupSoundChange(group, v)}
+                    onDeleteCustomSound={handleDeleteCustomSound}
+                    onUpload={() => triggerUpload(group)}
+                    ariaLabel={`${EVENT_GROUP_LABELS[group]} sound`}
+                  />
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+                    onClick={() => previewSound(soundMap[group], customSounds)}
+                    aria-label={`Preview ${EVENT_GROUP_LABELS[group]} sound`}
+                  >
+                    <PlayIcon className="size-3.5" />
+                  </Button>
+                </div>
+              }
+            />
+          ))}
+        </>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+    </SettingsSection>
+  );
 }
 
 export function GeneralSettingsPanel() {
@@ -1060,6 +1538,8 @@ export function GeneralSettingsPanel() {
           }
         />
       </SettingsSection>
+
+      <TurnNotificationSettingsSection settings={settings} updateSettings={updateSettings} />
 
       <SettingsSection title="Integrations">
         <div className="border-t border-border px-4 py-4 first:border-t-0 sm:px-5">
