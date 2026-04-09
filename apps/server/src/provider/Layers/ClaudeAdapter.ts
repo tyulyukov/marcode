@@ -2037,7 +2037,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const status = turnStatusFromResult(message);
     const errorMessage =
-      message.subtype === "success"
+      message.subtype === "success" || isInterruptedResult(message)
         ? undefined
         : message.errors.find((e: string) => !e.startsWith("[ede_diagnostic]"));
 

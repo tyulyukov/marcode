@@ -3994,7 +3994,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
       if (isLocalDraftThread) {
-        setDraftThreadContext(threadId, { envMode: mode });
+        setDraftThreadContext(threadId, {
+          envMode: mode,
+          ...(mode === "worktree" ? { branch: null } : {}),
+        });
       }
       scheduleComposerFocus();
     },
