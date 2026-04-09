@@ -80,19 +80,23 @@ export const ProviderUsageLimitsSection = memo(function ProviderUsageLimitsSecti
   timestampFormat: TimestampFormat;
 }) {
   const windows = provider.usageLimits?.windows ?? [];
-  if (windows.length === 0) return null;
 
   return (
     <div className="border-t border-border/60 px-4 pb-4 pt-3 sm:px-5">
-      <div className="space-y-3">
-        {windows.map((window) => (
-          <UsageWindowBar
-            key={`${window.kind}:${window.resetsAt}`}
-            window={window}
-            timestampFormat={timestampFormat}
-          />
-        ))}
-      </div>
+      <div className="text-xs font-medium text-foreground">Usage limits</div>
+      {windows.length === 0 ? (
+        <p className="mt-1 text-xs text-muted-foreground">No usage data yet.</p>
+      ) : (
+        <div className="mt-2 space-y-3">
+          {windows.map((window) => (
+            <UsageWindowBar
+              key={`${window.kind}:${window.resetsAt}`}
+              window={window}
+              timestampFormat={timestampFormat}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 });
