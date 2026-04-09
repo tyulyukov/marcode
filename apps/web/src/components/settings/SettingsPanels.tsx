@@ -566,6 +566,7 @@ function SoundPickerSelect({
   onDeleteCustomSound,
   onUpload,
   ariaLabel,
+  disabled,
 }: {
   value: string;
   customSounds: readonly CustomNotificationSound[];
@@ -573,6 +574,7 @@ function SoundPickerSelect({
   onDeleteCustomSound: (id: string) => void;
   onUpload: () => void;
   ariaLabel: string;
+  disabled?: boolean;
 }) {
   const handleChange = useCallback(
     (next: string | null) => {
@@ -587,8 +589,8 @@ function SoundPickerSelect({
   );
 
   return (
-    <Select value={value} onValueChange={handleChange}>
-      <SelectTrigger className="w-full sm:w-44" aria-label={ariaLabel}>
+    <Select value={value} onValueChange={handleChange} disabled={disabled}>
+      <SelectTrigger className="w-full sm:w-44" aria-label={ariaLabel} disabled={disabled}>
         <SelectValue>{resolveSoundDisplayName(value, customSounds)}</SelectValue>
       </SelectTrigger>
       <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -656,6 +658,7 @@ function TurnNotificationSettingsSection({
   const customSounds = settings.turnNotificationCustomSounds;
   const advancedSounds = settings.turnNotificationAdvancedSounds;
   const soundMap = settings.turnNotificationSoundMap;
+  const [perEventExpanded, setPerEventExpanded] = useState(advancedSounds);
 
   const handleModeChange = useCallback(
     (value: string | null) => {
@@ -699,6 +702,7 @@ function TurnNotificationSettingsSection({
             "user-input-needed": soundId,
           },
         });
+        setPerEventExpanded(true);
       } else {
         updateSettings({
           turnNotificationAdvancedSounds: false,
@@ -930,18 +934,25 @@ function TurnNotificationSettingsSection({
 
       {mode === "sound" && (
         <div className="border-t border-border/60">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-4 py-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground sm:px-5"
-            onClick={() => handleToggleAdvanced(!advancedSounds)}
-            aria-expanded={advancedSounds}
-          >
-            <ChevronDownIcon
-              className={cn("size-3.5 transition-transform", !advancedSounds && "-rotate-90")}
+          <div className="flex w-full items-center justify-between px-4 py-2.5 sm:px-5">
+            <button
+              type="button"
+              className="flex items-center gap-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              onClick={() => setPerEventExpanded((prev) => !prev)}
+              aria-expanded={perEventExpanded}
+            >
+              <ChevronDownIcon
+                className={cn("size-3.5 transition-transform", !perEventExpanded && "-rotate-90")}
+              />
+              Customize per event
+            </button>
+            <Switch
+              checked={advancedSounds}
+              onCheckedChange={(checked) => handleToggleAdvanced(Boolean(checked))}
+              aria-label="Enable per-event notification sounds"
             />
-            Customize per event
-          </button>
-          <Collapsible open={advancedSounds} onOpenChange={handleToggleAdvanced}>
+          </div>
+          <Collapsible open={perEventExpanded} onOpenChange={setPerEventExpanded}>
             <CollapsibleContent>
               <div className="space-y-0">
                 {EVENT_GROUP_KEYS.map((group) => (
@@ -952,19 +963,27 @@ function TurnNotificationSettingsSection({
                     control={
                       <div className="flex items-center gap-2">
                         <SoundPickerSelect
-                          value={soundMap[group]}
+                          value={advancedSounds ? soundMap[group] : soundId}
                           customSounds={customSounds}
-                          onValueChange={(v) => handleGroupSoundChange(group, v)}
+                          onValueChange={(v) =>
+                            advancedSounds
+                              ? handleGroupSoundChange(group, v)
+                              : handleSingleSoundChange(v)
+                          }
                           onDeleteCustomSound={handleDeleteCustomSound}
-                          onUpload={() => triggerUpload(group)}
+                          onUpload={() => triggerUpload(advancedSounds ? group : "single")}
                           ariaLabel={`${EVENT_GROUP_LABELS[group]} sound`}
+                          disabled={!advancedSounds}
                         />
                         <Button
                           size="icon-xs"
                           variant="ghost"
                           className="size-7 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
-                          onClick={() => previewSound(soundMap[group], customSounds)}
+                          onClick={() =>
+                            previewSound(advancedSounds ? soundMap[group] : soundId, customSounds)
+                          }
                           aria-label={`Preview ${EVENT_GROUP_LABELS[group]} sound`}
+                          disabled={!advancedSounds}
                         >
                           <PlayIcon className="size-3.5" />
                         </Button>
