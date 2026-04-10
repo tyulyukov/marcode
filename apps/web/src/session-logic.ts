@@ -547,9 +547,10 @@ export function deriveTodoItems(
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
-  options?: { excludeTodoToolCalls?: boolean },
+  options?: { excludeTodoToolCalls?: boolean; isSessionRunning?: boolean },
 ): WorkLogEntry[] {
   const excludeTodos = options?.excludeTodoToolCalls === true;
+  const isSessionRunning = options?.isSessionRunning ?? false;
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
 
   const collabToolDataByItemId = new Map<string, SubagentCollabToolData>();
@@ -667,6 +668,7 @@ export function deriveWorkLogEntries(
           taskGroups,
           collabToolDataByItemId,
           collabToolDataUnkeyed,
+          isSessionRunning,
         );
         if (groupEntry) entries.push(groupEntry);
       }
@@ -812,6 +814,7 @@ function buildAgentTaskSummary(
   group: TaskActivityGroup,
   collabToolDataByItemId: ReadonlyMap<string, SubagentCollabToolData>,
   collabToolDataUnkeyed: ReadonlyArray<SubagentCollabToolData>,
+  isSessionRunning: boolean,
 ): AgentTaskSummary {
   const completedPayload = asRecord(group.completed?.payload);
   const latestProgress = group.progressEntries.at(-1);
@@ -835,6 +838,8 @@ function buildAgentTaskSummary(
     if (rawStatus === "failed") status = "failed";
     else if (rawStatus === "stopped") status = "stopped";
     else status = "completed";
+  } else if (!isSessionRunning) {
+    status = "completed";
   }
 
   const usageSource = completedPayload ?? latestProgressPayload;
@@ -936,11 +941,18 @@ function buildAgentGroupEntry(
   taskGroups: Map<string, TaskActivityGroup>,
   collabToolDataByItemId: ReadonlyMap<string, SubagentCollabToolData>,
   collabToolDataUnkeyed: ReadonlyArray<SubagentCollabToolData>,
+  isSessionRunning: boolean,
 ): DerivedWorkLogEntry | null {
   if (taskGroups.size === 0) return null;
 
   const tasks = [...taskGroups.entries()].map(([taskId, group]) =>
-    buildAgentTaskSummary(taskId, group, collabToolDataByItemId, collabToolDataUnkeyed),
+    buildAgentTaskSummary(
+      taskId,
+      group,
+      collabToolDataByItemId,
+      collabToolDataUnkeyed,
+      isSessionRunning,
+    ),
   );
   const hasFailed = tasks.some((t) => t.status === "failed");
 

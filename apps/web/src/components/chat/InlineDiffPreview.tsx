@@ -113,10 +113,13 @@ function extractLineHtmls(fullHtml: string): string[] {
   });
 }
 
-export function shortenPath(filePath: string): string {
-  const parts = filePath.split("/");
-  if (parts.length <= 3) return filePath;
-  return `.../${parts.slice(-2).join("/")}`;
+export function relativizePath(filePath: string, cwd: string | undefined): string {
+  if (!cwd || !filePath.startsWith("/")) return filePath;
+  const normalizedCwd = cwd.endsWith("/") ? cwd : `${cwd}/`;
+  if (filePath.startsWith(normalizedCwd)) {
+    return filePath.slice(normalizedCwd.length);
+  }
+  return filePath;
 }
 
 function buildLineKeys(lines: ReadonlyArray<DiffLine>): string[] {
@@ -155,8 +158,8 @@ export function DiffStatSummary(props: { additions: number; deletions: number })
 }
 
 const LINE_BG: Record<DiffLine["type"], string> = {
-  deletion: "bg-[color-mix(in_srgb,var(--background)_88%,var(--destructive))]",
-  addition: "bg-[color-mix(in_srgb,var(--background)_88%,var(--success))]",
+  deletion: "bg-[color-mix(in_srgb,var(--background)_92%,var(--destructive))]",
+  addition: "bg-[color-mix(in_srgb,var(--background)_92%,var(--success))]",
   context: "",
   separator: "",
 };
@@ -240,16 +243,16 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
   return (
     <div className="relative overflow-hidden border-t border-border/30" style={{ maxHeight }}>
       <div className="overflow-x-auto overflow-y-hidden">
-        <pre className="m-0 p-0 text-[11px] leading-[18px]">
+        <pre className="m-0 min-w-full w-max p-0 text-[11px] leading-[18px]">
           {keyedLines.map((line, idx) => {
             if (line.type === "separator") {
               const hiddenCount = parseInt(line.content, 10);
               return (
                 <div
                   key={line.key}
-                  className="py-0.5 pl-1 text-center font-mono text-muted-foreground/30"
+                  className="bg-[color-mix(in_srgb,var(--background)_95%,var(--foreground))] py-0.5 text-center font-mono text-[10px] text-muted-foreground/40"
                 >
-                  ··· {hiddenCount > 0 ? `${hiddenCount} lines hidden` : "···"} ···
+                  {hiddenCount > 0 ? `${hiddenCount} unmodified lines` : "···"}
                 </div>
               );
             }
@@ -258,12 +261,12 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
               <div
                 key={line.key}
                 className={cn(
-                  "pr-3 pl-1",
+                  "pr-3 pl-2",
                   LINE_BG[line.type],
                   !highlighted && LINE_TEXT_PLAIN[line.type],
                 )}
               >
-                <span className="mr-2 inline-block w-3 select-none text-center text-muted-foreground/40">
+                <span className="mr-2 inline-block w-3 select-none text-center text-muted-foreground/30">
                   {MARKER_CHAR[line.type]}
                 </span>
                 {highlighted ? (
@@ -305,7 +308,7 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
       >
         <CollapseIcon className="size-3 shrink-0 text-muted-foreground/60" />
         <span className="truncate font-mono text-[10px] text-muted-foreground/70">
-          {OPERATION_LABELS[hunk.operation]}({shortenPath(hunk.filePath)})
+          {OPERATION_LABELS[hunk.operation]}({hunk.filePath})
         </span>
         <DiffStatSummary additions={hunk.stats.additions} deletions={hunk.stats.deletions} />
       </button>

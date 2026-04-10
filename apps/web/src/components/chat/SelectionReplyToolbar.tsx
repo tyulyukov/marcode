@@ -22,6 +22,14 @@ interface ToolbarPosition {
 const TOOLBAR_HEIGHT_PX = 32;
 const TOOLBAR_GAP_PX = 6;
 
+function clampRangeToContainer(range: Range, containerEl: HTMLElement): Range {
+  if (containerEl.contains(range.endContainer)) return range;
+
+  const clamped = range.cloneRange();
+  clamped.setEndAfter(containerEl.lastChild ?? containerEl);
+  return clamped;
+}
+
 function getSelectionMeta(containerEl: HTMLElement): {
   text: string;
   startOffset: number;
@@ -35,19 +43,21 @@ function getSelectionMeta(containerEl: HTMLElement): {
   const range = selection.getRangeAt(0);
   if (!range || !containerEl.contains(range.startContainer)) return null;
 
-  const text = selection.toString().trim();
+  const effective = clampRangeToContainer(range, containerEl);
+
+  const text = effective.toString().trim();
   if (text.length === 0) return null;
 
-  const codeBlock = findAncestorCodeBlock(range.startContainer, containerEl);
+  const codeBlock = findAncestorCodeBlock(effective.startContainer, containerEl);
   const codeLanguage = codeBlock ? extractCodeLanguageFromBlock(codeBlock) : undefined;
 
   const preRange = document.createRange();
   preRange.selectNodeContents(containerEl);
-  preRange.setEnd(range.startContainer, range.startOffset);
+  preRange.setEnd(effective.startContainer, effective.startOffset);
   const startOffset = preRange.toString().length;
   const endOffset = startOffset + text.length;
 
-  const rect = range.getBoundingClientRect();
+  const rect = effective.getBoundingClientRect();
 
   return { text, startOffset, endOffset, codeLanguage, rect };
 }

@@ -405,7 +405,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           );
         })()}
 
-      {row.kind === "file-change" && <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} />}
+      {row.kind === "file-change" && (
+        <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} cwd={workspaceRoot} />
+      )}
 
       {row.kind === "exploration" && <ExplorationCard entries={row.entries} isLive={row.isLive} />}
 

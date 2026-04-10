@@ -5,7 +5,7 @@ import {
   DiffLinesBlock,
   DiffStatSummary,
   OPERATION_LABELS,
-  shortenPath,
+  relativizePath,
 } from "./InlineDiffPreview";
 
 const PREVIEW_MAX_HEIGHT = "120px";
@@ -13,15 +13,16 @@ const MIN_OVERFLOW_PX = 24;
 
 interface FileChangeCardProps {
   diffPreviews: ReadonlyArray<InlineDiffHunk>;
+  cwd: string | undefined;
 }
 
-function HunkHeader(props: { hunk: InlineDiffHunk }) {
-  const { hunk } = props;
+function HunkHeader(props: { hunk: InlineDiffHunk; cwd: string | undefined }) {
+  const { hunk, cwd } = props;
   return (
     <div className="flex items-center gap-2 px-3 py-1.5">
       <SquarePenIcon className="size-3.5 shrink-0 text-primary/50" />
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
-        {shortenPath(hunk.filePath)}
+        {relativizePath(hunk.filePath, cwd)}
       </span>
       <span className="shrink-0 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/60">
         {OPERATION_LABELS[hunk.operation]}
@@ -32,7 +33,7 @@ function HunkHeader(props: { hunk: InlineDiffHunk }) {
 }
 
 export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCardProps) {
-  const { diffPreviews } = props;
+  const { diffPreviews, cwd } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -63,7 +64,7 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
       className="overflow-hidden rounded-xl border border-border/40 border-l-2 border-l-primary/25 bg-card/25"
     >
       {isSingleHunk ? (
-        <HunkHeader hunk={diffPreviews[0]!} />
+        <HunkHeader hunk={diffPreviews[0]!} cwd={cwd} />
       ) : (
         <div className="flex items-center gap-2 px-3 py-1.5">
           <SquarePenIcon className="size-3.5 shrink-0 text-primary/50" />
@@ -81,7 +82,7 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
               {diffPreviews.map((hunk) => (
                 <div key={hunk.filePath} className="flex items-center gap-1.5 py-0.5">
                   <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground/60">
-                    {shortenPath(hunk.filePath)}
+                    {relativizePath(hunk.filePath, cwd)}
                   </span>
                   <DiffStatSummary
                     additions={hunk.stats.additions}
@@ -111,7 +112,7 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
             {!isSingleHunk && (
               <div className="border-t border-border/20 px-3 py-1">
                 <span className="font-mono text-[10px] text-muted-foreground/60">
-                  {hunk.filePath}
+                  {relativizePath(hunk.filePath, cwd)}
                 </span>
               </div>
             )}

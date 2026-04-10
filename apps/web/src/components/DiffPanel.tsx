@@ -22,6 +22,9 @@ import {
 } from "react";
 import { openInPreferredEditor } from "../editorPreferences";
 import { useGitStatus } from "~/lib/gitStatusState";
+import { useComposerDraftStore } from "../composerDraftStore";
+import type { QuotedContext } from "../lib/quotedContext";
+import { DiffSelectionReplyToolbar } from "./DiffSelectionReplyToolbar";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import { cn } from "~/lib/utils";
 import { readNativeApi } from "../nativeApi";
@@ -197,6 +200,14 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
   const gitStatusQuery = useGitStatus(activeCwd ?? null);
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  const addQuotedContext = useComposerDraftStore((store) => store.addQuotedContext);
+  const onDiffReplyToSelection = useCallback(
+    (context: QuotedContext) => {
+      if (!activeThreadId) return;
+      addQuotedContext(activeThreadId, context);
+    },
+    [activeThreadId, addQuotedContext],
+  );
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
   const orderedTurnDiffSummaries = useMemo(
@@ -732,6 +743,11 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
               </div>
             )}
           </div>
+          <DiffSelectionReplyToolbar
+            turnId={selectedTurn?.turnId ?? null}
+            viewportRef={patchViewportRef}
+            onReply={onDiffReplyToSelection}
+          />
         </>
       )}
     </DiffPanelShell>

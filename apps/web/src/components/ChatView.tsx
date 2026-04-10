@@ -1215,8 +1215,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     () =>
       deriveWorkLogEntries(timelineThreadActivities, timelineLatestTurn?.turnId ?? undefined, {
         excludeTodoToolCalls: showTodosInComposer,
+        isSessionRunning: phase === "running",
       }),
-    [timelineLatestTurn?.turnId, timelineThreadActivities, showTodosInComposer],
+    [timelineLatestTurn?.turnId, timelineThreadActivities, showTodosInComposer, phase],
   );
   const timelineLatestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(timelineThreadActivities, timelineLatestTurn?.turnId),
@@ -4835,6 +4836,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               key={ctx.id}
                               preview={formatQuotedContextPreview(ctx)}
                               tooltipText={formatQuotedContextTooltip(ctx)}
+                              isDiff={Boolean(ctx.filePath)}
                               onRemove={() => removeComposerDraftQuotedContext(threadId, ctx.id)}
                             />
                           ))}
