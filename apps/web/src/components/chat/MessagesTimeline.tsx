@@ -277,7 +277,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       });
     },
     measureElement: measureVirtualElement,
-    useAnimationFrameWithResizeObserver: true,
     overscan: 8,
   });
   useEffect(() => {

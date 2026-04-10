@@ -1,5 +1,8 @@
+import { extractLeadingQuotedContexts } from "../lib/quotedContext";
 import { deriveDisplayedUserMessageState } from "../lib/terminalContext";
 import { buildInlineTerminalContextText } from "./chat/userMessageTerminalContexts";
+
+const USER_QUOTED_CONTEXT_LABEL_HEIGHT_PX = 30;
 
 const ASSISTANT_CHARS_PER_LINE_FALLBACK = 72;
 const USER_CHARS_PER_LINE_FALLBACK = 56;
@@ -83,7 +86,10 @@ export function estimateTimelineMessageHeight(
 
   if (message.role === "user") {
     const charsPerLine = estimateCharsPerLineForUser(layout.timelineWidthPx);
-    const displayedUserMessage = deriveDisplayedUserMessageState(message.text);
+    const quotedExtracted = extractLeadingQuotedContexts(message.text);
+    const textAfterQuoted =
+      quotedExtracted.contextCount > 0 ? quotedExtracted.promptText : message.text;
+    const displayedUserMessage = deriveDisplayedUserMessageState(textAfterQuoted);
     const renderedText =
       displayedUserMessage.contexts.length > 0
         ? [
@@ -97,7 +103,14 @@ export function estimateTimelineMessageHeight(
     const attachmentCount = message.attachments?.length ?? 0;
     const attachmentRows = Math.ceil(attachmentCount / ATTACHMENTS_PER_ROW);
     const attachmentHeight = attachmentRows * USER_ATTACHMENT_ROW_HEIGHT_PX;
-    return USER_BASE_HEIGHT_PX + estimatedLines * USER_LINE_HEIGHT_PX + attachmentHeight;
+    const quotedContextHeight =
+      quotedExtracted.contextCount > 0 ? USER_QUOTED_CONTEXT_LABEL_HEIGHT_PX : 0;
+    return (
+      USER_BASE_HEIGHT_PX +
+      estimatedLines * USER_LINE_HEIGHT_PX +
+      attachmentHeight +
+      quotedContextHeight
+    );
   }
 
   // `system` messages are not rendered in the chat timeline, but keep a stable
