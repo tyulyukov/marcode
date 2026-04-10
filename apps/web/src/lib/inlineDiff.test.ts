@@ -199,6 +199,7 @@ describe("mergeDiffPreviews", () => {
     fullLines: [{ type: "context", content: "a" }],
     truncated: false,
     stats: { additions: 0, deletions: 0 },
+    patch: "--- a/a.ts\n+++ b/a.ts\n@@ -1,1 +1,1 @@\n a",
   };
   const hunkB: InlineDiffHunk = {
     filePath: "b.ts",
@@ -207,6 +208,7 @@ describe("mergeDiffPreviews", () => {
     fullLines: [{ type: "addition", content: "b" }],
     truncated: false,
     stats: { additions: 1, deletions: 0 },
+    patch: "--- /dev/null\n+++ b/b.ts\n@@ -0,0 +1,1 @@\n+b",
   };
   const hunkAUpdated: InlineDiffHunk = {
     filePath: "a.ts",
@@ -215,6 +217,7 @@ describe("mergeDiffPreviews", () => {
     fullLines: [{ type: "addition", content: "updated" }],
     truncated: false,
     stats: { additions: 1, deletions: 0 },
+    patch: "--- a/a.ts\n+++ b/a.ts\n@@ -0,0 +1,1 @@\n+updated",
   };
 
   it("returns b when a is empty", () => {

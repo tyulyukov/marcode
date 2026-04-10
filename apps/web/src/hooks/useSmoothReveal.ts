@@ -200,8 +200,6 @@ export function useSmoothReveal(
     const start = performance.now();
     let last = burstCount - 1;
 
-    el.scrollIntoView({ block: "start", behavior: "smooth" });
-
     const tick = (now: number) => {
       const idx = searchTimeline(tl, now - start);
 

@@ -112,6 +112,7 @@ export interface Thread {
   additionalDirectories: string[];
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
+  hydrated: boolean;
 }
 
 export interface SidebarThreadSummary {

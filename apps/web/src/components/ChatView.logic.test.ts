@@ -204,6 +204,7 @@ const makeThread = (input?: {
   additionalDirectories: [],
   turnDiffSummaries: [],
   activities: [],
+  hydrated: true,
 });
 
 afterEach(() => {
@@ -358,6 +359,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       additionalDirectories: [],
       turnDiffSummaries: [],
       activities: [],
+      hydrated: true,
     });
 
     expect(
@@ -394,6 +396,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       additionalDirectories: [],
       turnDiffSummaries: [],
       activities: [],
+      hydrated: true,
     });
 
     expect(
@@ -436,6 +439,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       additionalDirectories: [],
       turnDiffSummaries: [],
       activities: [],
+      hydrated: true,
     });
 
     expect(

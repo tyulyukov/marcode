@@ -15,6 +15,7 @@ export interface InlineDiffHunk {
   fullLines: ReadonlyArray<DiffLine>;
   truncated: boolean;
   stats: DiffStats;
+  patch: string;
 }
 
 const MAX_DIFF_LINES = 40;
@@ -189,6 +190,44 @@ function truncateDiffLines(lines: DiffLine[]): {
   return { lines: lines.slice(0, MAX_DIFF_LINES), fullLines: lines, truncated: true };
 }
 
+function buildUnifiedPatch(filePath: string, diffLines: DiffLine[], isNewFile: boolean): string {
+  if (diffLines.length === 0) return "";
+
+  let oldCount = 0;
+  let newCount = 0;
+  const bodyLines: string[] = [];
+
+  for (const line of diffLines) {
+    switch (line.type) {
+      case "context":
+        bodyLines.push(` ${line.content}`);
+        oldCount++;
+        newCount++;
+        break;
+      case "deletion":
+        bodyLines.push(`-${line.content}`);
+        oldCount++;
+        break;
+      case "addition":
+        bodyLines.push(`+${line.content}`);
+        newCount++;
+        break;
+    }
+  }
+
+  const aPath = isNewFile ? "/dev/null" : `a/${filePath}`;
+  const bPath = `b/${filePath}`;
+  const oldStart = oldCount > 0 ? 1 : 0;
+  const newStart = newCount > 0 ? 1 : 0;
+
+  return [
+    `--- ${aPath}`,
+    `+++ ${bPath}`,
+    `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`,
+    ...bodyLines,
+  ].join("\n");
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
@@ -211,8 +250,9 @@ function extractEditHunk(input: Record<string, unknown>): InlineDiffHunk | null 
   const stats = diffStats(rawLines);
   const trimmed = trimContext(rawLines);
   const { lines, fullLines, truncated } = truncateDiffLines(trimmed);
+  const patch = buildUnifiedPatch(filePath, rawLines, false);
 
-  return { filePath, operation: "edit", lines, fullLines, truncated, stats };
+  return { filePath, operation: "edit", lines, fullLines, truncated, stats, patch };
 }
 
 function extractWriteHunk(input: Record<string, unknown>): InlineDiffHunk | null {
@@ -228,8 +268,9 @@ function extractWriteHunk(input: Record<string, unknown>): InlineDiffHunk | null
   }));
   const stats: DiffStats = { additions: rawLines.length, deletions: 0 };
   const { lines, fullLines, truncated } = truncateDiffLines(rawLines);
+  const patch = buildUnifiedPatch(filePath, rawLines, true);
 
-  return { filePath, operation: "write", lines, fullLines, truncated, stats };
+  return { filePath, operation: "write", lines, fullLines, truncated, stats, patch };
 }
 
 export function extractDiffPreviews(payload: Record<string, unknown> | null): InlineDiffHunk[] {
