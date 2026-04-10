@@ -595,18 +595,25 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       data-timeline-root="true"
       className="timeline-fade-in mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
     >
-      {rows.map((row) => (
-        <div
-          key={row.id}
-          {...(row.kind === "message" ? { "data-row-message-id": row.message.id } : undefined)}
-          style={{
-            contentVisibility: "auto",
-            containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,
-          }}
-        >
-          {renderRowContent(row)}
-        </div>
-      ))}
+      {rows.map((row, index) => {
+        const nearBottom = index >= rows.length - 3;
+        return (
+          <div
+            key={row.id}
+            {...(row.kind === "message" ? { "data-row-message-id": row.message.id } : undefined)}
+            style={
+              nearBottom
+                ? undefined
+                : {
+                    contentVisibility: "auto",
+                    containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,
+                  }
+            }
+          >
+            {renderRowContent(row)}
+          </div>
+        );
+      })}
     </div>
   );
 });

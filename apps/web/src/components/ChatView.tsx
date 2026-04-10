@@ -78,6 +78,7 @@ import {
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
+import { markThreadUserStopped } from "../turnNotification";
 import { isThreadHydrated, useStore } from "../store";
 import { useProjectById, useThreadById } from "../storeSelectors";
 import { useUiStateStore } from "../uiStateStore";
@@ -843,6 +844,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   } | null>(null);
   const pendingInteractionAnchorFrameRef = useRef<number | null>(null);
   const lastContentHeightRef = useRef(0);
+  const lastSmoothScrollTimestampRef = useRef(0);
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerFormHeightRef = useRef(0);
@@ -2321,6 +2323,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     if (pendingAutoScrollFrameRef.current !== null) return;
     pendingAutoScrollFrameRef.current = window.requestAnimationFrame(() => {
       pendingAutoScrollFrameRef.current = null;
+      if (pendingUserScrollUpIntentRef.current || isPointerScrollActiveRef.current) return;
       scrollMessagesToBottom();
     });
   }, [scrollMessagesToBottom]);
@@ -2408,8 +2411,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const scrolledUp = currentScrollTop < lastKnownScrollTopRef.current - 1;
       if (scrolledUp && !isNearBottom) {
         shouldAutoScrollRef.current = false;
+        pendingUserScrollUpIntentRef.current = false;
+      } else if (!scrolledUp) {
+        pendingUserScrollUpIntentRef.current = false;
       }
-      pendingUserScrollUpIntentRef.current = false;
     } else if (shouldAutoScrollRef.current && isPointerScrollActiveRef.current) {
       const scrolledUp = currentScrollTop < lastKnownScrollTopRef.current - 1;
       if (scrolledUp && !isNearBottom) {
@@ -2466,17 +2471,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
   useLayoutEffect(() => {
     if (!activeThread?.id) return;
     shouldAutoScrollRef.current = true;
-    scheduleStickToBottom();
-    const timeout = window.setTimeout(() => {
-      const scrollContainer = messagesScrollRef.current;
-      if (!scrollContainer) return;
-      if (isScrollContainerNearBottom(scrollContainer)) return;
-      scheduleStickToBottom();
-    }, 96);
+    scrollMessagesToBottom();
+    const delays = [50, 150, 300];
+    const timeouts = delays.map((delay) =>
+      window.setTimeout(() => {
+        if (!shouldAutoScrollRef.current) return;
+        scrollMessagesToBottom();
+      }, delay),
+    );
     return () => {
-      window.clearTimeout(timeout);
+      for (const timeout of timeouts) window.clearTimeout(timeout);
     };
-  }, [activeThread?.id, scheduleStickToBottom]);
+  }, [activeThread?.id, scrollMessagesToBottom]);
   useLayoutEffect(() => {
     const composerForm = composerFormRef.current;
     if (!composerForm) return;
@@ -2577,11 +2583,17 @@ export default function ChatView({ threadId }: ChatViewProps) {
       if (nextHeight <= previousHeight) return;
       if (!shouldAutoScrollRef.current) return;
       if (pendingInteractionAnchorRef.current) return;
-      if (!isScrollContainerNearBottom(messagesScrollElement)) return;
+      if (pendingUserScrollUpIntentRef.current || isPointerScrollActiveRef.current) return;
       cancelPendingStickToBottom();
       pendingAutoScrollFrameRef.current = null;
       const heightDelta = nextHeight - previousHeight;
-      scrollMessagesToBottom(heightDelta > 100 ? "smooth" : "auto");
+      const now = performance.now();
+      const recentlySmoothed = now - lastSmoothScrollTimestampRef.current < 400;
+      const useSmoothScroll = heightDelta > 100 && !recentlySmoothed;
+      if (useSmoothScroll) {
+        lastSmoothScrollTimestampRef.current = now;
+      }
+      scrollMessagesToBottom(useSmoothScroll ? "smooth" : "auto");
     });
 
     observer.observe(contentElement);
@@ -3206,6 +3218,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
 
+    if (activeThread.session?.orchestrationStatus === "running") {
+      markThreadUserStopped(threadIdForSend);
+    }
+
     sendInFlightRef.current = true;
     try {
       beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
@@ -3604,6 +3620,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const onInterrupt = async () => {
     const api = readNativeApi();
     if (!api || !activeThread) return;
+    markThreadUserStopped(activeThread.id);
     await api.orchestration.dispatchCommand({
       type: "thread.turn.interrupt",
       commandId: newCommandId(),

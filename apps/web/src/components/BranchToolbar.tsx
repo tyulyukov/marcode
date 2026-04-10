@@ -4,6 +4,7 @@ import { useCallback } from "react";
 
 import { newCommandId } from "../lib/utils";
 import { readNativeApi } from "../nativeApi";
+import { markThreadUserStopped } from "../turnNotification";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStore } from "../store";
 import {
@@ -61,6 +62,7 @@ export default function BranchToolbar({
       // If the effective cwd is about to change, stop the running session so the
       // next message creates a new one with the correct cwd.
       if (serverThread?.session && worktreePath !== activeWorktreePath && api) {
+        markThreadUserStopped(activeThreadId);
         void api.orchestration
           .dispatchCommand({
             type: "thread.session.stop",

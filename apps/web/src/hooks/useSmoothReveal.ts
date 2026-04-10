@@ -56,15 +56,22 @@ function hideDecoratedElements(root: HTMLElement): void {
     li.classList.add("tr-li-hidden");
   }
   for (const el of root.querySelectorAll(
-    ".chat-markdown-codeblock, :not(pre) > code, blockquote, table",
+    ".chat-markdown-codeblock, :not(pre) > code, blockquote, table, hr",
   )) {
     el.classList.add("tr-block-hidden");
+  }
+  for (const input of root.querySelectorAll('input[type="checkbox"]')) {
+    (input as HTMLElement).classList.add("tr-input-hidden");
   }
 }
 
 function revealDecorationForSpan(span: HTMLSpanElement): void {
   const li = span.closest("li.tr-li-hidden");
-  if (li) li.classList.remove("tr-li-hidden");
+  if (li) {
+    li.classList.remove("tr-li-hidden");
+    const checkbox = li.querySelector(".tr-input-hidden");
+    if (checkbox) checkbox.classList.remove("tr-input-hidden");
+  }
   const block = span.closest(".tr-block-hidden");
   if (block) block.classList.remove("tr-block-hidden");
 }
@@ -75,6 +82,9 @@ function unwrapSpans(root: HTMLElement): void {
   }
   for (const el of root.querySelectorAll(".tr-block-hidden")) {
     el.classList.remove("tr-block-hidden");
+  }
+  for (const el of root.querySelectorAll(".tr-input-hidden")) {
+    el.classList.remove("tr-input-hidden");
   }
   const nodes = Array.from(root.querySelectorAll(".tr-word"));
   for (const span of nodes) {

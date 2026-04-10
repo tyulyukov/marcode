@@ -9,6 +9,7 @@ import { useHandleNewThread } from "./useHandleNewThread";
 import { gitRemoveWorktreeMutationOptions } from "../lib/gitReactQuery";
 import { newCommandId } from "../lib/utils";
 import { readNativeApi } from "../nativeApi";
+import { markThreadUserStopped } from "../turnNotification";
 import { useStore } from "../store";
 import { useTerminalStateStore } from "../terminalStateStore";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
@@ -94,6 +95,7 @@ export function useThreadActions() {
         ));
 
       if (thread.session && thread.session.status !== "closed") {
+        markThreadUserStopped(threadId);
         await api.orchestration
           .dispatchCommand({
             type: "thread.session.stop",
