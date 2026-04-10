@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { Hero } from "~/components/Hero";
 import { Features } from "~/components/Features";
+import { Installation } from "~/components/Installation";
 import { Footer } from "~/components/Footer";
 import { detectOS } from "~/lib/detectOS";
 import { fetchLatestRelease } from "~/lib/github";
@@ -15,6 +16,7 @@ export default async function LandingPage() {
     <main className="min-h-screen">
       <Hero os={os} release={release} />
       <Features />
+      <Installation />
       <Footer />
     </main>
   );

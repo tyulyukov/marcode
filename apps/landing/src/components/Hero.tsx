@@ -25,15 +25,16 @@ export function Hero({ os, release }: { os: DetectedOS; release: Release | null 
           className="text-5xl font-medium tracking-tight sm:text-6xl lg:text-7xl"
           style={{ letterSpacing: "-0.02em" }}
         >
-          Your coding agent,{" "}
+          The best way to{" "}
           <span className="bg-gradient-to-r from-fresh-syntax to-curious-sky bg-clip-text text-transparent">
-            one tab away
-          </span>
+            orchestrate
+          </span>{" "}
+          your agents
         </h1>
 
         <p className="max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-          MarCode is a minimal web GUI for Claude Code. Lightweight, fast, and built for developers
-          who want to get things done.
+          A lightweight, blazing-fast interface for your AI agents. Run multiple sessions, manage
+          context, and ship faster — all from a single window.
         </p>
 
         <DownloadButton serverOS={os} serverRelease={release} />
