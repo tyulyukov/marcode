@@ -684,6 +684,15 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
   yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${stagePackageJsonString}\n`);
 
+  const repoLockfile = path.join(repoRoot, "bun.lock");
+  const stageLockfile = path.join(stageAppDir, "bun.lock");
+  if (yield* fs.exists(repoLockfile)) {
+    yield* fs.copy(repoLockfile, stageLockfile);
+    yield* Effect.log(
+      "[desktop-artifact] Copied bun.lock to staging directory for deterministic installs",
+    );
+  }
+
   yield* Effect.log("[desktop-artifact] Installing staged production dependencies...");
   yield* runCommand(
     ChildProcess.make({

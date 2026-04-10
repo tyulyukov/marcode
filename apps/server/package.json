@@ -8,7 +8,7 @@
     "directory": "apps/server"
   },
   "bin": {
-    "marcode": "./dist/index.mjs"
+    "marcode": "./dist/bin.mjs"
   },
   "files": [
     "dist"
