@@ -1,6 +1,6 @@
 import { ThreadId } from "@marcode/contracts";
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
-import { Suspense, lazy, type ReactNode, useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import ChatView from "../components/ChatView";
 import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
@@ -17,7 +17,8 @@ import {
   stripDiffSearchParams,
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { useStore } from "../store";
+import { isThreadHydrated, useStore } from "../store";
+import { readNativeApi } from "../nativeApi";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
@@ -172,6 +173,36 @@ function ChatThreadRouteView() {
     Object.hasOwn(store.draftThreadsByThreadId, threadId),
   );
   const routeThreadExists = threadExists || draftThreadExists;
+  const needsHydration = useStore((store) => {
+    const thread = store.threads.find((t) => t.id === threadId);
+    return thread !== undefined && !isThreadHydrated(thread);
+  });
+  const hydrateThread = useStore((store) => store.hydrateThread);
+  const hydrationInFlightRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!needsHydration || hydrationInFlightRef.current === threadId) return;
+    hydrationInFlightRef.current = threadId;
+    const api = readNativeApi();
+    if (!api) return;
+    let cancelled = false;
+    api.orchestration
+      .getThread({ threadId })
+      .then((fullThread) => {
+        if (!cancelled && fullThread) {
+          hydrateThread(fullThread);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          hydrationInFlightRef.current = null;
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [threadId, needsHydration, hydrateThread]);
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
   // TanStack Router keeps active route components mounted across param-only navigations

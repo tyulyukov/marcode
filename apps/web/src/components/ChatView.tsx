@@ -78,7 +78,8 @@ import {
   togglePendingUserInputOptionSelection,
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
-import { useStore } from "../store";
+import { markThreadUserStopped } from "../turnNotification";
+import { isThreadHydrated, useStore } from "../store";
 import { useProjectById, useThreadById } from "../storeSelectors";
 import { useUiStateStore } from "../uiStateStore";
 import {
@@ -842,6 +843,8 @@ export default function ChatView({ threadId }: ChatViewProps) {
     top: number;
   } | null>(null);
   const pendingInteractionAnchorFrameRef = useRef<number | null>(null);
+  const lastContentHeightRef = useRef(0);
+  const lastSmoothScrollTimestampRef = useRef(0);
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerFormHeightRef = useRef(0);
@@ -1312,6 +1315,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     threadError: activeThread?.error,
   });
   const isWorking = phase === "running" || isSendBusy || isConnecting || isRevertingCheckpoint;
+  const isThreadHydrating = activeThread !== undefined && !isThreadHydrated(activeThread);
   const nowIso = new Date(nowTick).toISOString();
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,
@@ -2319,6 +2323,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
     if (pendingAutoScrollFrameRef.current !== null) return;
     pendingAutoScrollFrameRef.current = window.requestAnimationFrame(() => {
       pendingAutoScrollFrameRef.current = null;
+      if (pendingUserScrollUpIntentRef.current || isPointerScrollActiveRef.current) return;
       scrollMessagesToBottom();
     });
   }, [scrollMessagesToBottom]);
@@ -2366,6 +2371,33 @@ export default function ChatView({ threadId }: ChatViewProps) {
     scrollMessagesToBottom();
     scheduleStickToBottom();
   }, [cancelPendingStickToBottom, scheduleStickToBottom, scrollMessagesToBottom]);
+  const REVEAL_SCROLL_VIEWPORT_FRACTION = 0.4;
+  const onRevealStart = useCallback(
+    (messageId: string) => {
+      const scrollContainer = messagesScrollRef.current;
+      if (!scrollContainer || !shouldAutoScrollRef.current) return;
+      if (!isScrollContainerNearBottom(scrollContainer)) return;
+
+      const rowElement = scrollContainer.querySelector<HTMLElement>(
+        `[data-row-message-id="${CSS.escape(messageId)}"]`,
+      );
+      if (!rowElement) return;
+
+      const rowHeight = rowElement.getBoundingClientRect().height;
+      const viewportHeight = scrollContainer.clientHeight;
+      if (rowHeight < viewportHeight * REVEAL_SCROLL_VIEWPORT_FRACTION) return;
+
+      cancelPendingStickToBottom();
+      pendingAutoScrollFrameRef.current = null;
+
+      const rowOffsetTop = rowElement.offsetTop;
+      scrollContainer.scrollTo({ top: rowOffsetTop, behavior: "smooth" });
+      lastKnownScrollTopRef.current = scrollContainer.scrollTop;
+      shouldAutoScrollRef.current = false;
+      setShowScrollToBottom(true);
+    },
+    [cancelPendingStickToBottom],
+  );
   const onMessagesScroll = useCallback(() => {
     const scrollContainer = messagesScrollRef.current;
     if (!scrollContainer) return;
@@ -2379,8 +2411,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
       const scrolledUp = currentScrollTop < lastKnownScrollTopRef.current - 1;
       if (scrolledUp && !isNearBottom) {
         shouldAutoScrollRef.current = false;
+        pendingUserScrollUpIntentRef.current = false;
+      } else if (!scrolledUp) {
+        pendingUserScrollUpIntentRef.current = false;
       }
-      pendingUserScrollUpIntentRef.current = false;
     } else if (shouldAutoScrollRef.current && isPointerScrollActiveRef.current) {
       const scrolledUp = currentScrollTop < lastKnownScrollTopRef.current - 1;
       if (scrolledUp && !isNearBottom) {
@@ -2437,17 +2471,18 @@ export default function ChatView({ threadId }: ChatViewProps) {
   useLayoutEffect(() => {
     if (!activeThread?.id) return;
     shouldAutoScrollRef.current = true;
-    scheduleStickToBottom();
-    const timeout = window.setTimeout(() => {
-      const scrollContainer = messagesScrollRef.current;
-      if (!scrollContainer) return;
-      if (isScrollContainerNearBottom(scrollContainer)) return;
-      scheduleStickToBottom();
-    }, 96);
+    scrollMessagesToBottom();
+    const delays = [50, 150, 300];
+    const timeouts = delays.map((delay) =>
+      window.setTimeout(() => {
+        if (!shouldAutoScrollRef.current) return;
+        scrollMessagesToBottom();
+      }, delay),
+    );
     return () => {
-      window.clearTimeout(timeout);
+      for (const timeout of timeouts) window.clearTimeout(timeout);
     };
-  }, [activeThread?.id, scheduleStickToBottom]);
+  }, [activeThread?.id, scrollMessagesToBottom]);
   useLayoutEffect(() => {
     const composerForm = composerFormRef.current;
     if (!composerForm) return;
@@ -2531,6 +2566,41 @@ export default function ChatView({ threadId }: ChatViewProps) {
     if (!shouldAutoScrollRef.current) return;
     scheduleStickToBottom();
   }, [phase, scheduleStickToBottom, timelineEntries]);
+  useLayoutEffect(() => {
+    if (!messagesScrollElement || typeof ResizeObserver === "undefined") return;
+    const contentElement = messagesScrollElement.firstElementChild as HTMLElement | null;
+    if (!contentElement) return;
+
+    lastContentHeightRef.current = contentElement.getBoundingClientRect().height;
+
+    const observer = new ResizeObserver((entries) => {
+      const [entry] = entries;
+      if (!entry) return;
+      const nextHeight = entry.contentRect.height;
+      const previousHeight = lastContentHeightRef.current;
+      lastContentHeightRef.current = nextHeight;
+
+      if (nextHeight <= previousHeight) return;
+      if (!shouldAutoScrollRef.current) return;
+      if (pendingInteractionAnchorRef.current) return;
+      if (pendingUserScrollUpIntentRef.current || isPointerScrollActiveRef.current) return;
+      cancelPendingStickToBottom();
+      pendingAutoScrollFrameRef.current = null;
+      const heightDelta = nextHeight - previousHeight;
+      const now = performance.now();
+      const recentlySmoothed = now - lastSmoothScrollTimestampRef.current < 400;
+      const useSmoothScroll = heightDelta > 100 && !recentlySmoothed;
+      if (useSmoothScroll) {
+        lastSmoothScrollTimestampRef.current = now;
+      }
+      scrollMessagesToBottom(useSmoothScroll ? "smooth" : "auto");
+    });
+
+    observer.observe(contentElement);
+    return () => {
+      observer.disconnect();
+    };
+  }, [messagesScrollElement, activeThread?.id, cancelPendingStickToBottom, scrollMessagesToBottom]);
 
   useEffect(() => {
     setExpandedWorkGroups({});
@@ -3148,6 +3218,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
       return;
     }
 
+    if (activeThread.session?.orchestrationStatus === "running") {
+      markThreadUserStopped(threadIdForSend);
+    }
+
     sendInFlightRef.current = true;
     try {
       beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
@@ -3546,6 +3620,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const onInterrupt = async () => {
     const api = readNativeApi();
     if (!api || !activeThread) return;
+    markThreadUserStopped(activeThread.id);
     await api.orchestration.dispatchCommand({
       type: "thread.turn.interrupt",
       commandId: newCommandId(),
@@ -4632,6 +4707,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 key={activeThread.id}
                 threadId={activeThread.id}
                 hasMessages={timelineEntries.length > 0}
+                isHydrating={isThreadHydrating}
                 isWorking={isWorking}
                 activeTurnInProgress={isWorking || !latestTurnSettled}
                 activeTurnStartedAt={activeWorkStartedAt}
@@ -4665,6 +4741,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 onCancelEditUserMessage={discardUserMessageEditSession}
                 onSubmitEditUserMessage={onSubmitEditUserMessage}
                 onReplyToSelection={onReplyToSelection}
+                onRevealStart={onRevealStart}
               />
             </div>
 

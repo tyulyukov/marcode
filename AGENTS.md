@@ -74,13 +74,24 @@ Docs:
 
 ## Performance: State & Rendering Architecture
 
+### Two-Phase Bootstrap (`__root.tsx`, `store.ts`, `ProjectionSnapshotQuery.ts`)
+
+The initial data load uses a **two-phase bootstrap** to render the sidebar immediately:
+
+1. **Phase 1 — Listing Snapshot** (`getListingSnapshot()`): Fetches projects + lightweight `OrchestrationThreadSummary` (thread metadata, sessions, latest turns, pre-computed `latestUserMessageAt` via SQL aggregate). Skips messages, activities, checkpoints, and proposed plans. Sets `bootstrapComplete = true` so the sidebar renders immediately. Threads in the store are "hollow" (empty `messages[]`, `activities[]`, etc.).
+
+2. **Phase 2 — Lazy Thread Hydration** (`getThread(threadId)`): When the user navigates to a thread, `_chat.$threadId.tsx` checks `isThreadHydrated()` (messages exist or no turn has happened). If hollow, it calls `getThread()` to fetch full data for that single thread and calls `hydrateThread()` to replace the hollow thread in the store.
+
+Sidebar summary fields (`hasPendingApprovals`, `hasPendingUserInput`, `hasActionableProposedPlan`) default to `false` in the listing snapshot — real-time domain events correct these for active threads within seconds.
+
+Full `getSnapshot()` remains available as a fallback for `replay-failed` snapshot recovery.
+
 ### Incremental domain event application (`__root.tsx`, `store.ts`)
 
 High-frequency events (`thread.message-sent`, `thread.activity-appended`, `thread.session-set`, `thread.turn-diff-completed`, `thread.proposed-plan-upserted`) are applied **incrementally** to the Zustand store from event payloads — no full snapshot fetch. This avoids blocking the main thread with JSON parsing and object reconstruction during active agent work.
 
 Full snapshot sync (`getSnapshot()`) only runs for:
 
-- Non-incremental events (thread created/deleted/archived, etc.) via `nonIncrementalThrottler` (500ms)
 - Sequence gaps (missed events)
 - Deferred reconciliation safety net (every 10 seconds after last incremental event)
 - Welcome/reconnect

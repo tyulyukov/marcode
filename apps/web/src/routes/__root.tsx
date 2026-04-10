@@ -213,6 +213,7 @@ function ServerStateBootstrap() {
 function EventRouter() {
   const applyOrchestrationEvents = useStore((store) => store.applyOrchestrationEvents);
   const syncServerReadModel = useStore((store) => store.syncServerReadModel);
+  const syncListingSnapshot = useStore((store) => store.syncListingSnapshot);
   const setProjectExpanded = useUiStateStore((store) => store.setProjectExpanded);
   const syncProjects = useUiStateStore((store) => store.syncProjects);
   const syncThreads = useUiStateStore((store) => store.syncThreads);
@@ -558,13 +559,27 @@ function EventRouter() {
           }
         }
       } catch {
-        // Keep prior state and wait for welcome or a later replay attempt.
         recovery.failSnapshotRecovery();
       }
     };
 
     const bootstrapFromSnapshot = async (): Promise<void> => {
-      await runSnapshotRecovery("bootstrap");
+      const started = recovery.beginSnapshotRecovery("bootstrap");
+      if (!started) {
+        return;
+      }
+      try {
+        const listing = await api.orchestration.getListingSnapshot();
+        if (!disposed) {
+          syncListingSnapshot(listing);
+          reconcileSnapshotDerivedState();
+          if (recovery.completeSnapshotRecovery(listing.snapshotSequence)) {
+            void runReplayRecovery("sequence-gap");
+          }
+        }
+      } catch {
+        recovery.failSnapshotRecovery();
+      }
     };
     bootstrapFromSnapshotRef.current = bootstrapFromSnapshot;
 
