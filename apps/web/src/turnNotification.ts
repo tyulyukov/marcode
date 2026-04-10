@@ -45,12 +45,44 @@ const COMPLETION_STATUS_TO_REASON: Partial<
   error: "turn-errored",
 };
 
+const USER_INITIATED_STATUSES: ReadonlySet<OrchestrationSessionStatus> = new Set([
+  "stopped",
+  "interrupted",
+]);
+
+const SUPPRESSION_WINDOW_MS = 5_000;
+const suppressedThreads = new Map<ThreadId, number>();
+
+export function markThreadUserStopped(threadId: ThreadId): void {
+  suppressedThreads.set(threadId, Date.now());
+}
+
+function isThreadSuppressed(threadId: ThreadId): boolean {
+  const suppressedAt = suppressedThreads.get(threadId);
+  if (suppressedAt === undefined) return false;
+  if (Date.now() - suppressedAt > SUPPRESSION_WINDOW_MS) {
+    suppressedThreads.delete(threadId);
+    return false;
+  }
+  return true;
+}
+
 export function deriveTurnNotificationTriggers(
   events: readonly OrchestrationEvent[],
   getThread: (threadId: ThreadId) => Thread | undefined,
   getProject: (projectId: ProjectId) => Project | undefined,
 ): TurnNotificationTrigger[] {
   const triggers: TurnNotificationTrigger[] = [];
+
+  const userInitiatedThreadIds = new Set<ThreadId>();
+  for (const event of events) {
+    if (
+      event.type === "thread.session-set" &&
+      USER_INITIATED_STATUSES.has(event.payload.session.status)
+    ) {
+      userInitiatedThreadIds.add(event.payload.threadId);
+    }
+  }
 
   for (const event of events) {
     if (event.type === "thread.session-set") {
@@ -59,6 +91,10 @@ export function deriveTurnNotificationTriggers(
 
       const reason = COMPLETION_STATUS_TO_REASON[newStatus];
       if (!reason) continue;
+
+      if (userInitiatedThreadIds.has(threadId) && !USER_INITIATED_STATUSES.has(newStatus)) continue;
+
+      if (isThreadSuppressed(threadId)) continue;
 
       const thread = getThread(threadId);
       if (!thread) continue;

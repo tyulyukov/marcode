@@ -53,6 +53,7 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         threadId="test-thread"
         hasMessages
+        isHydrating={false}
         isWorking={false}
         activeTurnInProgress={false}
         activeTurnStartedAt={null}
@@ -121,6 +122,7 @@ describe("MessagesTimeline", () => {
       <MessagesTimeline
         threadId="test-thread"
         hasMessages
+        isHydrating={false}
         isWorking={false}
         activeTurnInProgress={false}
         activeTurnStartedAt={null}

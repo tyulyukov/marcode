@@ -9,7 +9,9 @@ import {
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   OrchestrationGetFullThreadDiffError,
+  OrchestrationGetListingSnapshotError,
   OrchestrationGetSnapshotError,
+  OrchestrationGetThreadError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
   ProjectBrowseDirectoriesError,
@@ -377,6 +379,35 @@ const WsRpcLayer = WsRpcGroup.toLayer(
               (cause) =>
                 new OrchestrationGetSnapshotError({
                   message: "Failed to load orchestration snapshot",
+                  cause,
+                }),
+            ),
+          ),
+          { "rpc.aggregate": "orchestration" },
+        ),
+      [ORCHESTRATION_WS_METHODS.getListingSnapshot]: (_input) =>
+        observeRpcEffect(
+          ORCHESTRATION_WS_METHODS.getListingSnapshot,
+          projectionSnapshotQuery.getListingSnapshot().pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationGetListingSnapshotError({
+                  message: "Failed to load listing snapshot",
+                  cause,
+                }),
+            ),
+          ),
+          { "rpc.aggregate": "orchestration" },
+        ),
+      [ORCHESTRATION_WS_METHODS.getThread]: (input) =>
+        observeRpcEffect(
+          ORCHESTRATION_WS_METHODS.getThread,
+          projectionSnapshotQuery.getThread(input.threadId).pipe(
+            Effect.map((opt) => (Option.isNone(opt) ? null : opt.value)),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationGetThreadError({
+                  message: "Failed to load thread",
                   cause,
                 }),
             ),
