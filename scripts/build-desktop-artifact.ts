@@ -700,7 +700,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ...commandOutputOptions(options.verbose),
       // Windows needs shell mode to resolve .cmd shims (e.g. bun.cmd).
       shell: process.platform === "win32",
-    })`bun install --production`,
+      // The staging package.json is a flat non-workspace subset of the monorepo,
+      // so the copied bun.lock will have structural differences. Allow bun to
+      // reconcile the lockfile while still using it for dependency resolution
+      // guidance. Without this, CI (which defaults to --frozen-lockfile) rejects
+      // the install because the lockfile doesn't match the staged package.json.
+    })`bun install --production --no-frozen-lockfile`,
   );
 
   const buildEnv: NodeJS.ProcessEnv = {
