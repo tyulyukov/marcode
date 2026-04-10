@@ -9,13 +9,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  measureElement as measureVirtualElement,
-  type VirtualItem,
-  useVirtualizer,
-} from "@tanstack/react-virtual";
+// Virtualization replaced with CSS content-visibility: auto for overlap-free
+// rendering. See commit 8d4da730 for the original removal rationale.
 import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
-import { AUTO_SCROLL_BOTTOM_THRESHOLD_PX } from "../../chat-scroll";
+// AUTO_SCROLL_BOTTOM_THRESHOLD_PX no longer needed without virtualizer
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import { type ComposerImageAttachment } from "../../composerDraftStore";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
@@ -40,7 +37,7 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import { clamp } from "effect/Number";
+import { estimateTimelineMessageHeight } from "../timelineHeight";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
@@ -49,7 +46,6 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import {
   MAX_VISIBLE_WORK_LOG_ENTRIES,
   deriveMessagesTimelineRows,
-  estimateMessagesTimelineRowHeight,
   normalizeCompactToolLabel,
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
@@ -70,11 +66,7 @@ import { cn } from "~/lib/utils";
 import { extractTrailingJiraContexts, type ParsedJiraContextEntry } from "~/lib/jiraContext";
 import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
 import { SelectionReplyToolbar } from "./SelectionReplyToolbar";
-import {
-  extractLeadingQuotedContexts,
-  type ParsedQuotedContextEntry,
-  type QuotedContext,
-} from "~/lib/quotedContext";
+import { extractLeadingQuotedContexts, type QuotedContext } from "~/lib/quotedContext";
 import { UserMessageQuotedContextLabel } from "./UserMessageQuotedContextLabel";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
@@ -84,7 +76,6 @@ import {
   textContainsInlineTerminalContextLabels,
 } from "./userMessageTerminalContexts";
 
-const ALWAYS_UNVIRTUALIZED_TAIL_ROWS = 8;
 const EMPTY_EDIT_IMAGES: ComposerImageAttachment[] = [];
 
 interface MessagesTimelineProps {
@@ -140,9 +131,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   threadId,
   hasMessages,
   isWorking,
-  activeTurnInProgress,
+  activeTurnInProgress: _activeTurnInProgress,
   activeTurnStartedAt,
-  scrollContainer,
+  scrollContainer: _scrollContainer,
   timelineEntries,
   completionDividerBeforeEntryId,
   completionSummary,
@@ -172,7 +163,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onCancelEditUserMessage,
   onSubmitEditUserMessage,
   onReplyToSelection,
-  onVirtualizerSnapshot,
+  onVirtualizerSnapshot: _onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
   const [timelineWidthPx, setTimelineWidthPx] = useState<number | null>(null);
@@ -213,137 +204,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt],
   );
 
-  const firstUnvirtualizedRowIndex = useMemo(() => {
-    const firstTailRowIndex = Math.max(rows.length - ALWAYS_UNVIRTUALIZED_TAIL_ROWS, 0);
-    if (!activeTurnInProgress) return firstTailRowIndex;
-
-    const turnStartedAtMs =
-      typeof activeTurnStartedAt === "string" ? Date.parse(activeTurnStartedAt) : Number.NaN;
-    let firstCurrentTurnRowIndex = -1;
-    if (!Number.isNaN(turnStartedAtMs)) {
-      firstCurrentTurnRowIndex = rows.findIndex((row) => {
-        if (row.kind === "working") return true;
-        if (!row.createdAt) return false;
-        const rowCreatedAtMs = Date.parse(row.createdAt);
-        return !Number.isNaN(rowCreatedAtMs) && rowCreatedAtMs >= turnStartedAtMs;
-      });
-    }
-
-    if (firstCurrentTurnRowIndex < 0) {
-      firstCurrentTurnRowIndex = rows.findIndex(
-        (row) => row.kind === "message" && row.message.streaming,
-      );
-    }
-
-    if (firstCurrentTurnRowIndex < 0) return firstTailRowIndex;
-
-    for (let index = firstCurrentTurnRowIndex - 1; index >= 0; index -= 1) {
-      const previousRow = rows[index];
-      if (!previousRow || previousRow.kind !== "message") continue;
-      if (previousRow.message.role === "user") {
-        return Math.min(index, firstTailRowIndex);
-      }
-      if (previousRow.message.role === "assistant" && !previousRow.message.streaming) {
-        break;
-      }
-    }
-
-    return Math.min(firstCurrentTurnRowIndex, firstTailRowIndex);
-  }, [activeTurnInProgress, activeTurnStartedAt, rows]);
-
-  const virtualizedRowCount = clamp(firstUnvirtualizedRowIndex, {
-    minimum: 0,
-    maximum: rows.length,
-  });
-  const virtualMeasurementScopeKey =
-    timelineWidthPx === null ? "width:unknown" : `width:${Math.round(timelineWidthPx)}`;
-
-  const rowVirtualizer = useVirtualizer({
-    count: virtualizedRowCount,
-    getScrollElement: () => scrollContainer,
-    // Scope cached row measurements to the current timeline width so offscreen
-    // rows do not keep stale heights after wrapping changes.
-    getItemKey: (index: number) => {
-      const rowId = rows[index]?.id ?? String(index);
-      return `${virtualMeasurementScopeKey}:${rowId}`;
-    },
-    estimateSize: (index: number) => {
-      const row = rows[index];
-      if (!row) return 96;
-      return estimateMessagesTimelineRowHeight(row, {
-        expandedWorkGroups,
-        timelineWidthPx,
-        turnDiffSummaryByAssistantMessageId,
-      });
-    },
-    measureElement: measureVirtualElement,
-    overscan: 8,
-  });
-  useEffect(() => {
-    if (timelineWidthPx === null) return;
-    rowVirtualizer.measure();
-  }, [rowVirtualizer, timelineWidthPx]);
-  useEffect(() => {
-    rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
-      const viewportHeight = instance.scrollRect?.height ?? 0;
-      const scrollOffset = instance.scrollOffset ?? 0;
-      const itemIntersectsViewport =
-        item.end > scrollOffset && item.start < scrollOffset + viewportHeight;
-      if (itemIntersectsViewport) {
-        return false;
-      }
-      const remainingDistance = instance.getTotalSize() - (scrollOffset + viewportHeight);
-      return remainingDistance > AUTO_SCROLL_BOTTOM_THRESHOLD_PX;
-    };
-    return () => {
-      rowVirtualizer.shouldAdjustScrollPositionOnItemSizeChange = undefined;
-    };
-  }, [rowVirtualizer]);
-  const pendingMeasureFrameRef = useRef<number | null>(null);
-  const onTimelineImageLoad = useCallback(() => {
-    if (pendingMeasureFrameRef.current !== null) return;
-    pendingMeasureFrameRef.current = window.requestAnimationFrame(() => {
-      pendingMeasureFrameRef.current = null;
-      rowVirtualizer.measure();
-    });
-  }, [rowVirtualizer]);
-  useEffect(() => {
-    return () => {
-      const frame = pendingMeasureFrameRef.current;
-      if (frame !== null) {
-        window.cancelAnimationFrame(frame);
-      }
-    };
-  }, []);
-  useLayoutEffect(() => {
-    if (!onVirtualizerSnapshot) {
-      return;
-    }
-    onVirtualizerSnapshot({
-      totalSize: rowVirtualizer.getTotalSize(),
-      measurements: rowVirtualizer.measurementsCache
-        .slice(0, virtualizedRowCount)
-        .flatMap((measurement) => {
-          const row = rows[measurement.index];
-          if (!row) {
-            return [];
-          }
-          return [
-            {
-              id: row.id,
-              kind: row.kind,
-              index: measurement.index,
-              size: measurement.size,
-              start: measurement.start,
-              end: measurement.end,
-            },
-          ];
-        }),
-    });
-  }, [onVirtualizerSnapshot, rowVirtualizer, rows, virtualizedRowCount]);
-
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const nonVirtualizedRows = rows.slice(virtualizedRowCount);
+  const showInlineDiffs = expandedWorkGroups;
+  const onTimelineImageLoad = useCallback(() => {}, []);
   const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
     Record<string, boolean>
   >({});
@@ -607,33 +469,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       data-timeline-root="true"
       className="mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
     >
-      {virtualizedRowCount > 0 && (
-        <div className="relative" style={{ height: `${rowVirtualizer.getTotalSize()}px` }}>
-          {virtualRows.map((virtualRow: VirtualItem) => {
-            const row = rows[virtualRow.index];
-            if (!row) return null;
-
-            return (
-              <div
-                key={`virtual-row:${row.id}`}
-                data-index={virtualRow.index}
-                data-virtual-row-id={row.id}
-                data-virtual-row-kind={row.kind}
-                data-virtual-row-size={virtualRow.size}
-                data-virtual-row-start={virtualRow.start}
-                ref={rowVirtualizer.measureElement}
-                className="absolute left-0 top-0 w-full"
-                style={{ transform: `translateY(${virtualRow.start}px)` }}
-              >
-                {renderRowContent(row)}
-              </div>
-            );
-          })}
+      {rows.map((row) => (
+        <div
+          key={row.id}
+          style={{
+            contentVisibility: "auto",
+            containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,
+          }}
+        >
+          {renderRowContent(row)}
         </div>
-      )}
-
-      {nonVirtualizedRows.map((row) => (
-        <div key={`non-virtual-row:${row.id}`}>{renderRowContent(row)}</div>
       ))}
     </div>
   );
@@ -643,6 +488,21 @@ type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
 type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
+
+function estimateRowHeight(
+  row: TimelineRow,
+  _showInlineDiffs: Record<string, boolean>,
+  timelineWidthPx: number | null,
+): number {
+  if (row.kind === "message") {
+    return estimateTimelineMessageHeight(row.message, { timelineWidthPx });
+  }
+  if (row.kind === "proposed-plan") return 200;
+  if (row.kind === "working") return 40;
+  if (row.kind === "file-change") return 64;
+  if (row.kind === "work") return 64;
+  return 64;
+}
 
 function formatWorkingTimer(startIso: string, endIso: string): string | null {
   const startedAtMs = Date.parse(startIso);
