@@ -8,8 +8,10 @@
  */
 import type {
   OrchestrationCheckpointSummary,
+  OrchestrationListingSnapshot,
   OrchestrationProject,
   OrchestrationReadModel,
+  OrchestrationThread,
   ProjectId,
   ThreadId,
 } from "@marcode/contracts";
@@ -43,6 +45,23 @@ export interface ProjectionSnapshotQueryShape {
    * projector cursor state.
    */
   readonly getSnapshot: () => Effect.Effect<OrchestrationReadModel, ProjectionRepositoryError>;
+
+  /**
+   * Read a lightweight listing snapshot with thread summaries (no messages,
+   * activities, checkpoints, or proposed plans). Pre-computes sidebar-specific
+   * fields server-side for fast initial bootstrap.
+   */
+  readonly getListingSnapshot: () => Effect.Effect<
+    OrchestrationListingSnapshot,
+    ProjectionRepositoryError
+  >;
+
+  /**
+   * Read full data for a single thread by ID.
+   */
+  readonly getThread: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<OrchestrationThread>, ProjectionRepositoryError>;
 
   /**
    * Read aggregate projection counts without hydrating the full read model.

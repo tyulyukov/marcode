@@ -16,7 +16,6 @@ import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import { type ComposerImageAttachment } from "../../composerDraftStore";
 import { summarizeTurnDiffStats } from "../../lib/turnDiffTree";
-import ChatMarkdown from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
@@ -43,7 +42,7 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
-import TextRevealContainer from "./TextReveal";
+import AnimatedChatMarkdown from "./TextReveal";
 import {
   MAX_VISIBLE_WORK_LOG_ENTRIES,
   deriveMessagesTimelineRows,
@@ -64,6 +63,7 @@ import {
   type ParsedTerminalContextEntry,
 } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
+import { Skeleton } from "../ui/skeleton";
 import { extractTrailingJiraContexts, type ParsedJiraContextEntry } from "~/lib/jiraContext";
 import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
 import { SelectionReplyToolbar } from "./SelectionReplyToolbar";
@@ -79,9 +79,53 @@ import {
 
 const EMPTY_EDIT_IMAGES: ComposerImageAttachment[] = [];
 
+function TimelineSkeleton() {
+  return (
+    <div className="mx-auto w-full min-w-0 max-w-3xl px-1">
+      <div className="flex flex-col gap-6 py-4">
+        <div className="flex items-start gap-3">
+          <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-3/4 rounded" />
+            <Skeleton className="h-4 w-1/2 rounded" />
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 size-6 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-full rounded" />
+            <Skeleton className="h-4 w-5/6 rounded" />
+            <Skeleton className="h-4 w-4/6 rounded" />
+            <Skeleton className="h-20 w-full rounded-md" />
+            <Skeleton className="h-4 w-3/5 rounded" />
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-2/3 rounded" />
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 size-6 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-full rounded" />
+            <Skeleton className="h-4 w-4/5 rounded" />
+            <Skeleton className="h-4 w-2/3 rounded" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MessagesTimelineProps {
   threadId: string;
   hasMessages: boolean;
+  isHydrating: boolean;
   isWorking: boolean;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
@@ -115,6 +159,7 @@ interface MessagesTimelineProps {
   onCancelEditUserMessage: () => void;
   onSubmitEditUserMessage: () => void | Promise<void>;
   onReplyToSelection: (context: QuotedContext) => void;
+  onRevealStart?: (messageId: string) => void;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -131,6 +176,7 @@ interface MessagesTimelineProps {
 export const MessagesTimeline = memo(function MessagesTimeline({
   threadId,
   hasMessages,
+  isHydrating,
   isWorking,
   activeTurnInProgress: _activeTurnInProgress,
   activeTurnStartedAt,
@@ -164,6 +210,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onCancelEditUserMessage,
   onSubmitEditUserMessage,
   onReplyToSelection,
+  onRevealStart,
   onVirtualizerSnapshot: _onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -206,11 +253,21 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
 
   const knownMessageIdsRef = useRef<Set<string>>(new Set());
+  const pendingRevealRef = useRef<Set<string>>(new Set());
   const prevThreadIdRef = useRef<string | null>(null);
+  const wasHydratingRef = useRef(isHydrating);
+  const pendingHydrationSeedRef = useRef(isHydrating);
 
   const newAssistantMessageIds = useMemo(() => {
+    if (isHydrating && !pendingHydrationSeedRef.current) {
+      pendingHydrationSeedRef.current = true;
+    }
+    wasHydratingRef.current = isHydrating;
+
     if (threadId !== prevThreadIdRef.current) {
       knownMessageIdsRef.current = new Set<string>();
+      pendingRevealRef.current = new Set<string>();
+      pendingHydrationSeedRef.current = isHydrating;
       for (const row of rows) {
         if (row.kind === "message" && row.message.role === "assistant") {
           knownMessageIdsRef.current.add(row.message.id);
@@ -220,19 +277,50 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       return new Set<string>();
     }
 
+    if (pendingHydrationSeedRef.current) {
+      for (const row of rows) {
+        if (row.kind === "message" && row.message.role === "assistant") {
+          knownMessageIdsRef.current.add(row.message.id);
+        }
+      }
+      const hasMessageRows = rows.some((row) => row.kind === "message");
+      if (hasMessageRows && !isHydrating) {
+        pendingHydrationSeedRef.current = false;
+      }
+      return new Set<string>();
+    }
+
     const fresh = new Set<string>();
     for (const row of rows) {
-      if (
-        row.kind === "message" &&
-        row.message.role === "assistant" &&
-        !knownMessageIdsRef.current.has(row.message.id)
-      ) {
-        fresh.add(row.message.id);
-        knownMessageIdsRef.current.add(row.message.id);
+      if (row.kind !== "message" || row.message.role !== "assistant") continue;
+      const id = row.message.id;
+
+      if (pendingRevealRef.current.has(id)) {
+        if (!row.message.streaming) {
+          pendingRevealRef.current.delete(id);
+          fresh.add(id);
+        }
+        continue;
+      }
+
+      if (!knownMessageIdsRef.current.has(id)) {
+        knownMessageIdsRef.current.add(id);
+        if (row.message.streaming) {
+          pendingRevealRef.current.add(id);
+        } else {
+          fresh.add(id);
+        }
       }
     }
     return fresh;
-  }, [rows, threadId]);
+  }, [rows, threadId, isHydrating]);
+
+  useLayoutEffect(() => {
+    if (!onRevealStart || newAssistantMessageIds.size === 0) return;
+    for (const messageId of newAssistantMessageIds) {
+      onRevealStart(messageId);
+    }
+  }, [newAssistantMessageIds, onRevealStart]);
 
   const showInlineDiffs = expandedWorkGroups;
   const onTimelineImageLoad = useCallback(() => {}, []);
@@ -365,22 +453,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 </div>
               )}
               <div className="group/msg min-w-0 px-1 py-0.5">
-                <TextRevealContainer
-                  animate={newAssistantMessageIds.has(row.message.id)}
-                  textLength={messageText.length}
+                <AssistantMessageContentWithReply
+                  messageId={row.message.id}
+                  turnId={row.message.turnId ?? null}
+                  onReplyToSelection={onReplyToSelection}
                 >
-                  <AssistantMessageContentWithReply
-                    messageId={row.message.id}
-                    turnId={row.message.turnId ?? null}
-                    onReplyToSelection={onReplyToSelection}
-                  >
-                    <ChatMarkdown
-                      text={messageText}
-                      cwd={markdownCwd}
-                      isStreaming={Boolean(row.message.streaming)}
-                    />
-                  </AssistantMessageContentWithReply>
-                </TextRevealContainer>
+                  <AnimatedChatMarkdown
+                    text={messageText}
+                    cwd={markdownCwd}
+                    isStreaming={Boolean(row.message.streaming)}
+                    animate={newAssistantMessageIds.has(row.message.id)}
+                  />
+                </AssistantMessageContentWithReply>
                 {(() => {
                   const turnSummary = turnDiffSummaryByAssistantMessageId.get(row.message.id);
                   if (!turnSummary) return null;
@@ -488,6 +572,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     </div>
   );
 
+  const showSkeleton =
+    isHydrating || (!hasMessages && !isWorking && pendingHydrationSeedRef.current);
+
+  if (showSkeleton) {
+    return <TimelineSkeleton />;
+  }
+
   if (!hasMessages && !isWorking) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -502,11 +593,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     <div
       ref={timelineRootRef}
       data-timeline-root="true"
-      className="mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
+      className="timeline-fade-in mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
     >
       {rows.map((row) => (
         <div
           key={row.id}
+          {...(row.kind === "message" ? { "data-row-message-id": row.message.id } : undefined)}
           style={{
             contentVisibility: "auto",
             containIntrinsicBlockSize: `auto ${estimateRowHeight(row, showInlineDiffs, timelineWidthPx)}px`,

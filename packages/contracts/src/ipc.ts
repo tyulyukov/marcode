@@ -48,10 +48,13 @@ import type {
   ClientOrchestrationCommand,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetFullThreadDiffResult,
+  OrchestrationGetThreadInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationGetTurnDiffResult,
   OrchestrationEvent,
+  OrchestrationListingSnapshot,
   OrchestrationReadModel,
+  OrchestrationThread,
 } from "./orchestration";
 import type {
   JiraConnectionStatus,
@@ -206,6 +209,8 @@ export interface NativeApi {
   };
   orchestration: {
     getSnapshot: () => Promise<OrchestrationReadModel>;
+    getListingSnapshot: () => Promise<OrchestrationListingSnapshot>;
+    getThread: (input: OrchestrationGetThreadInput) => Promise<OrchestrationThread | null>;
     dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
     getTurnDiff: (input: OrchestrationGetTurnDiffInput) => Promise<OrchestrationGetTurnDiffResult>;
     getFullThreadDiff: (

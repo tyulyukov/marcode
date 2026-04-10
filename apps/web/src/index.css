@@ -515,36 +515,50 @@ label:has(> select#reasoning-effort) select {
   animation: ultrathink-rainbow 10s linear infinite;
 }
 
-/* Text reveal animation for new assistant messages */
-@property --text-reveal-progress {
-  syntax: "<percentage>";
-  initial-value: 0%;
-  inherits: false;
-}
-
-@keyframes text-reveal-sweep {
+/* Fade-in for hydrated timeline content */
+@keyframes timeline-fade-in {
   from {
-    --text-reveal-progress: 0%;
+    opacity: 0;
   }
   to {
-    --text-reveal-progress: 120%;
+    opacity: 1;
   }
 }
 
-.text-reveal-animating {
-  --text-reveal-progress: 0%;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black calc(var(--text-reveal-progress) - 18%),
-    transparent var(--text-reveal-progress)
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    black 0%,
-    black calc(var(--text-reveal-progress) - 18%),
-    transparent var(--text-reveal-progress)
-  );
-  animation: text-reveal-sweep var(--text-reveal-duration, 1000ms) cubic-bezier(0.16, 1, 0.3, 1)
-    forwards;
+.timeline-fade-in {
+  animation: timeline-fade-in 300ms ease-out both;
+}
+
+/* Word-by-word fade-in for new assistant messages */
+.tr-word {
+  opacity: 0;
+  transition: opacity 140ms ease-out;
+}
+
+.tr-word.tr-visible {
+  opacity: 1;
+}
+
+.tr-li-hidden::marker {
+  color: transparent;
+  transition: color 140ms ease-out;
+}
+
+.tr-block-hidden {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  transition:
+    background 180ms ease-out,
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+.tr-block-hidden .shiki {
+  background: transparent !important;
+}
+
+.tr-block-hidden > .chat-markdown-copy-button {
+  opacity: 0 !important;
+  pointer-events: none;
 }

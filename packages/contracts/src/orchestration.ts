@@ -18,6 +18,8 @@ import {
 
 export const ORCHESTRATION_WS_METHODS = {
   getSnapshot: "orchestration.getSnapshot",
+  getListingSnapshot: "orchestration.getListingSnapshot",
+  getThread: "orchestration.getThread",
   dispatchCommand: "orchestration.dispatchCommand",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
@@ -305,6 +307,41 @@ export const OrchestrationReadModel = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
+
+export const OrchestrationThreadSummary = Schema.Struct({
+  id: ThreadId,
+  projectId: ProjectId,
+  title: TrimmedNonEmptyString,
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  interactionMode: ProviderInteractionMode.pipe(
+    Schema.withDecodingDefault(() => DEFAULT_PROVIDER_INTERACTION_MODE),
+  ),
+  branch: Schema.NullOr(TrimmedNonEmptyString),
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  additionalDirectories: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(() => []),
+  ),
+  latestTurn: Schema.NullOr(OrchestrationLatestTurn),
+  session: Schema.NullOr(OrchestrationSession),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(() => null)),
+  deletedAt: Schema.NullOr(IsoDateTime),
+  latestUserMessageAt: Schema.NullOr(IsoDateTime),
+  hasPendingApprovals: Schema.Boolean,
+  hasPendingUserInput: Schema.Boolean,
+  hasActionableProposedPlan: Schema.Boolean,
+});
+export type OrchestrationThreadSummary = typeof OrchestrationThreadSummary.Type;
+
+export const OrchestrationListingSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  projects: Schema.Array(OrchestrationProject),
+  threads: Schema.Array(OrchestrationThreadSummary),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationListingSnapshot = typeof OrchestrationListingSnapshot.Type;
 
 export const ProjectCreateCommand = Schema.Struct({
   type: Schema.Literal("project.create"),
@@ -1026,6 +1063,16 @@ export type OrchestrationGetSnapshotInput = typeof OrchestrationGetSnapshotInput
 const OrchestrationGetSnapshotResult = OrchestrationReadModel;
 export type OrchestrationGetSnapshotResult = typeof OrchestrationGetSnapshotResult.Type;
 
+export const OrchestrationGetListingSnapshotInput = Schema.Struct({});
+export type OrchestrationGetListingSnapshotInput = typeof OrchestrationGetListingSnapshotInput.Type;
+
+export const OrchestrationGetThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type OrchestrationGetThreadInput = typeof OrchestrationGetThreadInput.Type;
+const OrchestrationGetThreadResult = Schema.NullOr(OrchestrationThread);
+export type OrchestrationGetThreadResult = typeof OrchestrationGetThreadResult.Type;
+
 export const OrchestrationGetTurnDiffInput = TurnCountRange.mapFields(
   Struct.assign({ threadId: ThreadId }),
   { unsafePreserveChecks: true },
@@ -1057,6 +1104,14 @@ export const OrchestrationRpcSchemas = {
     input: OrchestrationGetSnapshotInput,
     output: OrchestrationGetSnapshotResult,
   },
+  getListingSnapshot: {
+    input: OrchestrationGetListingSnapshotInput,
+    output: OrchestrationListingSnapshot,
+  },
+  getThread: {
+    input: OrchestrationGetThreadInput,
+    output: OrchestrationGetThreadResult,
+  },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,
@@ -1077,6 +1132,22 @@ export const OrchestrationRpcSchemas = {
 
 export class OrchestrationGetSnapshotError extends Schema.TaggedErrorClass<OrchestrationGetSnapshotError>()(
   "OrchestrationGetSnapshotError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationGetListingSnapshotError extends Schema.TaggedErrorClass<OrchestrationGetListingSnapshotError>()(
+  "OrchestrationGetListingSnapshotError",
+  {
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {}
+
+export class OrchestrationGetThreadError extends Schema.TaggedErrorClass<OrchestrationGetThreadError>()(
+  "OrchestrationGetThreadError",
   {
     message: TrimmedNonEmptyString,
     cause: Schema.optional(Schema.Defect),

@@ -1,5 +1,6 @@
 import {
   type OrchestrationEvent,
+  type OrchestrationListingSnapshot,
   type OrchestrationMessage,
   type OrchestrationProposedPlan,
   type ProjectId,
@@ -593,6 +594,90 @@ export function syncServerReadModel(state: AppState, readModel: OrchestrationRea
   };
 }
 
+export function syncListingSnapshot(
+  state: AppState,
+  listing: OrchestrationListingSnapshot,
+): AppState {
+  const projects = listing.projects.filter((project) => project.deletedAt === null).map(mapProject);
+
+  const threads = listing.threads
+    .filter((t) => t.deletedAt === null)
+    .map(
+      (summary): Thread => ({
+        id: summary.id,
+        codexThreadId: null,
+        projectId: summary.projectId,
+        title: summary.title,
+        modelSelection: normalizeModelSelection(summary.modelSelection),
+        runtimeMode: summary.runtimeMode,
+        interactionMode: summary.interactionMode,
+        session: summary.session ? mapSession(summary.session) : null,
+        messages: [],
+        proposedPlans: [],
+        error: sanitizeThreadErrorMessage(summary.session?.lastError),
+        createdAt: summary.createdAt,
+        archivedAt: summary.archivedAt,
+        updatedAt: summary.updatedAt,
+        latestTurn: summary.latestTurn,
+        pendingSourceProposedPlan: summary.latestTurn?.sourceProposedPlan,
+        branch: summary.branch,
+        worktreePath: summary.worktreePath,
+        additionalDirectories: [...(summary.additionalDirectories ?? [])],
+        turnDiffSummaries: [],
+        activities: [],
+      }),
+    );
+
+  const sidebarThreadsById: Record<string, SidebarThreadSummary> = {};
+  for (const summary of listing.threads) {
+    if (summary.deletedAt !== null) continue;
+    const thread = threads.find((t) => t.id === summary.id);
+    if (!thread) continue;
+    sidebarThreadsById[summary.id] = {
+      id: summary.id,
+      projectId: summary.projectId,
+      title: summary.title,
+      interactionMode: summary.interactionMode,
+      session: thread.session,
+      createdAt: summary.createdAt,
+      archivedAt: summary.archivedAt,
+      updatedAt: summary.updatedAt,
+      latestTurn: summary.latestTurn,
+      branch: summary.branch,
+      worktreePath: summary.worktreePath,
+      latestUserMessageAt: summary.latestUserMessageAt,
+      hasPendingApprovals: summary.hasPendingApprovals,
+      hasPendingUserInput: summary.hasPendingUserInput,
+      hasActionableProposedPlan: summary.hasActionableProposedPlan,
+    };
+  }
+
+  const threadIdsByProjectId = buildThreadIdsByProjectId(threads);
+  return {
+    ...state,
+    projects,
+    threads,
+    sidebarThreadsById,
+    threadIdsByProjectId,
+    bootstrapComplete: true,
+  };
+}
+
+export function hydrateThread(state: AppState, fullThread: OrchestrationThread): AppState {
+  const mapped = mapThread(fullThread);
+  const threads = state.threads.map((t) => (t.id === mapped.id ? mapped : t));
+  const summary = buildSidebarThreadSummary(mapped);
+  const previousSummary = state.sidebarThreadsById[mapped.id];
+  const sidebarThreadsById = sidebarThreadSummariesEqual(previousSummary, summary)
+    ? state.sidebarThreadsById
+    : { ...state.sidebarThreadsById, [mapped.id]: summary };
+  return { ...state, threads, sidebarThreadsById };
+}
+
+export function isThreadHydrated(thread: Thread): boolean {
+  return thread.messages.length > 0 || thread.latestTurn === null;
+}
+
 export function applyOrchestrationEvent(state: AppState, event: OrchestrationEvent): AppState {
   switch (event.type) {
     case "project.created": {
@@ -1147,6 +1232,8 @@ export function setThreadBranch(
 
 interface AppStore extends AppState {
   syncServerReadModel: (readModel: OrchestrationReadModel) => void;
+  syncListingSnapshot: (listing: OrchestrationListingSnapshot) => void;
+  hydrateThread: (fullThread: OrchestrationThread) => void;
   applyOrchestrationEvent: (event: OrchestrationEvent) => void;
   applyOrchestrationEvents: (events: ReadonlyArray<OrchestrationEvent>) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
@@ -1156,6 +1243,8 @@ interface AppStore extends AppState {
 export const useStore = create<AppStore>((set) => ({
   ...initialState,
   syncServerReadModel: (readModel) => set((state) => syncServerReadModel(state, readModel)),
+  syncListingSnapshot: (listing) => set((state) => syncListingSnapshot(state, listing)),
+  hydrateThread: (fullThread) => set((state) => hydrateThread(state, fullThread)),
   applyOrchestrationEvent: (event) => set((state) => applyOrchestrationEvent(state, event)),
   applyOrchestrationEvents: (events) => set((state) => applyOrchestrationEvents(state, events)),
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),

@@ -59,6 +59,7 @@ import { APP_BASE_NAME, APP_STAGE_LABEL, APP_VERSION } from "../branding";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isLinuxPlatform, isMacPlatform, newCommandId, newProjectId } from "../lib/utils";
 import { useStore } from "../store";
+import { Skeleton } from "./ui/skeleton";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
 import {
@@ -717,8 +718,30 @@ function SortableProjectItem({
   );
 }
 
+function SidebarProjectsSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 px-2 py-1">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 px-2 py-1">
+            <Skeleton className="size-3.5 shrink-0 rounded" />
+            <Skeleton className="size-4 shrink-0 rounded" />
+            <Skeleton className={`h-3.5 rounded ${i === 0 ? "w-28" : i === 1 ? "w-20" : "w-24"}`} />
+          </div>
+          <div className="flex flex-col gap-1 pl-5 pr-2">
+            <Skeleton className="h-6 w-full rounded-md" />
+            <Skeleton className="h-6 w-full rounded-md" />
+            {i === 0 && <Skeleton className="h-6 w-full rounded-md" />}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const projects = useStore((store) => store.projects);
+  const bootstrapComplete = useStore((store) => store.bootstrapComplete);
   const sidebarThreadsById = useStore((store) => store.sidebarThreadsById);
   const threadIdsByProjectId = useStore((store) => store.threadIdsByProjectId);
   const { projectExpandedById, projectOrder, threadLastVisitedAtById } = useUiStateStore(
@@ -2293,7 +2316,8 @@ export default function Sidebar() {
                 </SidebarMenu>
               )}
 
-              {projects.length === 0 && !shouldShowProjectPathEntry && (
+              {!bootstrapComplete && projects.length === 0 && <SidebarProjectsSkeleton />}
+              {bootstrapComplete && projects.length === 0 && !shouldShowProjectPathEntry && (
                 <div className="px-2 pt-4 text-center text-xs text-muted-foreground/60">
                   No projects yet
                 </div>
