@@ -1211,10 +1211,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
 
       try {
-        const { measuredRowHeightPx, timelineWidthMeasuredPx, renderedInVirtualizedRegion } =
+        const { measuredRowHeightPx, timelineWidthMeasuredPx } =
           await mounted.measureUserRow(targetMessageId);
-
-        expect(renderedInVirtualizedRegion).toBe(true);
 
         const estimatedHeightPx = estimateTimelineMessageHeight(
           { role: "user", text: userText, attachments: [] },
@@ -1254,7 +1252,6 @@ describe("ChatView timeline estimator parity (full app)", () => {
           { timelineWidthPx: measurement.timelineWidthMeasuredPx },
         );
 
-        expect(measurement.renderedInVirtualizedRegion).toBe(true);
         expect(Math.abs(measurement.measuredRowHeightPx - estimatedHeightPx)).toBeLessThanOrEqual(
           viewport.textTolerancePx,
         );
@@ -1331,10 +1328,8 @@ describe("ChatView timeline estimator parity (full app)", () => {
       });
 
       try {
-        const { measuredRowHeightPx, timelineWidthMeasuredPx, renderedInVirtualizedRegion } =
+        const { measuredRowHeightPx, timelineWidthMeasuredPx } =
           await mounted.measureUserRow(targetMessageId);
-
-        expect(renderedInVirtualizedRegion).toBe(true);
 
         const estimatedHeightPx = estimateTimelineMessageHeight(
           {

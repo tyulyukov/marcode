@@ -43,6 +43,7 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
+import TextRevealContainer from "./TextReveal";
 import {
   MAX_VISIBLE_WORK_LOG_ENTRIES,
   deriveMessagesTimelineRows,
@@ -335,17 +336,22 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 </div>
               )}
               <div className="group/msg min-w-0 px-1 py-0.5">
-                <AssistantMessageContentWithReply
-                  messageId={row.message.id}
-                  turnId={row.message.turnId ?? null}
-                  onReplyToSelection={onReplyToSelection}
+                <TextRevealContainer
+                  isStreaming={Boolean(row.message.streaming)}
+                  textLength={messageText.length}
                 >
-                  <ChatMarkdown
-                    text={messageText}
-                    cwd={markdownCwd}
-                    isStreaming={Boolean(row.message.streaming)}
-                  />
-                </AssistantMessageContentWithReply>
+                  <AssistantMessageContentWithReply
+                    messageId={row.message.id}
+                    turnId={row.message.turnId ?? null}
+                    onReplyToSelection={onReplyToSelection}
+                  >
+                    <ChatMarkdown
+                      text={messageText}
+                      cwd={markdownCwd}
+                      isStreaming={Boolean(row.message.streaming)}
+                    />
+                  </AssistantMessageContentWithReply>
+                </TextRevealContainer>
                 {(() => {
                   const turnSummary = turnDiffSummaryByAssistantMessageId.get(row.message.id);
                   if (!turnSummary) return null;
