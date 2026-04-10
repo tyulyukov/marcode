@@ -287,7 +287,14 @@ function createSnapshotForTargetUser(options: {
         branch: "main",
         worktreePath: null,
         additionalDirectories: [],
-        latestTurn: null,
+        latestTurn: {
+          turnId: "turn-1" as TurnId,
+          state: "completed" as const,
+          requestedAt: NOW_ISO,
+          startedAt: NOW_ISO,
+          completedAt: NOW_ISO,
+          assistantMessageId: null,
+        },
         createdAt: NOW_ISO,
         updatedAt: NOW_ISO,
         archivedAt: null,
@@ -661,12 +668,48 @@ function createSnapshotWithPlanFollowUpPrompt(): OrchestrationReadModel {
   };
 }
 
+function toThreadSummary(thread: OrchestrationReadModel["threads"][number]) {
+  return {
+    id: thread.id,
+    projectId: thread.projectId,
+    title: thread.title,
+    modelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
+    branch: thread.branch,
+    worktreePath: thread.worktreePath,
+    additionalDirectories: thread.additionalDirectories,
+    latestTurn: thread.latestTurn,
+    session: thread.session,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    archivedAt: thread.archivedAt,
+    deletedAt: thread.deletedAt,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  };
+}
+
 function resolveWsRpc(body: NormalizedWsRpcRequestBody): unknown {
   const customResult = customWsRpcResolver?.(body);
   if (customResult !== undefined) {
     return customResult;
   }
   const tag = body._tag;
+  if (tag === ORCHESTRATION_WS_METHODS.getListingSnapshot) {
+    return {
+      snapshotSequence: fixture.snapshot.snapshotSequence,
+      projects: fixture.snapshot.projects,
+      threads: fixture.snapshot.threads.map(toThreadSummary),
+      updatedAt: fixture.snapshot.updatedAt,
+    };
+  }
+  if (tag === ORCHESTRATION_WS_METHODS.getThread) {
+    const threadId = body.threadId as string;
+    return fixture.snapshot.threads.find((t) => t.id === threadId) ?? null;
+  }
   if (tag === ORCHESTRATION_WS_METHODS.getSnapshot) {
     return fixture.snapshot;
   }
@@ -1081,6 +1124,16 @@ async function mountChatView(options: {
     customWsRpcResolver = null;
     await screen.unmount();
     host.remove();
+    wsRequests.length = 0;
+    await __resetNativeApiForTests();
+    useStore.setState({ projects: [], threads: [], bootstrapComplete: false });
+    useComposerDraftStore.setState({
+      draftsByThreadId: {},
+      draftThreadsByThreadId: {},
+      projectDraftThreadIdByProjectId: {},
+      stickyModelSelectionByProvider: {},
+      stickyActiveProvider: null,
+    });
   };
 
   return {

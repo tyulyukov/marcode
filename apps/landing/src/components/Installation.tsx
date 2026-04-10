@@ -54,8 +54,8 @@ const STEPS: Step[] = [
         <span className="text-foreground font-medium">
           System Settings &rarr; Privacy &amp; Security
         </span>{" "}
-        &rarr; scroll down &rarr;{" "}
-        <span className="text-foreground font-medium">Open Anyway</span>. The code is{" "}
+        &rarr; scroll down &rarr; <span className="text-foreground font-medium">Open Anyway</span>.
+        The code is{" "}
         <ExternalLink href="https://github.com/tyulyukov/marcode" color="fresh-syntax">
           fully open source
         </ExternalLink>{" "}
@@ -74,10 +74,7 @@ const STEPS: Step[] = [
           <ExternalLink href="https://cli.github.com" color="curious-sky">
             GitHub CLI
           </ExternalLink>
-          <ExternalLink
-            href="https://gitlab.com/gitlab-org/cli#installation"
-            color="curious-sky"
-          >
+          <ExternalLink href="https://gitlab.com/gitlab-org/cli#installation" color="curious-sky">
             GitLab CLI
           </ExternalLink>
         </span>
@@ -88,7 +85,16 @@ const STEPS: Step[] = [
             color="muted"
           >
             Personal Access Token
-          </ExternalLink>
+          </ExternalLink>{" "}
+          with at least{" "}
+          <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-[11px] text-muted-foreground">
+            api
+          </code>{" "}
+          and{" "}
+          <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-[11px] text-muted-foreground">
+            write_repository
+          </code>{" "}
+          scopes.
         </span>
       </>
     ),
@@ -185,18 +191,12 @@ export function Installation() {
         className="mb-14 text-center text-3xl font-medium tracking-tight sm:text-4xl"
         style={{ letterSpacing: "-0.02em" }}
       >
-        Up and running{" "}
-        <span className="text-muted-foreground">in minutes</span>
+        Up and running <span className="text-muted-foreground">in minutes</span>
       </h2>
 
       <div>
         {STEPS.map((step, i) => (
-          <TimelineStep
-            key={step.title}
-            step={step}
-            index={i}
-            isLast={i === STEPS.length - 1}
-          />
+          <TimelineStep key={step.title} step={step} index={i} isLast={i === STEPS.length - 1} />
         ))}
       </div>
     </section>

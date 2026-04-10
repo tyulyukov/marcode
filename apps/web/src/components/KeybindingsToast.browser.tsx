@@ -165,7 +165,44 @@ function buildFixture(): TestFixture {
   };
 }
 
-function resolveWsRpc(tag: string): unknown {
+function toThreadSummary(thread: OrchestrationReadModel["threads"][number]) {
+  return {
+    id: thread.id,
+    projectId: thread.projectId,
+    title: thread.title,
+    modelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
+    branch: thread.branch,
+    worktreePath: thread.worktreePath,
+    additionalDirectories: thread.additionalDirectories,
+    latestTurn: thread.latestTurn,
+    session: thread.session,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    archivedAt: thread.archivedAt,
+    deletedAt: thread.deletedAt,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  };
+}
+
+function resolveWsRpc(request: { _tag: string; [key: string]: unknown }): unknown {
+  const tag = request._tag;
+  if (tag === ORCHESTRATION_WS_METHODS.getListingSnapshot) {
+    return {
+      snapshotSequence: fixture.snapshot.snapshotSequence,
+      projects: fixture.snapshot.projects,
+      threads: fixture.snapshot.threads.map(toThreadSummary),
+      updatedAt: fixture.snapshot.updatedAt,
+    };
+  }
+  if (tag === ORCHESTRATION_WS_METHODS.getThread) {
+    const threadId = request.threadId as string;
+    return fixture.snapshot.threads.find((t) => t.id === threadId) ?? null;
+  }
   if (tag === ORCHESTRATION_WS_METHODS.getSnapshot) {
     return fixture.snapshot;
   }
@@ -325,7 +362,7 @@ describe("Keybindings update toast", () => {
 
   beforeEach(async () => {
     await rpcHarness.reset({
-      resolveUnary: (request) => resolveWsRpc(request._tag),
+      resolveUnary: resolveWsRpc,
       getInitialStreamValues: (request) => {
         if (request._tag === WS_METHODS.subscribeServerLifecycle) {
           return [
