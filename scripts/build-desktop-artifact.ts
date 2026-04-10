@@ -684,28 +684,22 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stagePackageJsonString = yield* encodeJsonString(stagePackageJson);
   yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${stagePackageJsonString}\n`);
 
-  const repoLockfile = path.join(repoRoot, "bun.lock");
-  const stageLockfile = path.join(stageAppDir, "bun.lock");
-  if (yield* fs.exists(repoLockfile)) {
-    yield* fs.copy(repoLockfile, stageLockfile);
-    yield* Effect.log(
-      "[desktop-artifact] Copied bun.lock to staging directory for deterministic installs",
-    );
-  }
-
   yield* Effect.log("[desktop-artifact] Installing staged production dependencies...");
   yield* runCommand(
     ChildProcess.make({
       cwd: stageAppDir,
+      env: {
+        ...process.env,
+        // The staging package.json is a flat non-workspace subset of the monorepo.
+        // There is no pre-existing lockfile, so bun generates a fresh one during
+        // install. In CI, bun defaults to --frozen-lockfile when it detects CI=true,
+        // which would reject any install that produces a new lockfile. Explicitly
+        // disable it so the staging install can resolve and lock its own dependencies.
+        BUN_FROZEN_LOCKFILE: "0",
+      },
       ...commandOutputOptions(options.verbose),
-      // Windows needs shell mode to resolve .cmd shims (e.g. bun.cmd).
       shell: process.platform === "win32",
-      // The staging package.json is a flat non-workspace subset of the monorepo,
-      // so the copied bun.lock will have structural differences. Allow bun to
-      // reconcile the lockfile while still using it for dependency resolution
-      // guidance. Without this, CI (which defaults to --frozen-lockfile) rejects
-      // the install because the lockfile doesn't match the staged package.json.
-    })`bun install --production --no-frozen-lockfile`,
+    })`bun install --production`,
   );
 
   const buildEnv: NodeJS.ProcessEnv = {
