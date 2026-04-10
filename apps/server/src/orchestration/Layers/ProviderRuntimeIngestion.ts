@@ -989,8 +989,14 @@ const make = Effect.fn("make")(function* () {
             return "running";
           case "session.exited":
             return "stopped";
-          case "turn.completed":
-            return normalizeRuntimeTurnState(event.payload.state) === "failed" ? "error" : "ready";
+          case "turn.completed": {
+            const turnState = normalizeRuntimeTurnState(event.payload.state);
+            return turnState === "failed"
+              ? "error"
+              : turnState === "interrupted" || turnState === "cancelled"
+                ? "interrupted"
+                : "ready";
+          }
           case "session.started":
           case "thread.started":
             // Provider thread/session start notifications can arrive during an

@@ -515,32 +515,36 @@ label:has(> select#reasoning-effort) select {
   animation: ultrathink-rainbow 10s linear infinite;
 }
 
-/* Text reveal animation for completed assistant messages */
+/* Text reveal animation for new assistant messages */
+@property --text-reveal-progress {
+  syntax: "<percentage>";
+  initial-value: 0%;
+  inherits: false;
+}
+
 @keyframes text-reveal-sweep {
   from {
-    -webkit-mask-position: 0% 100%;
-    mask-position: 0% 100%;
+    --text-reveal-progress: 0%;
   }
   to {
-    -webkit-mask-position: 0% 0%;
-    mask-position: 0% 0%;
+    --text-reveal-progress: 120%;
   }
 }
 
 .text-reveal-animating {
-  --_reveal-grad: linear-gradient(
+  --text-reveal-progress: 0%;
+  -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
-    black 35%,
-    rgba(0, 0, 0, 0.6) 48%,
-    rgba(0, 0, 0, 0.2) 58%,
-    transparent 68%,
-    transparent 100%
+    black calc(var(--text-reveal-progress) - 18%),
+    transparent var(--text-reveal-progress)
   );
-  -webkit-mask-image: var(--_reveal-grad);
-  mask-image: var(--_reveal-grad);
-  -webkit-mask-size: 100% 300%;
-  mask-size: 100% 300%;
-  animation: text-reveal-sweep var(--text-reveal-duration, 1000ms) cubic-bezier(0.22, 0.61, 0.36, 1)
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(var(--text-reveal-progress) - 18%),
+    transparent var(--text-reveal-progress)
+  );
+  animation: text-reveal-sweep var(--text-reveal-duration, 1000ms) cubic-bezier(0.16, 1, 0.3, 1)
     forwards;
 }

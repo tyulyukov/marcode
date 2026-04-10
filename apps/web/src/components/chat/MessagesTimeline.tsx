@@ -336,10 +336,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 </div>
               )}
               <div className="group/msg min-w-0 px-1 py-0.5">
-                <TextRevealContainer
-                  isStreaming={Boolean(row.message.streaming)}
-                  textLength={messageText.length}
-                >
+                <TextRevealContainer messageId={row.message.id} textLength={messageText.length}>
                   <AssistantMessageContentWithReply
                     messageId={row.message.id}
                     turnId={row.message.turnId ?? null}
