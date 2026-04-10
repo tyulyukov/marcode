@@ -205,6 +205,35 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt],
   );
 
+  const knownMessageIdsRef = useRef<Set<string>>(new Set());
+  const prevThreadIdRef = useRef<string | null>(null);
+
+  const newAssistantMessageIds = useMemo(() => {
+    if (threadId !== prevThreadIdRef.current) {
+      knownMessageIdsRef.current = new Set<string>();
+      for (const row of rows) {
+        if (row.kind === "message" && row.message.role === "assistant") {
+          knownMessageIdsRef.current.add(row.message.id);
+        }
+      }
+      prevThreadIdRef.current = threadId;
+      return new Set<string>();
+    }
+
+    const fresh = new Set<string>();
+    for (const row of rows) {
+      if (
+        row.kind === "message" &&
+        row.message.role === "assistant" &&
+        !knownMessageIdsRef.current.has(row.message.id)
+      ) {
+        fresh.add(row.message.id);
+        knownMessageIdsRef.current.add(row.message.id);
+      }
+    }
+    return fresh;
+  }, [rows, threadId]);
+
   const showInlineDiffs = expandedWorkGroups;
   const onTimelineImageLoad = useCallback(() => {}, []);
   const [allDirectoriesExpandedByTurnId, setAllDirectoriesExpandedByTurnId] = useState<
@@ -336,7 +365,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 </div>
               )}
               <div className="group/msg min-w-0 px-1 py-0.5">
-                <TextRevealContainer messageId={row.message.id} textLength={messageText.length}>
+                <TextRevealContainer
+                  animate={newAssistantMessageIds.has(row.message.id)}
+                  textLength={messageText.length}
+                >
                   <AssistantMessageContentWithReply
                     messageId={row.message.id}
                     turnId={row.message.turnId ?? null}
