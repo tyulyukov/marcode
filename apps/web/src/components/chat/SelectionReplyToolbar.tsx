@@ -22,6 +22,58 @@ interface ToolbarPosition {
 const TOOLBAR_HEIGHT_PX = 32;
 const TOOLBAR_GAP_PX = 6;
 
+type SelectionContainerCallback = (hasSelection: boolean) => void;
+const containerRegistry = new Map<HTMLElement, SelectionContainerCallback>();
+let globalListenerAttached = false;
+
+function findRegisteredContainer(node: Node | null): HTMLElement | null {
+  let current: Node | null = node;
+  while (current) {
+    if (current instanceof HTMLElement && containerRegistry.has(current)) {
+      return current;
+    }
+    current = current.parentNode;
+  }
+  return null;
+}
+
+function handleGlobalSelectionChange() {
+  const selection = window.getSelection();
+  let matchedContainer: HTMLElement | null = null;
+
+  if (selection && !selection.isCollapsed && selection.rangeCount > 0 && selection.anchorNode) {
+    matchedContainer = findRegisteredContainer(selection.anchorNode);
+  }
+
+  for (const [container, callback] of containerRegistry) {
+    callback(container === matchedContainer);
+  }
+}
+
+function registerSelectionContainer(el: HTMLElement, callback: SelectionContainerCallback) {
+  containerRegistry.set(el, callback);
+  if (!globalListenerAttached) {
+    globalListenerAttached = true;
+    document.addEventListener("selectionchange", handleGlobalSelectionChange);
+  }
+}
+
+function unregisterSelectionContainer(el: HTMLElement) {
+  containerRegistry.delete(el);
+  if (containerRegistry.size === 0 && globalListenerAttached) {
+    globalListenerAttached = false;
+    document.removeEventListener("selectionchange", handleGlobalSelectionChange);
+  }
+}
+
+function clampRangeToContainer(range: Range, containerEl: HTMLElement): Range {
+  if (containerEl.contains(range.endContainer)) return range;
+
+  const clamped = range.cloneRange();
+  clamped.setEndAfter(containerEl.lastChild ?? containerEl);
+  return clamped;
+}
+
 function getSelectionMeta(containerEl: HTMLElement): {
   text: string;
   startOffset: number;
@@ -35,19 +87,21 @@ function getSelectionMeta(containerEl: HTMLElement): {
   const range = selection.getRangeAt(0);
   if (!range || !containerEl.contains(range.startContainer)) return null;
 
-  const text = selection.toString().trim();
+  const effective = clampRangeToContainer(range, containerEl);
+
+  const text = effective.toString().trim();
   if (text.length === 0) return null;
 
-  const codeBlock = findAncestorCodeBlock(range.startContainer, containerEl);
+  const codeBlock = findAncestorCodeBlock(effective.startContainer, containerEl);
   const codeLanguage = codeBlock ? extractCodeLanguageFromBlock(codeBlock) : undefined;
 
   const preRange = document.createRange();
   preRange.selectNodeContents(containerEl);
-  preRange.setEnd(range.startContainer, range.startOffset);
+  preRange.setEnd(effective.startContainer, effective.startOffset);
   const startOffset = preRange.toString().length;
   const endOffset = startOffset + text.length;
 
-  const rect = range.getBoundingClientRect();
+  const rect = effective.getBoundingClientRect();
 
   return { text, startOffset, endOffset, codeLanguage, rect };
 }
@@ -75,31 +129,42 @@ export const SelectionReplyToolbar = memo(function SelectionReplyToolbar(
 ) {
   const { messageId, turnId, containerRef, onReply } = props;
   const [position, setPosition] = useState<ToolbarPosition | null>(null);
+  const positionRef = useRef<ToolbarPosition | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard();
 
   useEffect(() => {
-    const handleSelectionChange = () => {
-      const container = containerRef.current;
-      if (!container) {
-        setPosition(null);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const callback: SelectionContainerCallback = (hasSelection) => {
+      if (!hasSelection) {
+        if (positionRef.current !== null) {
+          positionRef.current = null;
+          setPosition(null);
+        }
         return;
       }
 
       const meta = getSelectionMeta(container);
       if (!meta) {
-        setPosition(null);
+        if (positionRef.current !== null) {
+          positionRef.current = null;
+          setPosition(null);
+        }
         return;
       }
 
-      setPosition({
+      const next = {
         top: meta.rect.top - TOOLBAR_HEIGHT_PX - TOOLBAR_GAP_PX,
         left: meta.rect.left + meta.rect.width / 2,
-      });
+      };
+      positionRef.current = next;
+      setPosition(next);
     };
 
-    document.addEventListener("selectionchange", handleSelectionChange);
-    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+    registerSelectionContainer(container, callback);
+    return () => unregisterSelectionContainer(container);
   }, [containerRef]);
 
   const handleReply = useCallback(() => {

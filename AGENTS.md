@@ -8,7 +8,7 @@
 
 ## Rebrand Note
 
-This project was forked from T3 Code and fully rebranded to MarCode. When merging upstream changes, always check for and replace any remaining T3 references:
+This project was forked from T3 Code and fully rebranded to MarCode. When merging upstream changes, always check for and replace any remaining T3 references, and **reject reintroduction of JS virtualization in `MessagesTimeline.tsx`** (see "Timeline rendering" section under Performance):
 
 - Package imports: `@marcode/contracts`, `@marcode/shared/*` (never `@t3tools`)
 - Env vars: `MARCODE_` prefix (never `T3CODE_`)
@@ -102,6 +102,20 @@ ChatView uses **fine-grained Zustand selectors** (one per thread/project ID) ins
 
 - Its volatile dependencies (`activePendingProgress`, `activePendingUserInput`, `composerTerminalContexts`, `composerJiraTaskContexts`) are accessed via **refs** in callbacks, not in the `useCallback` dependency array.
 - Fallback empty arrays use **module-level constants** (`EMPTY_TERMINAL_CONTEXT_DRAFTS`, `EMPTY_JIRA_TASK_DRAFTS`) instead of inline `[]`.
+
+### Timeline rendering: NO JS virtualization (`MessagesTimeline.tsx`)
+
+**CRITICAL — DO NOT REINTRODUCE `@tanstack/react-virtual` or any JS virtualizer for the messages timeline.** This has been deliberately removed twice. Upstream (T3 Code) uses `useVirtualizer` with absolute positioning + `transform: translateY()`, but it causes persistent message overlap and scroll lag in MarCode because:
+
+- Variable-height messages (markdown, code blocks, images, expandable diffs, quoted contexts) make height estimation fundamentally inaccurate
+- Async content (Suspense code highlighting, image loads) changes height after initial measurement
+- Expandable/collapsible sections (Show full diff, work groups) change height without virtualizer notification
+- `ChatView.tsx` directly manipulates `scrollTop` for interaction anchoring and auto-scroll, which desynchronizes from the virtualizer's internal scroll state
+- `SelectionReplyToolbar` wraps every assistant message in extra DOM, adding unmeasured height
+
+**Instead, we use CSS `content-visibility: auto`** with `contain-intrinsic-block-size` hints. All rows render in normal document flow — overlap is physically impossible. The browser natively skips painting offscreen content, giving equivalent performance without the positioning bugs. Height estimates in `timelineHeight.ts` feed into `containIntrinsicBlockSize` for accurate scrollbar sizing.
+
+When merging upstream changes that touch `MessagesTimeline.tsx`, **reject any reintroduction of `useVirtualizer`, `measureElement`, `VirtualItem`, absolute-positioned row containers, or `shouldAdjustScrollPositionOnItemSizeChange`**. Keep the `content-visibility: auto` rendering path.
 
 ### Timeline row memoization (`MessagesTimeline.tsx`)
 

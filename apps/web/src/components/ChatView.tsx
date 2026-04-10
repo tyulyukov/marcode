@@ -1215,8 +1215,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
     () =>
       deriveWorkLogEntries(timelineThreadActivities, timelineLatestTurn?.turnId ?? undefined, {
         excludeTodoToolCalls: showTodosInComposer,
+        isSessionRunning: phase === "running",
       }),
-    [timelineLatestTurn?.turnId, timelineThreadActivities, showTodosInComposer],
+    [timelineLatestTurn?.turnId, timelineThreadActivities, showTodosInComposer, phase],
   );
   const timelineLatestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(timelineThreadActivities, timelineLatestTurn?.turnId),
@@ -4615,7 +4616,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
             {/* Messages */}
             <div
               ref={setMessagesScrollContainerRef}
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain [overflow-anchor:none] px-3 py-3 sm:px-5 sm:py-4"
               onScroll={onMessagesScroll}
               onClickCapture={onMessagesClickCapture}
               onWheel={onMessagesWheel}
@@ -4835,6 +4836,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               key={ctx.id}
                               preview={formatQuotedContextPreview(ctx)}
                               tooltipText={formatQuotedContextTooltip(ctx)}
+                              isDiff={Boolean(ctx.filePath)}
                               onRemove={() => removeComposerDraftQuotedContext(threadId, ctx.id)}
                             />
                           ))}

@@ -1,4 +1,4 @@
-import { QuoteIcon, XIcon } from "lucide-react";
+import { DiffIcon, QuoteIcon, XIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
 import {
@@ -12,11 +12,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 interface QuotedContextInlineChipProps {
   preview: string;
   tooltipText: string;
+  isDiff?: boolean;
   onRemove?: () => void;
 }
 
 export function QuotedContextInlineChip(props: QuotedContextInlineChipProps) {
-  const { preview, tooltipText, onRemove } = props;
+  const { preview, tooltipText, isDiff, onRemove } = props;
+  const Icon = isDiff ? DiffIcon : QuoteIcon;
 
   return (
     <Tooltip>
@@ -25,10 +27,12 @@ export function QuotedContextInlineChip(props: QuotedContextInlineChipProps) {
           <span
             className={cn(
               COMPOSER_INLINE_CHIP_CLASS_NAME,
-              "border-violet-500/30 bg-violet-500/12 text-violet-300 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-300",
+              isDiff
+                ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-300 dark:border-emerald-400/25 dark:bg-emerald-400/10 dark:text-emerald-300"
+                : "border-violet-500/30 bg-violet-500/12 text-violet-300 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-300",
             )}
           >
-            <QuoteIcon className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
+            <Icon className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
             <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "max-w-[200px]")}>
               {preview}
             </span>

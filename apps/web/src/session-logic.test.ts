@@ -684,7 +684,7 @@ describe("deriveWorkLogEntries", () => {
       }),
     ];
 
-    const entries = deriveWorkLogEntries(activities, undefined);
+    const entries = deriveWorkLogEntries(activities, undefined, { isSessionRunning: true });
     expect(entries).toHaveLength(1);
     expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("running");
     expect(entries[0]!.label).toBe("1 agent running");
@@ -1076,7 +1076,7 @@ describe("deriveWorkLogEntries", () => {
       }),
     ];
 
-    const entries = deriveWorkLogEntries(activities, undefined);
+    const entries = deriveWorkLogEntries(activities, undefined, { isSessionRunning: true });
     expect(entries[0]!.label).toBe("2 parallel agents (1 running)");
   });
 

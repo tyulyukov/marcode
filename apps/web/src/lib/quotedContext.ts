@@ -8,6 +8,7 @@ export interface QuotedContext {
   readonly codeLanguage?: string | undefined;
   readonly startOffset?: number | undefined;
   readonly endOffset?: number | undefined;
+  readonly filePath?: string | undefined;
 }
 
 const MAX_QUOTED_TEXT_LENGTH = 5000;
@@ -41,10 +42,15 @@ export function truncateQuotedText(text: string): { text: string; wasTruncated: 
 }
 
 export function quotedContextDedupKey(context: QuotedContext): string {
-  return `${context.messageId}\u0000${context.startOffset ?? ""}\u0000${context.endOffset ?? ""}`;
+  const source = context.filePath ?? context.messageId;
+  return `${source}\u0000${context.startOffset ?? ""}\u0000${context.endOffset ?? ""}`;
 }
 
 export function formatQuotedContextPreview(context: QuotedContext): string {
+  if (context.filePath) {
+    const fileName = context.filePath.split("/").pop() ?? context.filePath;
+    return fileName;
+  }
   const maxPreview = 80;
   const singleLine = context.text.replace(/\n/g, " ").trim();
   return singleLine.length > maxPreview ? `${singleLine.slice(0, maxPreview - 1)}…` : singleLine;
@@ -70,7 +76,10 @@ function formatSingleQuotedContextBlock(context: QuotedContext): string {
   const safeLang = context.codeLanguage ? sanitizeCodeLanguage(context.codeLanguage) : undefined;
   const langAttr = safeLang ? ` language="${safeLang}"` : "";
   const safeText = escapeQuotedContextBody(context.text);
-  return `<quoted_context message_id="${context.messageId}"${langAttr}>\n${safeText}\n</quoted_context>`;
+  const sourceAttr = context.filePath
+    ? ` file_path="${context.filePath}"`
+    : ` message_id="${context.messageId}"`;
+  return `<quoted_context${sourceAttr}${langAttr}>\n${safeText}\n</quoted_context>`;
 }
 
 export function buildQuotedContextBlock(contexts: ReadonlyArray<QuotedContext>): string {
@@ -104,7 +113,13 @@ export function extractLeadingQuotedContexts(text: string): ExtractedQuotedConte
     const body = blockMatch[2] ?? "";
     const langMatch = attrs.match(/language="([^"]+)"/);
     const language = langMatch?.[1];
-    const header = language ? `Quoted code (${language})` : "Quoted text";
+    const filePathMatch = attrs.match(/file_path="([^"]+)"/);
+    const filePath = filePathMatch?.[1];
+    const header = filePath
+      ? `Quoted diff (${filePath.split("/").pop() ?? filePath})`
+      : language
+        ? `Quoted code (${language})`
+        : "Quoted text";
     contexts.push({ header, body: body.trim() });
     blockMatch = blockPattern.exec(leadingBlock);
   }
