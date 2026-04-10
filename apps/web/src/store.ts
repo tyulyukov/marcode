@@ -178,6 +178,7 @@ function mapThread(thread: OrchestrationThread): Thread {
     additionalDirectories: [...(thread.additionalDirectories ?? [])],
     turnDiffSummaries: thread.checkpoints.map(mapTurnDiffSummary),
     activities: thread.activities.map((activity) => ({ ...activity })),
+    hydrated: true,
   };
 }
 
@@ -625,6 +626,7 @@ export function syncListingSnapshot(
         additionalDirectories: [...(summary.additionalDirectories ?? [])],
         turnDiffSummaries: [],
         activities: [],
+        hydrated: summary.latestTurn === null,
       }),
     );
 
@@ -675,7 +677,7 @@ export function hydrateThread(state: AppState, fullThread: OrchestrationThread):
 }
 
 export function isThreadHydrated(thread: Thread): boolean {
-  return thread.messages.length > 0 || thread.latestTurn === null;
+  return thread.hydrated;
 }
 
 export function applyOrchestrationEvent(state: AppState, event: OrchestrationEvent): AppState {

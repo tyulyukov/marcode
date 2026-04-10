@@ -185,23 +185,17 @@ function ChatThreadRouteView() {
     hydrationInFlightRef.current = threadId;
     const api = readNativeApi();
     if (!api) return;
-    let cancelled = false;
     api.orchestration
       .getThread({ threadId })
       .then((fullThread) => {
-        if (!cancelled && fullThread) {
+        if (fullThread) {
           hydrateThread(fullThread);
         }
       })
       .catch(() => undefined)
       .finally(() => {
-        if (!cancelled) {
-          hydrationInFlightRef.current = null;
-        }
+        hydrationInFlightRef.current = null;
       });
-    return () => {
-      cancelled = true;
-    };
   }, [threadId, needsHydration, hydrateThread]);
   const diffOpen = search.diff === "1";
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);

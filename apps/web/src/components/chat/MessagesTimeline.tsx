@@ -159,7 +159,6 @@ interface MessagesTimelineProps {
   onCancelEditUserMessage: () => void;
   onSubmitEditUserMessage: () => void | Promise<void>;
   onReplyToSelection: (context: QuotedContext) => void;
-  onRevealStart?: (messageId: string) => void;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -210,7 +209,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onCancelEditUserMessage,
   onSubmitEditUserMessage,
   onReplyToSelection,
-  onRevealStart,
   onVirtualizerSnapshot: _onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -314,13 +312,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
     return fresh;
   }, [rows, threadId, isHydrating]);
-
-  useLayoutEffect(() => {
-    if (!onRevealStart || newAssistantMessageIds.size === 0) return;
-    for (const messageId of newAssistantMessageIds) {
-      onRevealStart(messageId);
-    }
-  }, [newAssistantMessageIds, onRevealStart]);
 
   const showInlineDiffs = expandedWorkGroups;
   const onTimelineImageLoad = useCallback(() => {}, []);

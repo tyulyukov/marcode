@@ -43,6 +43,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     branch: null,
     worktreePath: null,
     additionalDirectories: [],
+    hydrated: true,
     ...overrides,
   };
 }
@@ -285,6 +286,7 @@ describe("store read model sync", () => {
       threads: [],
       sidebarThreadsById: {},
       threadIdsByProjectId: {},
+
       bootstrapComplete: true,
     };
     const readModel: OrchestrationReadModel = {
@@ -399,6 +401,7 @@ describe("incremental orchestration updates", () => {
       threads: [],
       sidebarThreadsById: {},
       threadIdsByProjectId: {},
+
       bootstrapComplete: true,
     };
 
@@ -463,6 +466,7 @@ describe("incremental orchestration updates", () => {
       threadIdsByProjectId: {
         [originalProjectId]: [threadId],
       },
+
       bootstrapComplete: true,
     };
 

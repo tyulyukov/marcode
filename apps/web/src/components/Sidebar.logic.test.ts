@@ -666,6 +666,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     additionalDirectories: [],
     turnDiffSummaries: [],
     activities: [],
+    hydrated: true,
     ...overrides,
   };
 }
