@@ -1,4 +1,10 @@
-import { ChevronDownIcon, ChevronRightIcon, EyeIcon, SearchIcon, ShieldQuestionIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  EyeIcon,
+  SearchIcon,
+  ShieldQuestionIcon,
+} from "lucide-react";
 import { memo, useState } from "react";
 import { cn } from "~/lib/utils";
 import type { WorkLogEntry } from "../../session-logic";

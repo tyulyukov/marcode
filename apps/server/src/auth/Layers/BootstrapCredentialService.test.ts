@@ -22,7 +22,9 @@ const makeServerConfigLayer = (
       } satisfies ServerConfigShape;
     }),
   ).pipe(
-    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "marcode-auth-bootstrap-test-" })),
+    Layer.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "marcode-auth-bootstrap-test-" }),
+    ),
   );
 
 const makeBootstrapCredentialLayer = (

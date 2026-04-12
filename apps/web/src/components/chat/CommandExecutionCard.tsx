@@ -1,4 +1,11 @@
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleXIcon, ShieldQuestionIcon, TerminalIcon } from "lucide-react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  CircleXIcon,
+  ShieldQuestionIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { ansiToSpans } from "~/lib/ansiToSpans";

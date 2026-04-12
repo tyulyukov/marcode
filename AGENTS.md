@@ -193,17 +193,17 @@ MarCode has its own database migrations that were added at specific IDs. When me
 
 **Current migration layout (as of upstream sync April 2026):**
 
-| IDs | Origin | Content |
-|---|---|---|
-| 001–018 | Shared (upstream + MarCode) | Core schema, projections, checkpoints |
-| 019 | MarCode | `ProjectJiraBoard` |
-| 020 | MarCode | `ProjectionThreadsAdditionalDirectories` |
-| 021 | *(gap — intentionally unused)* | |
-| 022 | MarCode | `ProjectionSnapshotOrderIndexes` |
-| 023 | Upstream (was 019) | `ProjectionSnapshotLookupIndexes` |
-| 024 | Upstream (was 020) | `AuthAccessManagement` |
-| 025 | Upstream (was 021) | `AuthSessionClientMetadata` |
-| 026 | Upstream (was 022) | `AuthSessionLastConnectedAt` |
+| IDs     | Origin                         | Content                                  |
+| ------- | ------------------------------ | ---------------------------------------- |
+| 001–018 | Shared (upstream + MarCode)    | Core schema, projections, checkpoints    |
+| 019     | MarCode                        | `ProjectJiraBoard`                       |
+| 020     | MarCode                        | `ProjectionThreadsAdditionalDirectories` |
+| 021     | _(gap — intentionally unused)_ |                                          |
+| 022     | MarCode                        | `ProjectionSnapshotOrderIndexes`         |
+| 023     | Upstream (was 019)             | `ProjectionSnapshotLookupIndexes`        |
+| 024     | Upstream (was 020)             | `AuthAccessManagement`                   |
+| 025     | Upstream (was 021)             | `AuthSessionClientMetadata`              |
+| 026     | Upstream (was 022)             | `AuthSessionLastConnectedAt`             |
 
 **Rules for future upstream merges:**
 

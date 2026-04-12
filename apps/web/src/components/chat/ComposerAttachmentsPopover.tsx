@@ -1,11 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import {
-  FolderIcon,
-  FolderPlusIcon,
-  ImageIcon,
-  PlusIcon,
-  XIcon,
-} from "lucide-react";
+import { FolderIcon, FolderPlusIcon, ImageIcon, PlusIcon, XIcon } from "lucide-react";
 import type { ThreadId, RuntimeMode } from "@marcode/contracts";
 import { Button } from "../ui/button";
 import {

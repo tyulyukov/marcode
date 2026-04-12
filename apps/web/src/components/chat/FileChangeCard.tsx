@@ -143,7 +143,10 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
           <span className="shrink-0 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/60">
             {OPERATION_LABELS[diffPreviews[0]!.operation]}
           </span>
-          <DiffStatSummary additions={diffPreviews[0]!.stats.additions} deletions={diffPreviews[0]!.stats.deletions} />
+          <DiffStatSummary
+            additions={diffPreviews[0]!.stats.additions}
+            deletions={diffPreviews[0]!.stats.deletions}
+          />
           {isPendingApproval && (
             <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
               <ShieldQuestionIcon className="size-3" />
