@@ -222,7 +222,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   it.effect("uses bootstrap envelope values as fallbacks when flags and env are absent", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
-      const baseDir = "/tmp/t3-bootstrap-home";
+      const baseDir = "/tmp/marcode-bootstrap-home";
       const fd = yield* openBootstrapFd({
         mode: "desktop",
         port: 4888,
@@ -344,7 +344,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         mode: "desktop",
         port: 4888,
         host: "127.0.0.2",
-        marcodeHome: "/tmp/t3-bootstrap-home",
+        marcodeHome: "/tmp/marcode-bootstrap-home",
         devUrl: "http://127.0.0.1:5173",
         noBrowser: false,
         autoBootstrapProjectFromCwd: false,

@@ -114,7 +114,7 @@ describe("EventNdjsonLogger", () => {
 
   it.effect("serializes concurrent first writes for the same segment", () =>
     Effect.gen(function* () {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-log-"));
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "marcode-provider-log-"));
       const basePath = path.join(tempDir, "provider-canonical.ndjson");
 
       try {

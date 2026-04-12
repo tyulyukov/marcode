@@ -1099,7 +1099,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
       const snapshots = yield* Metric.snapshot;
 
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "interrupt",
           outcome: "success",
@@ -1107,7 +1107,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "approval-response",
           outcome: "success",
@@ -1115,7 +1115,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "user-input-response",
           outcome: "success",
@@ -1123,7 +1123,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "rollback",
           outcome: "success",
@@ -1131,7 +1131,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_sessions_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_sessions_total", {
           provider: "claudeAgent",
           operation: "stop",
           outcome: "success",
@@ -1163,7 +1163,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         const snapshots = yield* Metric.snapshot;
 
         assert.equal(
-          hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+          hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
             provider: "claudeAgent",
             operation: "send",
             outcome: "success",
@@ -1171,7 +1171,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           true,
         );
         assert.equal(
-          hasMetricSnapshot(snapshots, "t3_provider_turn_duration", {
+          hasMetricSnapshot(snapshots, "marcode_provider_turn_duration", {
             provider: "claudeAgent",
             operation: "send",
           }),

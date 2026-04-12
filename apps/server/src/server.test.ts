@@ -813,7 +813,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       yield* buildAppUnderTest();
 
-      const url = yield* getHttpServerUrl("/.well-known/t3/environment");
+      const url = yield* getHttpServerUrl("/.well-known/marcode/environment");
       const response = yield* Effect.promise(() => fetch(url));
       const body = (yield* Effect.promise(() =>
         response.json(),
@@ -848,7 +848,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "browser-session-cookie",
         "bearer-session-token",
       ]);
-      assert.isTrue(body.auth.sessionCookieName.startsWith("t3_session_"));
+      assert.isTrue(body.auth.sessionCookieName.startsWith("marcode_session_"));
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -10,7 +10,7 @@ import { BootstrapHttpError, retryTransientBootstrap } from "./auth";
 
 import { readPrimaryEnvironmentTarget, resolvePrimaryEnvironmentHttpUrl } from "./target";
 
-const SERVER_ENVIRONMENT_DESCRIPTOR_PATH = "/.well-known/t3/environment";
+const SERVER_ENVIRONMENT_DESCRIPTOR_PATH = "/.well-known/marcode/environment";
 
 interface PrimaryEnvironmentBootstrapState {
   readonly descriptor: ExecutionEnvironmentDescriptor | null;

@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 function makeTempPath(fileName: string): string {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "t3-client-persistence-test-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "marcode-client-persistence-test-"));
   tempDirectories.push(directory);
   return path.join(directory, fileName);
 }

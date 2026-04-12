@@ -1,4 +1,4 @@
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleXIcon, TerminalIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleXIcon, ShieldQuestionIcon, TerminalIcon } from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { ansiToSpans } from "~/lib/ansiToSpans";
@@ -10,19 +10,21 @@ interface CommandExecutionCardProps {
   entry: WorkLogEntry;
   isLive: boolean;
   threadId: string;
+  isPendingApproval?: boolean;
 }
 
-type CommandStatus = "running" | "error" | "success";
+type CommandStatus = "running" | "error" | "success" | "approval";
 
 const PREVIEW_MAX_HEIGHT_PX = 120;
 const MIN_OVERFLOW_PX = 24;
 
-function deriveCommandStatus(entry: WorkLogEntry): CommandStatus {
+function deriveCommandStatus(entry: WorkLogEntry, isPendingApproval: boolean): CommandStatus {
   if (entry.toolCompleted || entry.exitCode !== undefined) {
     if (entry.tone === "error" || (entry.exitCode !== undefined && entry.exitCode !== 0))
       return "error";
     return "success";
   }
+  if (isPendingApproval) return "approval";
   return "running";
 }
 
@@ -85,10 +87,20 @@ const STATUS_ACCENT: Record<CommandStatus, string> = {
   running: "border-l-amber-400/40",
   error: "border-l-rose-400/40",
   success: "border-l-emerald-400/25",
+  approval: "border-l-blue-400/40",
 };
 
 function CommandStatusBadge(props: { entry: WorkLogEntry; status: CommandStatus }) {
   const { entry, status } = props;
+
+  if (status === "approval") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
+        <ShieldQuestionIcon className="size-3" />
+        Approval requested
+      </span>
+    );
+  }
 
   if (status === "running") {
     return (
@@ -119,12 +131,12 @@ function CommandStatusBadge(props: { entry: WorkLogEntry; status: CommandStatus 
 export const CommandExecutionCard = memo(function CommandExecutionCard(
   props: CommandExecutionCardProps,
 ) {
-  const { entry, threadId } = props;
+  const { entry, threadId, isPendingApproval = false } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  const status = deriveCommandStatus(entry);
+  const status = deriveCommandStatus(entry, isPendingApproval);
   const liveOutput = useRuntimeToolOutput(threadId, entry.itemId);
   const { displayCommand, output } = useMemo(() => deriveCommandAndOutput(entry), [entry]);
   const effectiveOutput = liveOutput ?? output;

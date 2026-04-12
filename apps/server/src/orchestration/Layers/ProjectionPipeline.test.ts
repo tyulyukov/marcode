@@ -171,7 +171,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   );
 });
 
-it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("marcode-base-")))(
   "OrchestrationProjectionPipeline",
   (it) => {
     it.effect("stores message attachment references without mutating payloads", () =>
@@ -793,7 +793,7 @@ it.layer(
           threadId,
           turnId: TurnId.make("turn-keep"),
           checkpointTurnCount: 1,
-          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-revert-files/turn/1"),
+          checkpointRef: CheckpointRef.make("refs/marcode/checkpoints/thread-revert-files/turn/1"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.make("message-keep"),
@@ -846,7 +846,7 @@ it.layer(
           threadId,
           turnId: TurnId.make("turn-remove"),
           checkpointTurnCount: 2,
-          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-revert-files/turn/2"),
+          checkpointRef: CheckpointRef.make("refs/marcode/checkpoints/thread-revert-files/turn/2"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.make("message-remove"),
@@ -1465,7 +1465,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
             threadId: ThreadId.make("thread-conflict"),
             turnId: TurnId.make("turn-completed"),
             checkpointTurnCount: 1,
-            checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-conflict/turn/1"),
+            checkpointRef: CheckpointRef.make("refs/marcode/checkpoints/thread-conflict/turn/1"),
             status: "ready",
             files: [],
             assistantMessageId: MessageId.make("assistant-conflict"),
@@ -1570,7 +1570,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           threadId: ThreadId.make("thread-revert"),
           turnId: TurnId.make("turn-1"),
           checkpointTurnCount: 1,
-          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-revert/turn/1"),
+          checkpointRef: CheckpointRef.make("refs/marcode/checkpoints/thread-revert/turn/1"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.make("assistant-keep"),
@@ -1614,7 +1614,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           threadId: ThreadId.make("thread-revert"),
           turnId: TurnId.make("turn-2"),
           checkpointTurnCount: 2,
-          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-revert/turn/2"),
+          checkpointRef: CheckpointRef.make("refs/marcode/checkpoints/thread-revert/turn/2"),
           status: "ready",
           files: [],
           assistantMessageId: MessageId.make("assistant-remove"),

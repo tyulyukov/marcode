@@ -3,8 +3,6 @@ import {
   FolderIcon,
   FolderPlusIcon,
   ImageIcon,
-  LockIcon,
-  LockOpenIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
@@ -12,9 +10,10 @@ import type { ThreadId, RuntimeMode } from "@marcode/contracts";
 import { Button } from "../ui/button";
 import {
   Menu,
-  MenuCheckboxItem,
   MenuItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
@@ -146,24 +145,18 @@ export function ComposerAttachmentsPopover({
 
           <MenuSeparator />
 
-          <MenuCheckboxItem
-            checked={runtimeMode === "full-access"}
-            variant="switch"
-            onClick={() =>
-              onRuntimeModeChange(
-                runtimeMode === "full-access" ? "approval-required" : "full-access",
-              )
-            }
+          <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
+          <MenuRadioGroup
+            value={runtimeMode}
+            onValueChange={(value) => {
+              if (!value || value === runtimeMode) return;
+              onRuntimeModeChange(value as RuntimeMode);
+            }}
           >
-            <span className="flex items-center gap-2">
-              {runtimeMode === "full-access" ? (
-                <LockOpenIcon className="-mx-0.5 size-4 shrink-0 opacity-80" />
-              ) : (
-                <LockIcon className="-mx-0.5 size-4 shrink-0 opacity-80" />
-              )}
-              Full access
-            </span>
-          </MenuCheckboxItem>
+            <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
+            <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
+            <MenuRadioItem value="full-access">Full access</MenuRadioItem>
+          </MenuRadioGroup>
         </MenuPopup>
       </Menu>
 

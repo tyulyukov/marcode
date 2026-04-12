@@ -22,7 +22,7 @@ const TestLayer = Layer.empty.pipe(
   Layer.provideMerge(GitCoreLive),
   Layer.provide(
     ServerConfig.layerTest(process.cwd(), {
-      prefix: "t3-workspace-files-test-",
+      prefix: "marcode-workspace-files-test-",
     }),
   ),
   Layer.provideMerge(NodeServices.layer),

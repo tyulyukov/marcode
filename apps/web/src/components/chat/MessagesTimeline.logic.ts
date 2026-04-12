@@ -205,9 +205,9 @@ export function isExplorationEntry(entry: WorkLogEntry): boolean {
 }
 
 export function isCommandEntry(entry: WorkLogEntry): boolean {
-  return (
-    entry.requestKind === "command" || entry.itemType === "command_execution" || !!entry.command
-  );
+  if (entry.itemType === "command_execution" || !!entry.command) return true;
+  if (entry.requestKind === "command" && (entry.itemType || entry.toolName)) return true;
+  return false;
 }
 
 export function isWebSearchEntry(entry: WorkLogEntry): boolean {

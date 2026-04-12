@@ -122,7 +122,7 @@ describe("resolveEffectiveEnvMode", () => {
   it("treats draft threads already attached to a worktree as current-checkout mode", () => {
     expect(
       resolveEffectiveEnvMode({
-        activeWorktreePath: "/repo/.t3/worktrees/feature-a",
+        activeWorktreePath: "/repo/.marcode/worktrees/feature-a",
         hasServerThread: false,
         draftThreadEnvMode: "worktree",
       }),
@@ -153,7 +153,7 @@ describe("resolveCurrentWorkspaceLabel", () => {
   });
 
   it("describes the active checkout as a worktree when one is attached", () => {
-    expect(resolveCurrentWorkspaceLabel("/repo/.t3/worktrees/feature-a")).toBe("Current worktree");
+    expect(resolveCurrentWorkspaceLabel("/repo/.marcode/worktrees/feature-a")).toBe("Current worktree");
   });
 });
 

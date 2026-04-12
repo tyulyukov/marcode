@@ -585,7 +585,8 @@ export function deriveWorkLogEntries(
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
     .filter((activity) => !isSubagentToolActivity(activity))
     .filter((activity) => !excludeTodos || !isTodoWriteActivity(activity))
-    .filter((activity) => !activity.kind.startsWith("setup-script."));
+    .filter((activity) => !activity.kind.startsWith("setup-script."))
+    .filter((activity) => !activity.kind.startsWith("approval."));
 
   const taskCompletionTime = new Map<string, string>();
   for (const activity of filtered) {

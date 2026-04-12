@@ -234,7 +234,7 @@ export const JiraApiClientLive = Layer.effect(
           const response = yield* authedFetch(path, "listIssues");
           const data = yield* parseJsonResponse<{
             issues: ReadonlyArray<JiraApiIssueRaw>;
-            total: number;
+            total?: number;
           }>(response, "listIssues");
 
           if (data.issues.length === 0 && keyPatternMatch && !(keyPatternMatch[2] ?? "")) {
@@ -251,7 +251,7 @@ export const JiraApiClientLive = Layer.effect(
               issues: fallbackData.issues.map(
                 mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
               ),
-              total: fallbackData.total,
+              total: fallbackData.total ?? fallbackData.issues.length,
             } as unknown as JiraListIssuesResult;
           }
 
@@ -259,7 +259,7 @@ export const JiraApiClientLive = Layer.effect(
             issues: data.issues.map(
               mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
             ),
-            total: data.total,
+            total: data.total ?? data.issues.length,
           } as unknown as JiraListIssuesResult;
         } else {
           const jql = encodeURIComponent(
@@ -278,7 +278,7 @@ export const JiraApiClientLive = Layer.effect(
           issues: data.issues.map(
             mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
           ),
-          total: data.total,
+          total: data.total ?? data.issues.length,
         } as unknown as JiraListIssuesResult;
       });
 
@@ -580,18 +580,18 @@ const mapRawIssue =
     const description = renderAdfToMarkdown(raw.fields.description);
     adfRenderContext = undefined;
     return {
-      key: raw.key,
-      summary: raw.fields.summary,
-      status: raw.fields.status.name,
-      issueType: raw.fields.issuetype.name,
-      ...(raw.fields.priority ? { priority: raw.fields.priority.name } : {}),
+      key: raw.key.trim(),
+      summary: raw.fields.summary.trim(),
+      status: raw.fields.status.name.trim(),
+      issueType: raw.fields.issuetype.name.trim(),
+      ...(raw.fields.priority ? { priority: raw.fields.priority.name.trim() } : {}),
       ...(raw.fields.assignee
         ? {
             assignee: {
-              accountId: raw.fields.assignee.accountId,
-              displayName: raw.fields.assignee.displayName,
+              accountId: raw.fields.assignee.accountId.trim(),
+              displayName: raw.fields.assignee.displayName.trim(),
               ...(raw.fields.assignee.avatarUrls?.["48x48"]
-                ? { avatarUrl: raw.fields.assignee.avatarUrls["48x48"] }
+                ? { avatarUrl: raw.fields.assignee.avatarUrls["48x48"].trim() }
                 : {}),
             },
           }
@@ -599,9 +599,9 @@ const mapRawIssue =
       description,
       labels: raw.fields.labels ?? [],
       attachments: (raw.fields.attachment ?? []).map((att) => ({
-        id: att.id,
-        filename: att.filename,
-        mimeType: att.mimeType,
+        id: att.id.trim(),
+        filename: att.filename.trim(),
+        mimeType: att.mimeType.trim(),
         size: att.size,
       })),
       url: siteUrlByCloudId.has(cloudId)

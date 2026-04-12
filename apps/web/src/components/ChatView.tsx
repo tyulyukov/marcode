@@ -4819,6 +4819,7 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
                 isSendBusy={isSendBusy}
                 isPreparingWorktree={isPreparingWorktree}
                 onSubagentSelect={onSubagentSelect}
+                pendingApprovals={pendingApprovals}
                 editingUserMessageId={editingUserMessageId}
                 editingUserMessageText={editingUserMessageText}
                 editingUserMessageImages={editingUserMessageImages}

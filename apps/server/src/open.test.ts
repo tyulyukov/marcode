@@ -194,7 +194,7 @@ it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-open-test-" });
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "marcode-open-test-" });
       yield* fs.writeFileString(path.join(dir, "zeditor"), "#!/bin/sh\nexit 0\n");
       yield* fs.chmod(path.join(dir, "zeditor"), 0o755);
 
@@ -369,7 +369,7 @@ it.layer(NodeServices.layer)("resolveAvailableEditors", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-editors-" });
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "marcode-editors-" });
 
       yield* fs.writeFileString(path.join(dir, "zeditor"), "#!/bin/sh\nexit 0\n");
       yield* fs.writeFileString(path.join(dir, "xdg-open"), "#!/bin/sh\nexit 0\n");

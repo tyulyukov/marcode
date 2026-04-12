@@ -1982,6 +1982,16 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }: {
   isElectron: boolean;
 }) {
+  const [isDesktopFullscreen, setIsDesktopFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isElectron) return;
+    const bridge = window.desktopBridge;
+    if (!bridge || typeof bridge.onFullscreenChange !== "function") return;
+
+    return bridge.onFullscreenChange(setIsDesktopFullscreen);
+  }, [isElectron]);
+
   const wordmark = (
     <div className="flex items-center gap-2">
       <SidebarTrigger className="shrink-0 md:hidden" />
@@ -2008,7 +2018,10 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
   );
 
   return isElectron ? (
-    <SidebarHeader className="drag-region h-[52px] flex-row items-center gap-2 pr-4 py-0 pl-[90px]">
+    <SidebarHeader
+      className="drag-region h-[52px] flex-row items-center justify-center gap-2 py-0"
+      style={isDesktopFullscreen ? undefined : { paddingLeft: 58 }}
+    >
       {wordmark}
     </SidebarHeader>
   ) : (

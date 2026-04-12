@@ -1,4 +1,4 @@
-import { ChevronDownIcon, ChevronRightIcon, EyeIcon, SearchIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, EyeIcon, SearchIcon, ShieldQuestionIcon } from "lucide-react";
 import { memo, useState } from "react";
 import { cn } from "~/lib/utils";
 import type { WorkLogEntry } from "../../session-logic";
@@ -6,6 +6,7 @@ import type { WorkLogEntry } from "../../session-logic";
 interface ExplorationCardProps {
   entries: ReadonlyArray<WorkLogEntry>;
   isLive: boolean;
+  isPendingApproval?: boolean;
 }
 
 const READ_TOOL_NAMES = new Set(["read", "cat", "head", "tail", "view"]);
@@ -213,7 +214,7 @@ function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
 }
 
 export const ExplorationCard = memo(function ExplorationCard(props: ExplorationCardProps) {
-  const { entries, isLive } = props;
+  const { entries, isLive, isPendingApproval = false } = props;
   const [expanded, setExpanded] = useState(false);
 
   if (entries.length === 0) return null;
@@ -247,7 +248,14 @@ export const ExplorationCard = memo(function ExplorationCard(props: ExplorationC
         <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">
           {verb} {summary}
         </span>
-        {isLive && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400/60" />}
+        {isPendingApproval ? (
+          <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
+            <ShieldQuestionIcon className="size-3" />
+            Approval requested
+          </span>
+        ) : (
+          isLive && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400/60" />
+        )}
       </button>
 
       {expanded && (

@@ -72,7 +72,7 @@ const baseServerConfig: ServerConfig = {
     policy: "loopback-browser",
     bootstrapMethods: ["one-time-token"],
     sessionMethods: ["browser-session-cookie", "bearer-session-token"],
-    sessionCookieName: "t3_session",
+    sessionCookieName: "marcode_session",
   },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/.config/keybindings.json",
@@ -218,7 +218,7 @@ describe("serverState", () => {
       payload: {
         environment: baseEnvironment,
         cwd: "/tmp/workspace",
-        projectName: "t3-code",
+        projectName: "marcode",
         bootstrapProjectId: ProjectId.make("project-1"),
         bootstrapThreadId: ThreadId.make("thread-1"),
       },
@@ -227,7 +227,7 @@ describe("serverState", () => {
     expect(listener).toHaveBeenCalledWith({
       environment: baseEnvironment,
       cwd: "/tmp/workspace",
-      projectName: "t3-code",
+      projectName: "marcode",
       bootstrapProjectId: ProjectId.make("project-1"),
       bootstrapThreadId: ThreadId.make("thread-1"),
     });
@@ -237,7 +237,7 @@ describe("serverState", () => {
     expect(lateListener).toHaveBeenCalledWith({
       environment: baseEnvironment,
       cwd: "/tmp/workspace",
-      projectName: "t3-code",
+      projectName: "marcode",
       bootstrapProjectId: ProjectId.make("project-1"),
       bootstrapThreadId: ThreadId.make("thread-1"),
     });

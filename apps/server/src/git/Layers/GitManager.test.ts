@@ -732,7 +732,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
   it.effect("status trims PR metadata returned by gh before publishing it", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("marcode-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-trimmed-pr"]);
       const remoteDir = yield* createBareRemote();
@@ -770,7 +770,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
   it.effect("status ignores invalid gh pr list entries and keeps valid ones", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("marcode-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-valid-pr-entry"]);
       const remoteDir = yield* createBareRemote();
@@ -821,7 +821,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
   it.effect("status preserves lowercase merged and closed PR states from gh json", () =>
     Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      const repoDir = yield* makeTempDir("marcode-git-manager-");
       yield* initRepo(repoDir);
       yield* runGit(repoDir, ["checkout", "-b", "feature/status-lowercase-state"]);
       const remoteDir = yield* createBareRemote();
@@ -896,7 +896,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
   it.effect("status returns an explicit non-repo result for deleted directories", () =>
     Effect.gen(function* () {
-      const rootDir = yield* makeTempDir("t3code-git-manager-missing-dir-");
+      const rootDir = yield* makeTempDir("marcode-git-manager-missing-dir-");
       const cwd = path.join(rootDir, "deleted-repo");
       yield* makeDirectory(cwd);
       yield* removePath(cwd);

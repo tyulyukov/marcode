@@ -11,7 +11,7 @@ import {
 } from "react";
 // Virtualization replaced with CSS content-visibility: auto for overlap-free
 // rendering. See commit 8d4da730 for the original removal rationale.
-import { deriveTimelineEntries, formatElapsed } from "../../session-logic";
+import { deriveTimelineEntries, formatElapsed, type PendingApproval } from "../../session-logic";
 // AUTO_SCROLL_BOTTOM_THRESHOLD_PX no longer needed without virtualizer
 import { type ChatMessage, type TurnDiffSummary } from "../../types";
 import { type ComposerImageAttachment } from "../../composerDraftStore";
@@ -155,6 +155,7 @@ interface MessagesTimelineProps {
   isSendBusy: boolean;
   isPreparingWorktree: boolean;
   onSubagentSelect: (taskId: string) => void;
+  pendingApprovals?: ReadonlyArray<PendingApproval>;
   editingUserMessageId: MessageId | null;
   editingUserMessageText: string;
   editingUserMessageImages: ComposerImageAttachment[];
@@ -209,6 +210,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   isSendBusy,
   isPreparingWorktree,
   onSubagentSelect,
+  pendingApprovals,
   editingUserMessageId,
   editingUserMessageText,
   editingUserMessageImages,
@@ -389,10 +391,28 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         })()}
 
       {row.kind === "file-change" && (
-        <FileChangeCard diffPreviews={row.entry.diffPreviews ?? []} cwd={workspaceRoot} />
+        <FileChangeCard
+          diffPreviews={row.entry.diffPreviews ?? []}
+          cwd={workspaceRoot}
+          isPendingApproval={
+            !row.entry.toolCompleted &&
+            pendingApprovals !== undefined &&
+            pendingApprovals.some((a) => a.requestKind === "file-change")
+          }
+        />
       )}
 
-      {row.kind === "exploration" && <ExplorationCard entries={row.entries} isLive={row.isLive} />}
+      {row.kind === "exploration" && (
+        <ExplorationCard
+          entries={row.entries}
+          isLive={row.isLive}
+          isPendingApproval={
+            row.entries.some((e) => !e.toolCompleted) &&
+            pendingApprovals !== undefined &&
+            pendingApprovals.some((a) => a.requestKind === "file-read")
+          }
+        />
+      )}
 
       {row.kind === "agent-group" && row.entry.agentGroup && (
         <AgentGroupCard
@@ -404,7 +424,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       )}
 
       {row.kind === "command" && (
-        <CommandExecutionCard entry={row.entry} isLive={row.isLive} threadId={threadId} />
+        <CommandExecutionCard
+          entry={row.entry}
+          isLive={row.isLive}
+          threadId={threadId}
+          isPendingApproval={
+            !row.entry.toolCompleted &&
+            row.entry.exitCode === undefined &&
+            pendingApprovals !== undefined &&
+            pendingApprovals.some((a) => a.requestKind === "command")
+          }
+        />
       )}
 
       {row.kind === "web-search" && <WebSearchCard entry={row.entry} isLive={row.isLive} />}

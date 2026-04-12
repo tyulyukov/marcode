@@ -9,23 +9,23 @@ import {
 
 describe("normalizeGitRemoteUrl", () => {
   it("canonicalizes equivalent GitHub remotes across protocol variants", () => {
-    expect(normalizeGitRemoteUrl("git@github.com:T3Tools/T3Code.git")).toBe(
-      "github.com/t3tools/t3code",
+    expect(normalizeGitRemoteUrl("git@github.com:MarCodeHQ/MarCode.git")).toBe(
+      "github.com/marcodehq/marcode",
     );
-    expect(normalizeGitRemoteUrl("https://github.com/T3Tools/T3Code.git")).toBe(
-      "github.com/t3tools/t3code",
+    expect(normalizeGitRemoteUrl("https://github.com/MarCodeHQ/MarCode.git")).toBe(
+      "github.com/marcodehq/marcode",
     );
-    expect(normalizeGitRemoteUrl("ssh://git@github.com/T3Tools/T3Code")).toBe(
-      "github.com/t3tools/t3code",
+    expect(normalizeGitRemoteUrl("ssh://git@github.com/MarCodeHQ/MarCode")).toBe(
+      "github.com/marcodehq/marcode",
     );
   });
 
   it("preserves nested group paths for providers like GitLab", () => {
-    expect(normalizeGitRemoteUrl("git@gitlab.com:T3Tools/platform/T3Code.git")).toBe(
-      "gitlab.com/t3tools/platform/t3code",
+    expect(normalizeGitRemoteUrl("git@gitlab.com:MarCodeHQ/platform/MarCode.git")).toBe(
+      "gitlab.com/marcodehq/platform/marcode",
     );
-    expect(normalizeGitRemoteUrl("https://gitlab.com/T3Tools/platform/T3Code.git")).toBe(
-      "gitlab.com/t3tools/platform/t3code",
+    expect(normalizeGitRemoteUrl("https://gitlab.com/MarCodeHQ/platform/MarCode.git")).toBe(
+      "gitlab.com/marcodehq/platform/marcode",
     );
   });
 
@@ -42,11 +42,11 @@ describe("normalizeGitRemoteUrl", () => {
 describe("parseGitHubRepositoryNameWithOwnerFromRemoteUrl", () => {
   it("extracts the owner and repository from common GitHub remote shapes", () => {
     expect(
-      parseGitHubRepositoryNameWithOwnerFromRemoteUrl("git@github.com:T3Tools/T3Code.git"),
-    ).toBe("T3Tools/T3Code");
+      parseGitHubRepositoryNameWithOwnerFromRemoteUrl("git@github.com:MarCodeHQ/MarCode.git"),
+    ).toBe("MarCodeHQ/MarCode");
     expect(
-      parseGitHubRepositoryNameWithOwnerFromRemoteUrl("https://github.com/T3Tools/T3Code.git"),
-    ).toBe("T3Tools/T3Code");
+      parseGitHubRepositoryNameWithOwnerFromRemoteUrl("https://github.com/MarCodeHQ/MarCode.git"),
+    ).toBe("MarCodeHQ/MarCode");
   });
 });
 

@@ -181,7 +181,7 @@ function createBaseServerConfig(): ServerConfig {
       policy: "loopback-browser",
       bootstrapMethods: ["one-time-token"],
       sessionMethods: ["browser-session-cookie", "bearer-session-token"],
-      sessionCookieName: "t3_session",
+      sessionCookieName: "marcode_session",
     },
     cwd: "/repo/project",
     keybindingsConfigPath: "/repo/project/.marcode-keybindings.json",
@@ -190,7 +190,7 @@ function createBaseServerConfig(): ServerConfig {
     providers: [],
     availableEditors: ["cursor"],
     observability: {
-      logsDirectoryPath: "/repo/project/.t3/logs",
+      logsDirectoryPath: "/repo/project/.marcode/logs",
       localTracingEnabled: true,
       otlpTracesUrl: "http://localhost:4318/v1/traces",
       otlpTracesEnabled: true,
@@ -433,7 +433,7 @@ describe("GeneralSettingsPanel observability", () => {
     await expect.element(page.getByText("Diagnostics")).toBeInTheDocument();
     await expect.element(page.getByText("Open logs folder")).toBeInTheDocument();
     await expect
-      .element(page.getByText("/repo/project/.t3/logs", { exact: true }))
+      .element(page.getByText("/repo/project/.marcode/logs", { exact: true }))
       .toBeInTheDocument();
     await expect
       .element(
@@ -690,6 +690,6 @@ describe("GeneralSettingsPanel observability", () => {
     const openLogsButton = page.getByText("Open logs folder");
     await openLogsButton.click();
 
-    expect(openInEditor).toHaveBeenCalledWith("/repo/project/.t3/logs", "cursor");
+    expect(openInEditor).toHaveBeenCalledWith("/repo/project/.marcode/logs", "cursor");
   });
 });
