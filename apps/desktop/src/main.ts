@@ -80,6 +80,7 @@ const UPDATE_STATE_CHANNEL = "desktop:update-state";
 const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
 const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
+const FULLSCREEN_STATE_CHANNEL = "desktop:fullscreen-change";
 const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 const GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL = "desktop:get-local-environment-bootstrap";
 const GET_CLIENT_SETTINGS_CHANNEL = "desktop:get-client-settings";
@@ -1729,6 +1730,13 @@ function createWindow(): BrowserWindow {
   window.webContents.on("did-finish-load", () => {
     window.setTitle(APP_DISPLAY_NAME);
     emitUpdateState();
+    window.webContents.send(FULLSCREEN_STATE_CHANNEL, window.isFullScreen());
+  });
+  window.on("enter-full-screen", () => {
+    window.webContents.send(FULLSCREEN_STATE_CHANNEL, true);
+  });
+  window.on("leave-full-screen", () => {
+    window.webContents.send(FULLSCREEN_STATE_CHANNEL, false);
   });
   if (!isDevelopment) {
     window.once("ready-to-show", () => {

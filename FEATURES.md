@@ -278,11 +278,21 @@ Dedicated utility for converting ANSI escape sequences to styled spans for termi
 
 ## Desktop App
 
-### Fullscreen State Handling
+### Fullscreen State Handling & Logo Adjustment
 
-**Commit:** `404d618e`
+**Commits:** `404d618e`, `53b5f31a`, `a76e5882`
+**Files:**
 
-Proper fullscreen state management for the Electron desktop app.
+- `apps/desktop/src/main.ts` — `enter-full-screen` / `leave-full-screen` window listeners send `FULLSCREEN_STATE_CHANNEL` IPC to renderer
+- `apps/desktop/src/preload.ts` — `onFullscreenChange` bridge method listens on `desktop:fullscreen-change`
+- `apps/web/src/components/Sidebar.tsx` — `SidebarChromeHeader` subscribes via `desktopBridge.onFullscreenChange` and adjusts logo padding
+
+macOS hides the native traffic light buttons (close/minimize/fullscreen) when entering fullscreen. The sidebar logo header adapts:
+
+- **Non-fullscreen:** `paddingLeft: 58` offsets logo right to clear traffic light buttons, `justify-center` centers within remaining space
+- **Fullscreen:** No padding override — logo is truly centered in the sidebar header
+
+All three layers (main → preload → React) must stay in sync. The upstream merge can nuke any of them.
 
 ### Branding Assets
 
