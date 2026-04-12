@@ -187,6 +187,33 @@ MarCode supports 24+ themes across 12 families (MarCode branded, Catppuccin, Sol
 3. Import and spread into `THEME_REGISTRY` in `apps/web/src/themes/registry.ts`.
 4. Add the group entry to `THEME_GROUPS` in the same file.
 
+## Upstream Merge: Migration Ordering
+
+MarCode has its own database migrations that were added at specific IDs. When merging upstream t3code changes that introduce NEW migrations, **never renumber existing MarCode migrations** — existing users already have them applied at their original IDs. The Effect SQL migrator tracks migrations by numeric ID in the `effect_sql_migrations` table; renumbering causes it to skip the new upstream tables (thinking those IDs are done) and attempt to re-create existing tables at the new IDs.
+
+**Current migration layout (as of upstream sync April 2026):**
+
+| IDs | Origin | Content |
+|---|---|---|
+| 001–018 | Shared (upstream + MarCode) | Core schema, projections, checkpoints |
+| 019 | MarCode | `ProjectJiraBoard` |
+| 020 | MarCode | `ProjectionThreadsAdditionalDirectories` |
+| 021 | *(gap — intentionally unused)* | |
+| 022 | MarCode | `ProjectionSnapshotOrderIndexes` |
+| 023 | Upstream (was 019) | `ProjectionSnapshotLookupIndexes` |
+| 024 | Upstream (was 020) | `AuthAccessManagement` |
+| 025 | Upstream (was 021) | `AuthSessionClientMetadata` |
+| 026 | Upstream (was 022) | `AuthSessionLastConnectedAt` |
+
+**Rules for future upstream merges:**
+
+1. Keep MarCode migrations at their original IDs (019, 020, 022).
+2. Slot upstream's new migrations **after** the highest existing ID (currently 026+).
+3. If upstream adds migrations at IDs that MarCode already occupies, renumber the **upstream** ones to higher slots — never the MarCode ones.
+4. If MarCode adds new migrations, use the next available ID after the highest.
+5. After reordering, update `apps/server/src/persistence/Migrations.ts` (imports + `migrationEntries` array).
+6. Always test with both a **fresh database** (all migrations run) and verify the sequence is correct for **existing users** (only new migrations run).
+
 ## Reference Repos
 
 - Open-source Codex repo: https://github.com/openai/codex
