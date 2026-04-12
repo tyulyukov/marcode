@@ -43,7 +43,7 @@ const PROVIDER = "claudeAgent" as const;
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-6",
-    name: "Claude Opus 4.6",
+    name: "Opus 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [

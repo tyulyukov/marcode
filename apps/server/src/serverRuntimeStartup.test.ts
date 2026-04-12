@@ -11,10 +11,10 @@ import {
   ServerRuntimeStartupError,
 } from "./serverRuntimeStartup.ts";
 
-it("uses the canonical Codex default for auto-bootstrapped model selection", () => {
+it("uses Claude as the default for auto-bootstrapped model selection", () => {
   assert.deepStrictEqual(getAutoBootstrapDefaultModelSelection(), {
-    provider: "codex",
-    model: DEFAULT_MODEL_BY_PROVIDER.codex,
+    provider: "claudeAgent",
+    model: DEFAULT_MODEL_BY_PROVIDER.claudeAgent,
   });
 });
 
