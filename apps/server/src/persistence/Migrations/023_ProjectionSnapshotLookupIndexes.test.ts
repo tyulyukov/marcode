@@ -7,13 +7,13 @@ import * as NodeSqliteClient from "../NodeSqliteClient.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layerMemory()));
 
-layer("021_ProjectionSnapshotLookupIndexes", (it) => {
+layer("023_ProjectionSnapshotLookupIndexes", (it) => {
   it.effect("creates indexes for targeted projection lookup filters", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 20 });
-      yield* runMigrations({ toMigrationInclusive: 21 });
+      yield* runMigrations({ toMigrationInclusive: 22 });
+      yield* runMigrations({ toMigrationInclusive: 23 });
 
       const projectIndexes = yield* sql<{
         readonly seq: number;
