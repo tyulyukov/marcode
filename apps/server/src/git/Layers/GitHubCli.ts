@@ -2,16 +2,16 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Schema, SchemaIssue } from "effect";
 import { PositiveInt, TrimmedNonEmptyString } from "@marcode/contracts";
 
 import { runProcess } from "../../processRunner";
 import { GitHostCliError } from "@marcode/contracts";
 import {
   GitHubCli,
+  type GitHubPullRequestSummary,
   type GitHubRepositoryCloneUrls,
   type GitHubCliShape,
-  type GitHubPullRequestSummary,
 } from "../Services/GitHubCli.ts";
 import type {
   GitHostCliShape,
@@ -124,12 +124,18 @@ const RawGitHubRepositoryCloneUrlsSchema = Schema.Struct({
   sshUrl: TrimmedNonEmptyString,
 });
 
+function trimOrNull(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizePullRequestSummary(
   raw: Schema.Schema.Type<typeof RawGitHubPullRequestSchema>,
 ): HostPullRequestSummary {
-  const headRepositoryNameWithOwner = raw.headRepository?.nameWithOwner ?? null;
+  const headRepositoryNameWithOwner = trimOrNull(raw.headRepository?.nameWithOwner);
   const headRepositoryOwnerLogin =
-    raw.headRepositoryOwner?.login ??
+    trimOrNull(raw.headRepositoryOwner?.login) ??
     (typeof headRepositoryNameWithOwner === "string" && headRepositoryNameWithOwner.includes("/")
       ? (headRepositoryNameWithOwner.split("/")[0] ?? null)
       : null);
@@ -140,7 +146,7 @@ function normalizePullRequestSummary(
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
     state: normalizePullRequestState(raw),
-    updatedAt: raw.updatedAt ?? null,
+    ...(raw.updatedAt !== undefined ? { updatedAt: raw.updatedAt ?? null } : {}),
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),
@@ -170,7 +176,7 @@ function decodeGitHubJson<S extends Schema.Top>(
       (error) =>
         new GitHostCliError({
           operation,
-          detail: error instanceof Error ? `${invalidDetail}: ${error.message}` : invalidDetail,
+          detail: `${invalidDetail}: ${SchemaIssue.makeFormatterDefault()(error.issue)}`,
           provider: "github",
           cause: error,
         }),
@@ -240,16 +246,28 @@ function listPullRequestsViaGh(
       args,
     }).pipe(
       Effect.map((result) => result.stdout.trim()),
-      Effect.flatMap((raw) =>
-        raw.length === 0
-          ? Effect.succeed([])
-          : decodeGitHubJson(
-              raw,
-              Schema.Array(RawGitHubPullRequestSchema),
-              "listPullRequests",
-              "GitHub CLI returned invalid PR list JSON.",
-            ),
-      ),
+      Effect.flatMap((raw) => {
+        if (raw.length === 0) return Effect.succeed([]);
+        return decodeGitHubJson(
+          raw,
+          Schema.Array(Schema.Unknown),
+          "listPullRequests",
+          "GitHub CLI returned invalid PR list JSON.",
+        ).pipe(
+          Effect.map((items) => {
+            const decode = Schema.decodeUnknownSync(RawGitHubPullRequestSchema);
+            const valid: Array<Schema.Schema.Type<typeof RawGitHubPullRequestSchema>> = [];
+            for (const item of items) {
+              try {
+                valid.push(decode(item));
+              } catch {
+                // skip entries that fail schema validation
+              }
+            }
+            return valid;
+          }),
+        );
+      }),
       Effect.map((pullRequests) => pullRequests.map(normalizePullRequestSummary)),
     );
   };

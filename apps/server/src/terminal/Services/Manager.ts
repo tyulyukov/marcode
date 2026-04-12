@@ -23,7 +23,7 @@ import {
   TerminalWriteInput,
 } from "@marcode/contracts";
 import { PtyProcess } from "./PTY";
-import { Effect, ServiceMap } from "effect";
+import { Effect, Context } from "effect";
 
 export {
   TerminalCwdError,
@@ -122,6 +122,6 @@ export interface TerminalManagerShape {
 /**
  * TerminalManager - Service tag for terminal session orchestration.
  */
-export class TerminalManager extends ServiceMap.Service<TerminalManager, TerminalManagerShape>()(
+export class TerminalManager extends Context.Service<TerminalManager, TerminalManagerShape>()(
   "marcode/terminal/Services/Manager/TerminalManager",
 ) {}

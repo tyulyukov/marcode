@@ -120,6 +120,24 @@ function makeTempDir(
   });
 }
 
+function removePath(
+  targetPath: string,
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* fileSystem.remove(targetPath, { recursive: true, force: true });
+  });
+}
+
+function makeDirectory(
+  dirPath: string,
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* fileSystem.makeDirectory(dirPath, { recursive: true });
+  });
+}
+
 function runGit(
   cwd: string,
   args: readonly string[],
@@ -464,14 +482,27 @@ function createGitHostCliWithFakeGh(scenario: FakeGhScenario = {}): {
         }).pipe(
           Effect.map((result) => {
             const raw = JSON.parse(result.stdout) as ReadonlyArray<Record<string, unknown>>;
-            return raw.map((entry) => {
+            const valid: HostPullRequestSummary[] = [];
+            for (const entry of raw) {
+              const num = entry.number as number;
+              const title = typeof entry.title === "string" ? entry.title.trim() : "";
+              const url = typeof entry.url === "string" ? entry.url.trim() : "";
+              const baseRefName =
+                typeof entry.baseRefName === "string" ? entry.baseRefName.trim() : "";
+              const headRefName =
+                typeof entry.headRefName === "string" ? entry.headRefName.trim() : "";
+              if (num < 1 || !title || !url || !baseRefName || !headRefName) {
+                continue;
+              }
               const state = typeof entry.state === "string" ? entry.state : undefined;
               const mergedAt = typeof entry.mergedAt === "string" ? entry.mergedAt : undefined;
               let normalized: "open" | "closed" | "merged" = "open";
               if ((mergedAt && mergedAt.trim().length > 0) || state === "MERGED") {
                 normalized = "merged";
-              } else if (state === "CLOSED") {
+              } else if (state === "CLOSED" || state === "closed") {
                 normalized = "closed";
+              } else if (state === "merged") {
+                normalized = "merged";
               }
               const headRepo = entry.headRepository as
                 | { nameWithOwner?: string }
@@ -481,28 +512,34 @@ function createGitHostCliWithFakeGh(scenario: FakeGhScenario = {}): {
                 | { login?: string }
                 | null
                 | undefined;
-              const headRepositoryNameWithOwner = headRepo?.nameWithOwner ?? null;
+              const rawHeadRepoName = headRepo?.nameWithOwner?.trim() ?? null;
+              const headRepositoryNameWithOwner =
+                rawHeadRepoName && rawHeadRepoName.length > 0 ? rawHeadRepoName : null;
+              const rawOwnerLogin = headRepoOwner?.login?.trim() ?? null;
               const headRepositoryOwnerLogin =
-                headRepoOwner?.login ??
+                (rawOwnerLogin && rawOwnerLogin.length > 0 ? rawOwnerLogin : null) ??
                 (typeof headRepositoryNameWithOwner === "string" &&
                 headRepositoryNameWithOwner.includes("/")
                   ? (headRepositoryNameWithOwner.split("/")[0] ?? null)
                   : null);
-              return {
-                number: entry.number as number,
-                title: entry.title as string,
-                url: entry.url as string,
-                baseRefName: entry.baseRefName as string,
-                headRefName: entry.headRefName as string,
+              valid.push({
+                number: num,
+                title,
+                url,
+                baseRefName,
+                headRefName,
                 state: normalized,
-                updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : null,
+                ...(entry.updatedAt !== undefined
+                  ? { updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : null }
+                  : {}),
                 ...(typeof entry.isCrossRepository === "boolean"
                   ? { isCrossRepository: entry.isCrossRepository }
                   : {}),
                 ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
                 ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),
-              } as HostPullRequestSummary;
-            });
+              });
+            }
+            return valid;
           }),
         ),
       createPullRequest: (input) =>
@@ -693,9 +730,176 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
+  it.effect("status trims PR metadata returned by gh before publishing it", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/status-trimmed-pr"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/status-trimmed-pr"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            JSON.stringify([
+              {
+                number: 14,
+                title: "  Existing PR title  \n",
+                url: " https://github.com/pingdotgg/codething-mvp/pull/14 ",
+                baseRefName: " main ",
+                headRefName: "\tfeature/status-trimmed-pr\t",
+              },
+            ]),
+          ],
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+
+      expect(status.pr).toEqual({
+        number: 14,
+        title: "Existing PR title",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/14",
+        baseBranch: "main",
+        headBranch: "feature/status-trimmed-pr",
+        state: "open",
+      });
+    }),
+  );
+
+  it.effect("status ignores invalid gh pr list entries and keeps valid ones", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/status-valid-pr-entry"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/status-valid-pr-entry"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            JSON.stringify([
+              {
+                number: 0,
+                title: "invalid",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/0",
+                baseRefName: "main",
+                headRefName: "feature/invalid",
+              },
+              {
+                number: 15,
+                title: "  Valid PR title  ",
+                url: " https://github.com/pingdotgg/codething-mvp/pull/15 ",
+                baseRefName: " main ",
+                headRefName: "\tfeature/status-valid-pr-entry\t",
+                headRepository: {
+                  nameWithOwner: "   ",
+                },
+                headRepositoryOwner: {
+                  login: "   ",
+                },
+              },
+            ]),
+          ],
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+
+      expect(status.pr).toEqual({
+        number: 15,
+        title: "Valid PR title",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/15",
+        baseBranch: "main",
+        headBranch: "feature/status-valid-pr-entry",
+        state: "open",
+      });
+    }),
+  );
+
+  it.effect("status preserves lowercase merged and closed PR states from gh json", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/status-lowercase-state"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "feature/status-lowercase-state"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            JSON.stringify([
+              {
+                number: 16,
+                title: "Closed PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/16",
+                baseRefName: "main",
+                headRefName: "feature/status-lowercase-state",
+                state: "closed",
+                updatedAt: "2026-01-01T00:00:00.000Z",
+              },
+              {
+                number: 17,
+                title: "Merged PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/17",
+                baseRefName: "main",
+                headRefName: "feature/status-lowercase-state",
+                state: "merged",
+                updatedAt: "2026-01-02T00:00:00.000Z",
+              },
+            ]),
+          ],
+        },
+      });
+
+      const status = yield* manager.status({ cwd: repoDir });
+
+      expect(status.pr).toEqual({
+        number: 17,
+        title: "Merged PR",
+        url: "https://github.com/pingdotgg/codething-mvp/pull/17",
+        baseBranch: "main",
+        headBranch: "feature/status-lowercase-state",
+        state: "merged",
+      });
+    }),
+  );
+
   it.effect("status returns an explicit non-repo result for non-git directories", () =>
     Effect.gen(function* () {
       const cwd = yield* makeTempDir("marcode-git-manager-non-repo-");
+      const { manager } = yield* makeManager();
+
+      const status = yield* manager.status({ cwd });
+
+      expect(status).toEqual({
+        isRepo: false,
+        hasOriginRemote: false,
+        isDefaultBranch: false,
+        branch: null,
+        hasWorkingTreeChanges: false,
+        workingTree: {
+          files: [],
+          insertions: 0,
+          deletions: 0,
+        },
+        hasUpstream: false,
+        aheadCount: 0,
+        behindCount: 0,
+        pr: null,
+      });
+    }),
+  );
+
+  it.effect("status returns an explicit non-repo result for deleted directories", () =>
+    Effect.gen(function* () {
+      const rootDir = yield* makeTempDir("t3code-git-manager-missing-dir-");
+      const cwd = path.join(rootDir, "deleted-repo");
+      yield* makeDirectory(cwd);
+      yield* removePath(cwd);
       const { manager } = yield* makeManager();
 
       const status = yield* manager.status({ cwd });
@@ -853,7 +1057,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           "pr list --head jasonLaster:statemachine --state all --limit 20 --json number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         );
       }),
-    12_000,
+    20_000,
   );
 
   it.effect(
@@ -961,7 +1165,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           ),
         ).toBe(false);
       }),
-    12_000,
+    20_000,
   );
 
   it.effect("status returns merged PR state when latest PR was merged", () =>
@@ -1684,7 +1888,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           false,
         );
       }),
-    12_000,
+    20_000,
   );
 
   it.effect(

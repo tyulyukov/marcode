@@ -27,6 +27,7 @@ export type MessagesTimelineRow =
       message: ChatMessage;
       durationStart: string;
       showCompletionDivider: boolean;
+      showAssistantCopyButton: boolean;
     }
   | {
       kind: "proposed-plan";
@@ -105,6 +106,48 @@ export function computeMessageDurationStart(
 
 export function normalizeCompactToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
+}
+
+export function resolveAssistantMessageCopyState({
+  text,
+  showCopyButton,
+  streaming,
+}: {
+  text: string | null;
+  showCopyButton: boolean;
+  streaming: boolean;
+}) {
+  const hasText = text !== null && text.trim().length > 0;
+  return {
+    text: hasText ? text : null,
+    visible: showCopyButton && hasText && !streaming,
+  };
+}
+
+function deriveTerminalAssistantMessageIds(timelineEntries: ReadonlyArray<TimelineEntry>) {
+  const lastAssistantMessageIdByResponseKey = new Map<string, string>();
+  let nullTurnResponseIndex = 0;
+
+  for (const timelineEntry of timelineEntries) {
+    if (timelineEntry.kind !== "message") {
+      continue;
+    }
+    const { message } = timelineEntry;
+    if (message.role === "user") {
+      nullTurnResponseIndex += 1;
+      continue;
+    }
+    if (message.role !== "assistant") {
+      continue;
+    }
+
+    const responseKey = message.turnId
+      ? `turn:${message.turnId}`
+      : `unkeyed:${nullTurnResponseIndex}`;
+    lastAssistantMessageIdByResponseKey.set(responseKey, message.id);
+  }
+
+  return new Set(lastAssistantMessageIdByResponseKey.values());
 }
 
 const FILE_CHANGE_CARD_COLLAPSED_HEIGHT = 64;
@@ -194,6 +237,7 @@ export function deriveMessagesTimelineRows(input: {
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
   );
+  const terminalAssistantMessageIds = deriveTerminalAssistantMessageIds(input.timelineEntries);
 
   for (let index = 0; index < input.timelineEntries.length; index += 1) {
     const timelineEntry = input.timelineEntries[index];
@@ -348,6 +392,9 @@ export function deriveMessagesTimelineRows(input: {
       showCompletionDivider:
         timelineEntry.message.role === "assistant" &&
         input.completionDividerBeforeEntryId === timelineEntry.id,
+      showAssistantCopyButton:
+        timelineEntry.message.role === "assistant" &&
+        terminalAssistantMessageIds.has(timelineEntry.message.id),
     });
   }
 

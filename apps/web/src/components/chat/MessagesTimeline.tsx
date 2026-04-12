@@ -1,4 +1,4 @@
-import { type MessageId, type TurnId } from "@marcode/contracts";
+import { type EnvironmentId, type MessageId, type TurnId } from "@marcode/contracts";
 import {
   memo,
   useCallback,
@@ -47,6 +47,7 @@ import {
   MAX_VISIBLE_WORK_LOG_ENTRIES,
   deriveMessagesTimelineRows,
   normalizeCompactToolLabel,
+  resolveAssistantMessageCopyState,
   type MessagesTimelineRow,
 } from "./MessagesTimeline.logic";
 import { FileChangeCard } from "./FileChangeCard";
@@ -71,6 +72,7 @@ import { extractLeadingQuotedContexts, type QuotedContext } from "~/lib/quotedCo
 import { UserMessageQuotedContextLabel } from "./UserMessageQuotedContextLabel";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
+
 import {
   buildInlineTerminalContextText,
   formatInlineTerminalContextLabel,
@@ -128,6 +130,7 @@ interface MessagesTimelineProps {
   isHydrating: boolean;
   isWorking: boolean;
   activeTurnInProgress: boolean;
+  activeTurnId?: TurnId | null;
   activeTurnStartedAt: string | null;
   scrollContainer: HTMLDivElement | null;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
@@ -137,11 +140,14 @@ interface MessagesTimelineProps {
   nowIso: string;
   expandedWorkGroups: Record<string, boolean>;
   onToggleWorkGroup: (groupId: string) => void;
+  changedFilesExpandedByTurnId: Record<string, boolean>;
+  onSetChangedFilesExpanded: (turnId: TurnId, expanded: boolean) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
+  activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
@@ -177,7 +183,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   hasMessages,
   isHydrating,
   isWorking,
-  activeTurnInProgress: _activeTurnInProgress,
+  activeTurnInProgress,
+  activeTurnId,
   activeTurnStartedAt,
   scrollContainer: _scrollContainer,
   timelineEntries,
@@ -187,11 +194,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   nowIso,
   expandedWorkGroups,
   onToggleWorkGroup,
+  changedFilesExpandedByTurnId,
+  onSetChangedFilesExpanded,
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
   isRevertingCheckpoint,
   onImageExpand,
+  activeThreadEnvironmentId,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
@@ -327,7 +337,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   const renderRowContent = (row: TimelineRow) => (
     <div
-      className="pb-4"
+      className={cn(
+        "pb-4",
+        row.kind === "message" && row.message.role === "assistant" ? "group/assistant" : null,
+      )}
       data-timeline-row-id={row.id}
       data-timeline-row-kind={row.kind}
       data-message-id={row.kind === "message" ? row.message.id : undefined}
@@ -432,6 +445,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         row.message.role === "assistant" &&
         (() => {
           const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+          const assistantTurnStillInProgress =
+            activeTurnInProgress &&
+            activeTurnId !== null &&
+            activeTurnId !== undefined &&
+            row.message.turnId === activeTurnId;
+          const assistantCopyState = resolveAssistantMessageCopyState({
+            text: row.message.text ?? null,
+            showCopyButton: row.showAssistantCopyButton,
+            streaming: row.message.streaming || assistantTurnStillInProgress,
+          });
           return (
             <>
               {row.showCompletionDivider && (
@@ -464,7 +487,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                   const summaryStat = summarizeTurnDiffStats(checkpointFiles);
                   const changedFileCountLabel = String(checkpointFiles.length);
                   const allDirectoriesExpanded =
-                    allDirectoriesExpandedByTurnId[turnSummary.turnId] ?? true;
+                    changedFilesExpandedByTurnId[turnSummary.turnId] ?? true;
                   return (
                     <div className="mt-2 rounded-lg border border-border/80 bg-card/45 p-2.5">
                       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -486,7 +509,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                             size="xs"
                             variant="outline"
                             data-scroll-anchor-ignore
-                            onClick={() => onToggleAllDirectories(turnSummary.turnId)}
+                            onClick={() =>
+                              onSetChangedFilesExpanded(turnSummary.turnId, !allDirectoriesExpanded)
+                            }
                           >
                             {allDirectoriesExpanded ? "Collapse all" : "Expand all"}
                           </Button>
@@ -523,9 +548,16 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                       timestampFormat,
                     )}
                   </p>
-                  <div className="flex items-center gap-1.5 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/msg:opacity-100">
-                    <MessageCopyButton text={messageText} />
-                  </div>
+                  {assistantCopyState.visible ? (
+                    <div className="flex items-center opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/msg:opacity-100">
+                      <MessageCopyButton
+                        text={assistantCopyState.text ?? ""}
+                        size="icon-xs"
+                        variant="outline"
+                        className="border-border/50 bg-background/35 text-muted-foreground/45 shadow-none hover:border-border/70 hover:bg-background/55 hover:text-muted-foreground/70"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </>
@@ -536,6 +568,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         <div className="group min-w-0 px-1 py-0.5">
           <ProposedPlanCard
             planMarkdown={row.proposedPlan.planMarkdown}
+            environmentId={activeThreadEnvironmentId}
             cwd={markdownCwd}
             workspaceRoot={workspaceRoot}
           />
@@ -1217,7 +1250,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
           <div className="max-w-full">
             <p
               className={cn(
-                "truncate text-[11px] leading-5",
+                "truncate text-xs leading-5",
                 workToneClass(workEntry.tone),
                 preview ? "text-muted-foreground/70" : "",
               )}

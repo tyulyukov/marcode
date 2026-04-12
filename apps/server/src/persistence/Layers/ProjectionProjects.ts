@@ -17,7 +17,7 @@ const ProjectionProjectDbRow = ProjectionProject.mapFields(
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
     jiraBoard: Schema.NullOr(Schema.fromJsonString(JiraBoardReference)).pipe(
-      Schema.withDecodingDefault(() => null),
+      Schema.withDecodingDefault(Effect.succeed(null)),
     ),
   }),
 );

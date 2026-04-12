@@ -1,7 +1,10 @@
 import {
+  type EnvironmentId,
   type MessageId,
   ProjectId,
   type ModelSelection,
+  type ProviderKind,
+  type ScopedThreadRef,
   type ThreadId,
   type TurnId,
 } from "@marcode/contracts";
@@ -10,11 +13,12 @@ import {
   type ChatMessage,
   type SessionPhase,
   type Thread,
+  type ThreadSession,
 } from "../types";
 import { randomUUID } from "~/lib/utils";
 import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import { Schema } from "effect";
-import { useStore } from "../store";
+import { selectThreadByRef, selectThreadsAcrossEnvironments, useStore } from "../store";
 import {
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
@@ -37,6 +41,7 @@ export function buildLocalDraftThread(
 ): Thread {
   return {
     id: threadId,
+    environmentId: draftThread.environmentId,
     codexThreadId: null,
     projectId: draftThread.projectId,
     title: "New thread",
@@ -59,13 +64,32 @@ export function buildLocalDraftThread(
   };
 }
 
+export function shouldWriteThreadErrorToCurrentServerThread(input: {
+  serverThread:
+    | {
+        environmentId: EnvironmentId;
+        id: ThreadId;
+      }
+    | null
+    | undefined;
+  routeThreadRef: ScopedThreadRef;
+  targetThreadId: ThreadId;
+}): boolean {
+  return Boolean(
+    input.serverThread &&
+    input.targetThreadId === input.routeThreadRef.threadId &&
+    input.serverThread.environmentId === input.routeThreadRef.environmentId &&
+    input.serverThread.id === input.targetThreadId,
+  );
+}
+
 export function reconcileMountedTerminalThreadIds(input: {
-  currentThreadIds: ReadonlyArray<ThreadId>;
-  openThreadIds: ReadonlyArray<ThreadId>;
-  activeThreadId: ThreadId | null;
+  currentThreadIds: ReadonlyArray<string>;
+  openThreadIds: ReadonlyArray<string>;
+  activeThreadId: string | null;
   activeThreadTerminalOpen: boolean;
   maxHiddenThreadCount?: number;
-}): ThreadId[] {
+}): string[] {
   const openThreadIdSet = new Set(input.openThreadIds);
   const hiddenThreadIds = input.currentThreadIds.filter(
     (threadId) => threadId !== input.activeThreadId && openThreadIdSet.has(threadId),
@@ -227,11 +251,22 @@ export function threadHasStarted(thread: Thread | null | undefined): boolean {
   );
 }
 
+export function deriveLockedProvider(input: {
+  thread: Thread | null | undefined;
+  selectedProvider: ProviderKind | null;
+  threadProvider: ProviderKind | null;
+}): ProviderKind | null {
+  if (!threadHasStarted(input.thread)) {
+    return null;
+  }
+  return input.thread?.session?.provider ?? input.threadProvider ?? input.selectedProvider ?? null;
+}
+
 export async function waitForStartedServerThread(
-  threadId: ThreadId,
+  threadRef: ScopedThreadRef,
   timeoutMs = 1_000,
 ): Promise<boolean> {
-  const getThread = () => useStore.getState().threads.find((thread) => thread.id === threadId);
+  const getThread = () => selectThreadByRef(useStore.getState(), threadRef);
   const thread = getThread();
 
   if (threadHasStarted(thread)) {
@@ -254,7 +289,7 @@ export async function waitForStartedServerThread(
     };
 
     const unsubscribe = useStore.subscribe((state) => {
-      if (!threadHasStarted(state.threads.find((thread) => thread.id === threadId))) {
+      if (!threadHasStarted(selectThreadByRef(state, threadRef))) {
         return;
       }
       finish(true);
@@ -278,6 +313,8 @@ export interface LocalDispatchSnapshot {
   latestTurnRequestedAt: string | null;
   latestTurnStartedAt: string | null;
   latestTurnCompletedAt: string | null;
+  sessionOrchestrationStatus: ThreadSession["orchestrationStatus"] | null;
+  sessionUpdatedAt: string | null;
 }
 
 export function createLocalDispatchSnapshot(
@@ -285,6 +322,7 @@ export function createLocalDispatchSnapshot(
   options?: { preparingWorktree?: boolean },
 ): LocalDispatchSnapshot {
   const latestTurn = activeThread?.latestTurn ?? null;
+  const session = activeThread?.session ?? null;
   return {
     startedAt: new Date().toISOString(),
     preparingWorktree: Boolean(options?.preparingWorktree),
@@ -292,6 +330,8 @@ export function createLocalDispatchSnapshot(
     latestTurnRequestedAt: latestTurn?.requestedAt ?? null,
     latestTurnStartedAt: latestTurn?.startedAt ?? null,
     latestTurnCompletedAt: latestTurn?.completedAt ?? null,
+    sessionOrchestrationStatus: session?.orchestrationStatus ?? null,
+    sessionUpdatedAt: session?.updatedAt ?? null,
   };
 }
 
@@ -299,6 +339,7 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   localDispatch: LocalDispatchSnapshot | null;
   phase: SessionPhase;
   latestTurn: Thread["latestTurn"] | null;
+  session: Thread["session"] | null;
   hasPendingApproval: boolean;
   hasPendingUserInput: boolean;
   threadError: string | null | undefined;
@@ -316,12 +357,15 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   }
 
   const latestTurn = input.latestTurn ?? null;
+  const session = input.session ?? null;
 
   return (
     input.localDispatch.latestTurnTurnId !== (latestTurn?.turnId ?? null) ||
     input.localDispatch.latestTurnRequestedAt !== (latestTurn?.requestedAt ?? null) ||
     input.localDispatch.latestTurnStartedAt !== (latestTurn?.startedAt ?? null) ||
-    input.localDispatch.latestTurnCompletedAt !== (latestTurn?.completedAt ?? null)
+    input.localDispatch.latestTurnCompletedAt !== (latestTurn?.completedAt ?? null) ||
+    input.localDispatch.sessionOrchestrationStatus !== (session?.orchestrationStatus ?? null) ||
+    input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
   );
 }
 
@@ -337,20 +381,25 @@ export async function waitForRevertOutcome(
   messageId: MessageId,
   timeoutMs = EDIT_REVERT_SYNC_TIMEOUT_MS,
 ): Promise<RevertOutcome> {
-  const getThread = () => useStore.getState().threads.find((thread) => thread.id === threadId);
+  const getThread = () =>
+    selectThreadsAcrossEnvironments(useStore.getState()).find((thread) => thread.id === threadId);
 
   const initialActivityCount = getThread()?.activities.length ?? 0;
 
   const threadContainsMessage = () => {
     const thread = getThread();
-    return thread ? thread.messages.some((m) => m.id === messageId) : false;
+    return thread
+      ? thread.messages.some((m: Thread["messages"][number]) => m.id === messageId)
+      : false;
   };
 
   const detectRevertFailure = (): string | null => {
     const thread = getThread();
     if (!thread) return null;
     const newActivities = thread.activities.slice(initialActivityCount);
-    const failure = newActivities.find((a) => a.kind === "checkpoint.revert.failed");
+    const failure = newActivities.find(
+      (a: Thread["activities"][number]) => a.kind === "checkpoint.revert.failed",
+    );
     if (!failure) return null;
     const payload = failure.payload as Record<string, unknown> | null;
     return (typeof payload?.detail === "string" ? payload.detail : null) ?? failure.summary;

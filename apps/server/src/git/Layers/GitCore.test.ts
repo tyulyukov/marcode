@@ -42,6 +42,24 @@ function writeTextFile(
   });
 }
 
+function removePath(
+  targetPath: string,
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* fileSystem.remove(targetPath, { recursive: true, force: true });
+  });
+}
+
+function makeDirectory(
+  dirPath: string,
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem> {
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    yield* fileSystem.makeDirectory(dirPath, { recursive: true });
+  });
+}
+
 /** Run a raw git command for test setup (not under test). */
 function git(
   cwd: string,
@@ -221,7 +239,10 @@ it.layer(TestLayer)("git integration", (it) => {
 
         const seenChunks: string[][] = [];
         const core = yield* makeIsolatedGitCore((input) => {
-          if (input.args.join(" ") !== "check-ignore --no-index -z --stdin") {
+          if (
+            input.args.join(" ") !==
+            "-c core.fsmonitor=false -c core.untrackedCache=false check-ignore --no-index -z --stdin"
+          ) {
             return Effect.fail(
               new GitCommandError({
                 operation: input.operation,
@@ -254,6 +275,35 @@ it.layer(TestLayer)("git integration", (it) => {
         expect(result).toEqual(expectedPaths);
       }),
     );
+
+    it.effect("listWorkspaceFiles disables fsmonitor and untracked cache helpers", () =>
+      Effect.gen(function* () {
+        const core = yield* makeIsolatedGitCore((input) => {
+          expect(input.args).toEqual([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+          ]);
+          return Effect.succeed({
+            code: 0,
+            stdout: "src/index.ts\0README.md\0",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          });
+        });
+
+        const result = yield* core.listWorkspaceFiles("/virtual/repo");
+        expect(result.paths).toEqual(["src/index.ts", "README.md"]);
+        expect(result.truncated).toBe(false);
+      }),
+    );
   });
 
   // ── listGitBranches ──
@@ -263,6 +313,21 @@ it.layer(TestLayer)("git integration", (it) => {
       Effect.gen(function* () {
         const tmp = yield* makeTmpDir();
         const result = yield* (yield* GitCore).listBranches({ cwd: tmp });
+        expect(result.isRepo).toBe(false);
+        expect(result.hasOriginRemote).toBe(false);
+        expect(result.branches).toEqual([]);
+      }),
+    );
+
+    it.effect("returns isRepo: false for deleted directories", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const deletedDir = path.join(tmp, "deleted-repo");
+        yield* makeDirectory(deletedDir);
+        yield* removePath(deletedDir);
+
+        const result = yield* (yield* GitCore).listBranches({ cwd: deletedDir });
+
         expect(result.isRepo).toBe(false);
         expect(result.hasOriginRemote).toBe(false);
         expect(result.branches).toEqual([]);
@@ -619,8 +684,8 @@ it.layer(TestLayer)("git integration", (it) => {
 
     it.effect("refreshes upstream behind count after checkout when remote branch advanced", () =>
       Effect.gen(function* () {
-        const services = yield* Effect.services();
-        const runPromise = Effect.runPromiseWith(services);
+        const context = yield* Effect.context<never>();
+        const runPromise = Effect.runPromiseWith(context);
 
         const remote = yield* makeTmpDir();
         const source = yield* makeTmpDir();
@@ -1593,6 +1658,37 @@ it.layer(TestLayer)("git integration", (it) => {
         yield* writeTextFile(path.join(tmp, "README.md"), "updated\n");
         const dirty = yield* core.statusDetails(tmp);
         expect(dirty.hasWorkingTreeChanges).toBe(true);
+      }),
+    );
+
+    it.effect("returns a non-repo status for deleted directories", () =>
+      Effect.gen(function* () {
+        const tmp = yield* makeTmpDir();
+        const deletedDir = path.join(tmp, "deleted-repo");
+        yield* makeDirectory(deletedDir);
+        yield* removePath(deletedDir);
+        const core = yield* GitCore;
+
+        const status = yield* core.statusDetails(deletedDir);
+        const localStatus = yield* core.statusDetailsLocal(deletedDir);
+
+        expect(status).toEqual({
+          isRepo: false,
+          hasOriginRemote: false,
+          isDefaultBranch: false,
+          branch: null,
+          upstreamRef: null,
+          hasWorkingTreeChanges: false,
+          workingTree: {
+            files: [],
+            insertions: 0,
+            deletions: 0,
+          },
+          hasUpstream: false,
+          aheadCount: 0,
+          behindCount: 0,
+        });
+        expect(localStatus).toEqual(status);
       }),
     );
 

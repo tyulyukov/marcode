@@ -6,13 +6,13 @@
  *
  * @module TextGeneration
  */
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 import type { Effect } from "effect";
 import type { ChatAttachment, ModelSelection } from "@marcode/contracts";
 
 import type { TextGenerationError } from "@marcode/contracts";
 
-/** Providers that support text generation (commit messages, PR content, branch names, thread names). */
+/** Providers that support git text generation (commit messages, PR content, branch names). */
 export type TextGenerationProvider = "codex" | "claudeAgent";
 
 export interface CommitMessageGenerationInput {
@@ -118,6 +118,6 @@ export interface TextGenerationShape {
 /**
  * TextGeneration - Service tag for commit and PR text generation.
  */
-export class TextGeneration extends ServiceMap.Service<TextGeneration, TextGenerationShape>()(
+export class TextGeneration extends Context.Service<TextGeneration, TextGenerationShape>()(
   "marcode/git/Services/TextGeneration",
 ) {}

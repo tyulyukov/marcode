@@ -15,7 +15,7 @@
  * @module RuntimeReceiptBus
  */
 import { CheckpointRef, IsoDateTime, NonNegativeInt, ThreadId, TurnId } from "@marcode/contracts";
-import { Schema, ServiceMap } from "effect";
+import { Schema, Context } from "effect";
 import type { Effect, Stream } from "effect";
 
 export const CheckpointBaselineCapturedReceipt = Schema.Struct({
@@ -59,7 +59,6 @@ export interface RuntimeReceiptBusShape {
   readonly streamEventsForTest: Stream.Stream<OrchestrationRuntimeReceipt>;
 }
 
-export class RuntimeReceiptBus extends ServiceMap.Service<
-  RuntimeReceiptBus,
-  RuntimeReceiptBusShape
->()("marcode/orchestration/Services/RuntimeReceiptBus") {}
+export class RuntimeReceiptBus extends Context.Service<RuntimeReceiptBus, RuntimeReceiptBusShape>()(
+  "marcode/orchestration/Services/RuntimeReceiptBus",
+) {}

@@ -1,16 +1,21 @@
 import type {
+  EnvironmentId,
   ProjectBrowseDirectoriesResult,
   ProjectSearchEntriesResult,
 } from "@marcode/contracts";
 import { queryOptions } from "@tanstack/react-query";
-import { ensureNativeApi } from "~/nativeApi";
+import { ensureEnvironmentApi } from "~/environmentApi";
 
 export const projectQueryKeys = {
   all: ["projects"] as const,
-  searchEntries: (cwd: string | null, query: string, limit: number) =>
-    ["projects", "search-entries", cwd, query, limit] as const,
-  browseDirectories: (cwd: string | null, pathQuery: string, limit: number) =>
-    ["projects", "browse-directories", cwd, pathQuery, limit] as const,
+  searchEntries: (
+    environmentId: EnvironmentId | null,
+    cwd: string | null,
+    query: string,
+    limit: number,
+  ) => ["projects", "search-entries", environmentId ?? null, cwd, query, limit] as const,
+  browseDirectories: (environmentId: EnvironmentId | null, cwd: string | null, pathQuery: string) =>
+    ["projects", "browse-directories", environmentId ?? null, cwd, pathQuery] as const,
 };
 
 const DEFAULT_SEARCH_ENTRIES_LIMIT = 80;
@@ -21,6 +26,7 @@ const EMPTY_SEARCH_ENTRIES_RESULT: ProjectSearchEntriesResult = {
 };
 
 export function projectSearchEntriesQueryOptions(input: {
+  environmentId: EnvironmentId | null;
   cwd: string | null;
   query: string;
   enabled?: boolean;
@@ -29,54 +35,55 @@ export function projectSearchEntriesQueryOptions(input: {
 }) {
   const limit = input.limit ?? DEFAULT_SEARCH_ENTRIES_LIMIT;
   return queryOptions({
-    queryKey: projectQueryKeys.searchEntries(input.cwd, input.query, limit),
+    queryKey: projectQueryKeys.searchEntries(input.environmentId, input.cwd, input.query, limit),
     queryFn: async () => {
-      const api = ensureNativeApi();
-      if (!input.cwd) {
+      if (!input.cwd || !input.environmentId) {
         throw new Error("Workspace entry search is unavailable.");
       }
+      const api = ensureEnvironmentApi(input.environmentId);
       return api.projects.searchEntries({
         cwd: input.cwd,
         query: input.query,
         limit,
       });
     },
-    enabled: (input.enabled ?? true) && input.cwd !== null && input.query.length > 0,
+    enabled:
+      (input.enabled ?? true) &&
+      input.environmentId !== null &&
+      input.cwd !== null &&
+      input.query.length > 0,
     staleTime: input.staleTime ?? DEFAULT_SEARCH_ENTRIES_STALE_TIME,
     placeholderData: (previous) => previous ?? EMPTY_SEARCH_ENTRIES_RESULT,
   });
 }
 
-const DEFAULT_BROWSE_DIRECTORIES_LIMIT = 80;
-const DEFAULT_BROWSE_DIRECTORIES_STALE_TIME = 5_000;
+const DEFAULT_BROWSE_DIRECTORIES_LIMIT = 100;
 const EMPTY_BROWSE_DIRECTORIES_RESULT: ProjectBrowseDirectoriesResult = {
   entries: [],
   truncated: false,
 };
 
 export function projectBrowseDirectoriesQueryOptions(input: {
+  environmentId?: EnvironmentId | null;
   cwd: string | null;
   pathQuery: string;
   enabled?: boolean;
-  limit?: number;
-  staleTime?: number;
 }) {
-  const limit = input.limit ?? DEFAULT_BROWSE_DIRECTORIES_LIMIT;
+  const environmentId = input.environmentId ?? null;
   return queryOptions({
-    queryKey: projectQueryKeys.browseDirectories(input.cwd, input.pathQuery, limit),
+    queryKey: projectQueryKeys.browseDirectories(environmentId, input.cwd, input.pathQuery),
     queryFn: async () => {
-      const api = ensureNativeApi();
-      if (!input.cwd) {
+      if (!input.cwd || !environmentId) {
         throw new Error("Directory browsing is unavailable.");
       }
+      const api = ensureEnvironmentApi(environmentId);
       return api.projects.browseDirectories({
         cwd: input.cwd,
         pathQuery: input.pathQuery,
-        limit,
+        limit: DEFAULT_BROWSE_DIRECTORIES_LIMIT,
       });
     },
-    enabled: (input.enabled ?? true) && input.cwd !== null,
-    staleTime: input.staleTime ?? DEFAULT_BROWSE_DIRECTORIES_STALE_TIME,
+    enabled: (input.enabled ?? true) && environmentId !== null && input.cwd !== null,
     placeholderData: (previous) => previous ?? EMPTY_BROWSE_DIRECTORIES_RESULT,
   });
 }

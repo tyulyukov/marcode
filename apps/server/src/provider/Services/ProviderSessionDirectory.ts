@@ -4,7 +4,7 @@ import type {
   RuntimeMode,
   ThreadId,
 } from "@marcode/contracts";
-import { Option, ServiceMap } from "effect";
+import { Option, Context } from "effect";
 import type { Effect } from "effect";
 
 import type {
@@ -51,7 +51,7 @@ export interface ProviderSessionDirectoryShape {
   >;
 }
 
-export class ProviderSessionDirectory extends ServiceMap.Service<
+export class ProviderSessionDirectory extends Context.Service<
   ProviderSessionDirectory,
   ProviderSessionDirectoryShape
 >()("marcode/provider/Services/ProviderSessionDirectory") {}

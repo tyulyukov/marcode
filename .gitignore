@@ -26,3 +26,4 @@ __screenshots__/
 .next
 out
 next-env.d.ts
+squashfs-root/

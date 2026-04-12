@@ -45,40 +45,46 @@ export const DEFAULT_NOTIFICATION_SOUND_ID = "gentle-chime";
 
 export const NotificationSoundMap = Schema.Struct({
   "turn-events": Schema.String.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NOTIFICATION_SOUND_ID)),
   ),
   "approval-needed": Schema.String.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NOTIFICATION_SOUND_ID)),
   ),
   "user-input-needed": Schema.String.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NOTIFICATION_SOUND_ID)),
   ),
 });
 export type NotificationSoundMap = typeof NotificationSoundMap.Type;
 
 export const ClientSettingsSchema = Schema.Struct({
-  confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
-  confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
-  diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_SIDEBAR_PROJECT_SORT_ORDER),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_SIDEBAR_THREAD_SORT_ORDER),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
   ),
-  timestampFormat: TimestampFormat.pipe(Schema.withDecodingDefault(() => DEFAULT_TIMESTAMP_FORMAT)),
-  showTodosInComposer: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  timestampFormat: TimestampFormat.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TIMESTAMP_FORMAT)),
+  ),
+  showTodosInComposer: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   turnNotificationMode: TurnNotificationMode.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_TURN_NOTIFICATION_MODE),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_TURN_NOTIFICATION_MODE)),
   ),
   turnNotificationSoundId: Schema.String.pipe(
-    Schema.withDecodingDefault(() => DEFAULT_NOTIFICATION_SOUND_ID),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_NOTIFICATION_SOUND_ID)),
   ),
   turnNotificationCustomSounds: Schema.Array(CustomNotificationSound).pipe(
-    Schema.withDecodingDefault(() => []),
+    Schema.withDecodingDefault(Effect.succeed([])),
   ),
-  turnNotificationAdvancedSounds: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
-  turnNotificationSoundMap: NotificationSoundMap.pipe(Schema.withDecodingDefault(() => ({}))),
+  turnNotificationAdvancedSounds: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  turnNotificationSoundMap: NotificationSoundMap.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -98,48 +104,50 @@ const makeBinaryPathSetting = (fallback: string) =>
         encode: (value) => Effect.succeed(value),
       }),
     ),
-    Schema.withDecodingDefault(() => fallback),
+    Schema.withDecodingDefault(Effect.succeed(fallback)),
   );
 
 export const CodexSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("codex"),
-  homePath: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
-  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  homePath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type CodexSettings = typeof CodexSettings.Type;
 
 export const ClaudeSettings = Schema.Struct({
-  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("claude"),
-  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
 export const ObservabilitySettings = Schema.Struct({
-  otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
-  otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
+  otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
 export type ObservabilitySettings = typeof ObservabilitySettings.Type;
 
 export const ServerSettings = Schema.Struct({
-  enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultThreadEnvMode: ThreadEnvMode.pipe(
-    Schema.withDecodingDefault(() => "local" as const satisfies ThreadEnvMode),
+    Schema.withDecodingDefault(Effect.succeed("local" as const satisfies ThreadEnvMode)),
   ),
   textGenerationModelSelection: ModelSelection.pipe(
-    Schema.withDecodingDefault(() => ({
-      provider: "claudeAgent" as const,
-      model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.claudeAgent,
-    })),
+    Schema.withDecodingDefault(
+      Effect.succeed({
+        provider: "claudeAgent" as const,
+        model: DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER.claudeAgent,
+      }),
+    ),
   ),
 
   // Provider specific settings
   providers: Schema.Struct({
-    codex: CodexSettings.pipe(Schema.withDecodingDefault(() => ({}))),
-    claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(() => ({}))),
-  }).pipe(Schema.withDecodingDefault(() => ({}))),
-  observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(() => ({}))),
+    codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 

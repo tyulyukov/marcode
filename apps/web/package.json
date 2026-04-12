@@ -22,6 +22,7 @@
     "@effect/atom-react": "catalog:",
     "@formkit/auto-animate": "^0.9.0",
     "@lexical/react": "^0.41.0",
+    "@marcode/client-runtime": "workspace:*",
     "@marcode/contracts": "workspace:*",
     "@marcode/shared": "workspace:*",
     "@pierre/diffs": "^1.1.0-beta.16",

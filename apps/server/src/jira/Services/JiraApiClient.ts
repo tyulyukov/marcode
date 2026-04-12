@@ -1,4 +1,4 @@
-import { Effect, ServiceMap } from "effect";
+import { Context, Effect } from "effect";
 import type {
   JiraConnectionStatus,
   JiraGetAttachmentInput,
@@ -39,6 +39,6 @@ export interface JiraApiClientShape {
   readonly disconnect: Effect.Effect<void, JiraApiError | JiraTokenError>;
 }
 
-export class JiraApiClient extends ServiceMap.Service<JiraApiClient, JiraApiClientShape>()(
+export class JiraApiClient extends Context.Service<JiraApiClient, JiraApiClientShape>()(
   "marcode/jira/JiraApiClient",
 ) {}

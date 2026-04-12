@@ -21,7 +21,7 @@ interface ToolbarPosition {
 const TOOLBAR_HEIGHT_PX = 32;
 const TOOLBAR_GAP_PX = 6;
 
-const DIFF_SELECTION_SYNTHETIC_MESSAGE_ID = MessageId.makeUnsafe("diff-selection");
+const DIFF_SELECTION_SYNTHETIC_MESSAGE_ID = MessageId.make("diff-selection");
 
 function collectShadowRoots(container: HTMLElement): ShadowRoot[] {
   const roots: ShadowRoot[] = [];

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
 const APP_DISPLAY_NAME = isDevelopment ? "MarCode (Dev)" : "MarCode (Alpha)";
-const APP_BUNDLE_ID = "com.tyulyukov.marcode";
+const APP_BUNDLE_ID = isDevelopment ? "com.marcode.marcode.dev" : "com.marcode.marcode";
 const LAUNCHER_VERSION = 1;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

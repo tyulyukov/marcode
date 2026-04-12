@@ -6,7 +6,7 @@
  *
  * @module GitCore
  */
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 import type { Effect } from "effect";
 import type {
   GitCheckoutInput,
@@ -118,7 +118,6 @@ export interface GitFetchPullRequestBranchInput {
   cwd: string;
   prNumber: number;
   branch: string;
-  refspecPrefix?: string;
 }
 
 export interface GitEnsureRemoteInput {
@@ -308,10 +307,6 @@ export interface GitCoreShape {
    */
   readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
 
-  /**
-   * Read a unified diff of all staged + unstaged changes against HEAD.
-   * Falls back to `git diff --cached` when no commits exist yet.
-   */
   readonly readWorkingTreeDiff: (
     cwd: string,
   ) => Effect.Effect<GitWorkingTreeDiffResult, GitCommandError>;
@@ -320,6 +315,6 @@ export interface GitCoreShape {
 /**
  * GitCore - Service tag for low-level Git repository operations.
  */
-export class GitCore extends ServiceMap.Service<GitCore, GitCoreShape>()(
+export class GitCore extends Context.Service<GitCore, GitCoreShape>()(
   "marcode/git/Services/GitCore",
 ) {}

@@ -13,7 +13,7 @@ import {
   ProjectId,
   ProjectScript,
 } from "@marcode/contracts";
-import { Option, Schema, ServiceMap } from "effect";
+import { Option, Schema, Context } from "effect";
 import type { Effect } from "effect";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
@@ -80,7 +80,7 @@ export interface ProjectionProjectRepositoryShape {
 /**
  * ProjectionProjectRepository - Service tag for project projection persistence.
  */
-export class ProjectionProjectRepository extends ServiceMap.Service<
+export class ProjectionProjectRepository extends Context.Service<
   ProjectionProjectRepository,
   ProjectionProjectRepositoryShape
 >()("marcode/persistence/Services/ProjectionProjects/ProjectionProjectRepository") {}

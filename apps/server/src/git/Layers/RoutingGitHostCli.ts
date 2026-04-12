@@ -7,7 +7,7 @@
  *
  * @module RoutingGitHostCli
  */
-import { Effect, Layer, ServiceMap } from "effect";
+import { Context, Effect, Layer } from "effect";
 
 import { GitHostCliError } from "@marcode/contracts";
 import { runProcess } from "../../processRunner";
@@ -17,11 +17,11 @@ import { GitHostCli, type GitHostCliShape, type GitHostProvider } from "../Servi
 import { toGitHostCliShape } from "./GitHubCli.ts";
 import { makeGitLabCliShape } from "./GitLabCli.ts";
 
-class GitHubHost extends ServiceMap.Service<GitHubHost, GitHostCliShape>()(
+class GitHubHost extends Context.Service<GitHubHost, GitHostCliShape>()(
   "marcode/git/Layers/RoutingGitHostCli/GitHubHost",
 ) {}
 
-class GitLabHost extends ServiceMap.Service<GitLabHost, GitHostCliShape>()(
+class GitLabHost extends Context.Service<GitLabHost, GitHostCliShape>()(
   "marcode/git/Layers/RoutingGitHostCli/GitLabHost",
 ) {}
 

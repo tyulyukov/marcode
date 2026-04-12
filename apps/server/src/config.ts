@@ -6,12 +6,15 @@
  *
  * @module ServerConfig
  */
-import { Effect, FileSystem, Layer, LogLevel, Path, Schema, ServiceMap } from "effect";
+import { Context, Effect, FileSystem, Layer, LogLevel, Path, Schema } from "effect";
 
 export const DEFAULT_PORT = 3773;
 
 export const RuntimeMode = Schema.Literals(["web", "desktop"]);
 export type RuntimeMode = typeof RuntimeMode.Type;
+
+export const StartupPresentation = Schema.Literals(["browser", "headless"]);
+export type StartupPresentation = typeof StartupPresentation.Type;
 
 /**
  * ServerDerivedPaths - Derived paths from the base directory.
@@ -31,6 +34,9 @@ export interface ServerDerivedPaths {
   readonly terminalLogsDir: string;
   readonly anonymousIdPath: string;
   readonly jiraTokensPath: string;
+  readonly environmentIdPath: string;
+  readonly serverRuntimeStatePath: string;
+  readonly secretsDir: string;
 }
 
 /**
@@ -55,7 +61,8 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly staticDir: string | undefined;
   readonly devUrl: URL | undefined;
   readonly noBrowser: boolean;
-  readonly authToken: string | undefined;
+  readonly startupPresentation: StartupPresentation;
+  readonly desktopBootstrapToken: string | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
   readonly jiraRedirectUri: string | undefined;
@@ -87,6 +94,9 @@ export const deriveServerPaths = Effect.fn(function* (
     terminalLogsDir: join(logsDir, "terminals"),
     anonymousIdPath: join(stateDir, "anonymous-id"),
     jiraTokensPath: join(stateDir, "jira-tokens.json"),
+    environmentIdPath: join(stateDir, "environment-id"),
+    serverRuntimeStatePath: join(stateDir, "server-runtime.json"),
+    secretsDir: join(stateDir, "secrets"),
   };
 });
 
@@ -105,6 +115,7 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
       fs.makeDirectory(path.dirname(derivedPaths.keybindingsConfigPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.anonymousIdPath), { recursive: true }),
+      fs.makeDirectory(path.dirname(derivedPaths.serverRuntimeStatePath), { recursive: true }),
     ],
     { concurrency: "unbounded" },
   );
@@ -113,7 +124,7 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
 /**
  * ServerConfig - Service tag for server runtime configuration.
  */
-export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigShape>()(
+export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShape>()(
   "marcode/config/ServerConfig",
 ) {
   static readonly layerTest = (cwd: string, baseDirOrPrefix: string | { prefix: string }) =>
@@ -149,10 +160,11 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
           logWebSocketEvents: false,
           port: 0,
           host: undefined,
-          authToken: undefined,
+          desktopBootstrapToken: undefined,
           staticDir: undefined,
           devUrl,
           noBrowser: false,
+          startupPresentation: "browser",
           jiraRedirectUri: undefined,
           jiraTokenProxyUrl: undefined,
         } satisfies ServerConfigShape;
