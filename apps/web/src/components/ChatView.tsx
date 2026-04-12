@@ -965,8 +965,11 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
   const storeClearTerminalLaunchContext = useTerminalStateStore(
     (s) => s.clearTerminalLaunchContext,
   );
-  const threads = useStore(selectThreadsAcrossEnvironments);
-  const serverThreadIds = useMemo(() => threads.map((thread: Thread) => thread.id), [threads]);
+  const serverThreadIds = useStore(
+    useShallow((state: AppState) =>
+      selectThreadsAcrossEnvironments(state).map((thread) => thread.id),
+    ),
+  );
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftThreadIds = useMemo(
     () =>
