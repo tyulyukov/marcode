@@ -14,15 +14,7 @@ import {
 } from "lucide-react";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { autoAnimate } from "@formkit/auto-animate";
-import React, {
-  useCallback,
-  useEffect,
-  memo,
-  useMemo,
-  useRef,
-  useState,
-  startTransition,
-} from "react";
+import React, { useCallback, useEffect, memo, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   DndContext,
@@ -1402,11 +1394,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         clearSelection();
       }
       setSelectionAnchor(scopedThreadKey(threadRef));
-      startTransition(() => {
-        void router.navigate({
-          to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(threadRef),
-        });
+      void router.navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
       });
     },
     [clearSelection, router, setSelectionAnchor],
@@ -2411,22 +2401,46 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 
 function SidebarProjectsSkeleton() {
   return (
-    <div className="flex flex-col gap-3 px-2 py-1">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex flex-col gap-1.5">
-          <div className="flex items-center gap-2 px-2 py-1">
-            <Skeleton className="size-3.5 shrink-0 rounded" />
-            <Skeleton className="size-4 shrink-0 rounded" />
-            <Skeleton className={`h-3.5 rounded ${i === 0 ? "w-28" : i === 1 ? "w-20" : "w-24"}`} />
-          </div>
-          <div className="flex flex-col gap-1 pl-5 pr-2">
-            <Skeleton className="h-6 w-full rounded-md" />
-            <Skeleton className="h-6 w-full rounded-md" />
-            {i === 0 && <Skeleton className="h-6 w-full rounded-md" />}
+    <SidebarContent className="gap-0">
+      <SidebarGroup className="px-2 pt-2 pb-1">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <div className="flex items-center gap-2 rounded-md px-2 py-1.5">
+              <Skeleton className="size-3.5 shrink-0 rounded" />
+              <Skeleton className="h-3.5 flex-1 rounded" />
+              <Skeleton className="h-4 w-6 shrink-0 rounded-sm" />
+            </div>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
+      <SidebarGroup className="px-2 py-2">
+        <div className="mb-1 flex items-center justify-between pl-2 pr-1.5">
+          <Skeleton className="h-2.5 w-16 rounded" />
+          <div className="flex items-center gap-1">
+            <Skeleton className="size-5 rounded" />
+            <Skeleton className="size-5 rounded" />
           </div>
         </div>
-      ))}
-    </div>
+        <div className="flex flex-col gap-3 py-1">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2 px-2 py-1">
+                <Skeleton className="size-3.5 shrink-0 rounded" />
+                <Skeleton className="size-4 shrink-0 rounded" />
+                <Skeleton
+                  className={`h-3.5 rounded ${i === 0 ? "w-28" : i === 1 ? "w-20" : "w-24"}`}
+                />
+              </div>
+              <div className="flex flex-col gap-1 pl-5 pr-2">
+                <Skeleton className="h-6 w-full rounded-md" />
+                <Skeleton className="h-6 w-full rounded-md" />
+                {i === 0 && <Skeleton className="h-6 w-full rounded-md" />}
+              </div>
+            </div>
+          ))}
+        </div>
+      </SidebarGroup>
+    </SidebarContent>
   );
 }
 
@@ -2769,11 +2783,9 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(scopedThreadKey(threadRef));
-      startTransition(() => {
-        void navigate({
-          to: "/$environmentId/$threadId",
-          params: buildThreadRouteParams(threadRef),
-        });
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
       });
     },
     [clearSelection, navigate, setSelectionAnchor],

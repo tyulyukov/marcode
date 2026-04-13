@@ -1,5 +1,14 @@
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
-import { Suspense, lazy, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  type ReactNode,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
@@ -22,7 +31,9 @@ import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../st
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
-import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
+import { Sidebar, SidebarInset, SidebarProvider, SidebarRail, useSidebar } from "~/components/ui/sidebar";
+import { cn } from "~/lib/utils";
+import { isElectron } from "../env";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -32,10 +43,32 @@ const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
 
 function ChatViewSkeleton() {
+  const { isMobile, state: sidebarState } = useSidebar();
+  const sidebarVisible = !isMobile && sidebarState === "expanded";
+
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+        <header
+          className={cn(
+            "border-b border-border",
+            isElectron && !sidebarVisible ? "pr-3 sm:pr-5 pl-[90px]" : "px-3 sm:px-5",
+            isElectron ? "drag-region flex h-[52px] items-center" : "py-2 sm:py-3",
+          )}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+              <Skeleton className="h-5 w-40 rounded" />
+              <Skeleton className="h-5.5 w-16 rounded-sm sm:h-4.5" />
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Skeleton className="size-7 rounded-md sm:size-6" />
+              <Skeleton className="size-7 rounded-md sm:size-6" />
+              <Skeleton className="size-7 rounded-md sm:size-6" />
+            </div>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-5 sm:py-4">
           <div className="mx-auto w-full min-w-0 max-w-3xl px-1">
             <div className="flex flex-col gap-6 py-4">
               <div className="flex items-start gap-3">
@@ -302,7 +335,10 @@ function ChatThreadRouteView() {
     finalizePromotedDraftThreadByRef(threadRef);
   }, [draftThread?.promotedTo, serverThreadStarted, threadRef]);
 
-  if (!threadRef || !bootstrapComplete || !routeThreadExists) {
+  const deferredThreadKey = useDeferredValue(currentThreadKey);
+  const isThreadTransitioning = currentThreadKey !== deferredThreadKey;
+
+  if (!threadRef || !bootstrapComplete || !routeThreadExists || isThreadTransitioning) {
     return <ChatViewSkeleton />;
   }
 
