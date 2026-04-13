@@ -446,7 +446,9 @@ describe("ProviderModelPicker", () => {
     if (!claudeProvider) throw new Error("Claude provider missing from TEST_PROVIDERS");
 
     for (const model of claudeProvider.models) {
-      const defaultEffort = model.capabilities.reasoningEffortLevels.find((e) => e.isDefault);
+      const capabilities = model.capabilities;
+      if (!capabilities) throw new Error(`${model.name} is missing capabilities`);
+      const defaultEffort = capabilities.reasoningEffortLevels.find((e) => e.isDefault);
       expect(defaultEffort, `${model.name} should have a default effort`).toBeDefined();
       expect(defaultEffort!.value, `${model.name} default effort should be medium`).toBe("medium");
     }
