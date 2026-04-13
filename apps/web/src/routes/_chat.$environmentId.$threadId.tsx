@@ -10,6 +10,7 @@ import {
   DiffPanelShell,
   type DiffPanelMode,
 } from "../components/DiffPanelShell";
+import { Skeleton } from "../components/ui/skeleton";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
@@ -29,6 +30,52 @@ const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
+
+function ChatViewSkeleton() {
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
+      <div className="flex h-full flex-col">
+        <div className="flex-1 overflow-hidden">
+          <div className="mx-auto w-full min-w-0 max-w-3xl px-1">
+            <div className="flex flex-col gap-6 py-4">
+              <div className="flex items-start gap-3">
+                <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-3/4 rounded" />
+                  <Skeleton className="h-4 w-1/2 rounded" />
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 size-6 shrink-0" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-full rounded" />
+                  <Skeleton className="h-4 w-5/6 rounded" />
+                  <Skeleton className="h-4 w-4/6 rounded" />
+                  <Skeleton className="h-20 w-full rounded-md" />
+                  <Skeleton className="h-4 w-3/5 rounded" />
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-2/3 rounded" />
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 size-6 shrink-0" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-full rounded" />
+                  <Skeleton className="h-4 w-4/5 rounded" />
+                  <Skeleton className="h-4 w-2/3 rounded" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </SidebarInset>
+  );
+}
 
 const DiffPanelSheet = (props: {
   children: ReactNode;
@@ -256,7 +303,7 @@ function ChatThreadRouteView() {
   }, [draftThread?.promotedTo, serverThreadStarted, threadRef]);
 
   if (!threadRef || !bootstrapComplete || !routeThreadExists) {
-    return null;
+    return <ChatViewSkeleton />;
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
