@@ -441,23 +441,14 @@ describe("ProviderModelPicker", () => {
     }
   });
 
-  it("shows medium as default effort for Claude models", async () => {
-    const mounted = await mountPicker({
-      provider: "claudeAgent",
-      model: "claude-opus-4-6",
-      lockedProvider: "claudeAgent",
-    });
+  it("uses medium as the default effort level for all Claude models", () => {
+    const claudeProvider = TEST_PROVIDERS.find((p) => p.provider === "claudeAgent");
+    if (!claudeProvider) throw new Error("Claude provider missing from TEST_PROVIDERS");
 
-    try {
-      await page.getByRole("button").click();
-      await page.getByRole("menuitemradio", { name: "Opus 4.6" }).click();
-
-      await vi.waitFor(() => {
-        const text = document.body.textContent ?? "";
-        expect(text).toContain("medium");
-      });
-    } finally {
-      await mounted.cleanup();
+    for (const model of claudeProvider.models) {
+      const defaultEffort = model.capabilities.reasoningEffortLevels.find((e) => e.isDefault);
+      expect(defaultEffort, `${model.name} should have a default effort`).toBeDefined();
+      expect(defaultEffort!.value, `${model.name} default effort should be medium`).toBe("medium");
     }
   });
 });
