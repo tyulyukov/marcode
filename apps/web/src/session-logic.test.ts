@@ -175,6 +175,59 @@ describe("derivePendingApprovals", () => {
 
     expect(derivePendingApprovals(activities)).toEqual([]);
   });
+
+  it("returns empty for empty activities", () => {
+    expect(derivePendingApprovals([])).toEqual([]);
+  });
+
+  it("handles all 3 request kinds simultaneously", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "approval-cmd",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "approval.requested",
+        summary: "Command approval",
+        tone: "approval",
+        payload: {
+          requestId: "req-cmd",
+          requestKind: "command",
+          detail: "npm test",
+        },
+      }),
+      makeActivity({
+        id: "approval-read",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "approval.requested",
+        summary: "File read approval",
+        tone: "approval",
+        payload: {
+          requestId: "req-read",
+          requestKind: "file-read",
+          detail: "src/index.ts",
+        },
+      }),
+      makeActivity({
+        id: "approval-change",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "approval.requested",
+        summary: "File change approval",
+        tone: "approval",
+        payload: {
+          requestId: "req-change",
+          requestKind: "file-change",
+          detail: "src/app.ts",
+        },
+      }),
+    ];
+
+    const result = derivePendingApprovals(activities);
+    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.requestKind)).toEqual([
+      "command",
+      "file-read",
+      "file-change",
+    ]);
+  });
 });
 
 describe("derivePendingUserInputs", () => {

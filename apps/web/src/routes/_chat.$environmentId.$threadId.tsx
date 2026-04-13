@@ -19,7 +19,7 @@ import {
   DiffPanelShell,
   type DiffPanelMode,
 } from "../components/DiffPanelShell";
-import { Skeleton } from "../components/ui/skeleton";
+import { ChatViewSkeleton } from "../components/Skeletons";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
@@ -31,9 +31,7 @@ import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../st
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
-import { Sidebar, SidebarInset, SidebarProvider, SidebarRail, useSidebar } from "~/components/ui/sidebar";
-import { cn } from "~/lib/utils";
-import { isElectron } from "../env";
+import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
@@ -41,74 +39,6 @@ const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
-
-function ChatViewSkeleton() {
-  const { isMobile, state: sidebarState } = useSidebar();
-  const sidebarVisible = !isMobile && sidebarState === "expanded";
-
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
-        <header
-          className={cn(
-            "border-b border-border",
-            isElectron && !sidebarVisible ? "pr-3 sm:pr-5 pl-[90px]" : "px-3 sm:px-5",
-            isElectron ? "drag-region flex h-[52px] items-center" : "py-2 sm:py-3",
-          )}
-        >
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-              <Skeleton className="h-5 w-40 rounded" />
-              <Skeleton className="h-5.5 w-16 rounded-sm sm:h-4.5" />
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Skeleton className="size-7 rounded-md sm:size-6" />
-              <Skeleton className="size-7 rounded-md sm:size-6" />
-              <Skeleton className="size-7 rounded-md sm:size-6" />
-            </div>
-          </div>
-        </header>
-        <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-5 sm:py-4">
-          <div className="mx-auto w-full min-w-0 max-w-3xl px-1">
-            <div className="flex flex-col gap-6 py-4">
-              <div className="flex items-start gap-3">
-                <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-3/4 rounded" />
-                  <Skeleton className="h-4 w-1/2 rounded" />
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 size-6 shrink-0" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-full rounded" />
-                  <Skeleton className="h-4 w-5/6 rounded" />
-                  <Skeleton className="h-4 w-4/6 rounded" />
-                  <Skeleton className="h-20 w-full rounded-md" />
-                  <Skeleton className="h-4 w-3/5 rounded" />
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-2/3 rounded" />
-                </div>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 size-6 shrink-0" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <Skeleton className="h-4 w-full rounded" />
-                  <Skeleton className="h-4 w-4/5 rounded" />
-                  <Skeleton className="h-4 w-2/3 rounded" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </SidebarInset>
-  );
-}
 
 const DiffPanelSheet = (props: {
   children: ReactNode;

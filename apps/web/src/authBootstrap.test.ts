@@ -502,3 +502,48 @@ describe("resolveInitialServerAuthGateState", () => {
     });
   });
 });
+
+describe("retryTransientBootstrap", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries when individual fetch hangs past per-attempt timeout", async () => {
+    let callCount = 0;
+    const operation = vi.fn(() => {
+      callCount++;
+      if (callCount === 1) {
+        return new Promise<string>(() => {});
+      }
+      return Promise.resolve("success");
+    });
+
+    const { retryTransientBootstrap } = await import("./environments/primary/auth");
+
+    const resultPromise = retryTransientBootstrap(operation);
+
+    await vi.advanceTimersByTimeAsync(5500);
+    await vi.advanceTimersByTimeAsync(100);
+
+    const result = await resultPromise;
+    expect(result).toBe("success");
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after overall timeout when all attempts hang", async () => {
+    const operation = vi.fn(() => new Promise<string>(() => {}));
+
+    const { retryTransientBootstrap } = await import("./environments/primary/auth");
+
+    const resultPromise = retryTransientBootstrap(operation);
+    resultPromise.catch(() => {});
+
+    await vi.advanceTimersByTimeAsync(16_000);
+
+    await expect(resultPromise).rejects.toThrow();
+  });
+});

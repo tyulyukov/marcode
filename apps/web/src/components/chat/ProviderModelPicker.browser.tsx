@@ -420,4 +420,44 @@ describe("ProviderModelPicker", () => {
       await mounted.cleanup();
     }
   });
+
+  it("displays 'Opus 4.6' without 'Claude' prefix", async () => {
+    const mounted = await mountPicker({
+      provider: "claudeAgent",
+      model: "claude-opus-4-6",
+      lockedProvider: "claudeAgent",
+    });
+
+    try {
+      await page.getByRole("button").click();
+
+      await vi.waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(text).toContain("Opus 4.6");
+        expect(text).not.toMatch(/Claude\s+Opus/);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("shows medium as default effort for Claude models", async () => {
+    const mounted = await mountPicker({
+      provider: "claudeAgent",
+      model: "claude-opus-4-6",
+      lockedProvider: "claudeAgent",
+    });
+
+    try {
+      await page.getByRole("button").click();
+      await page.getByRole("menuitemradio", { name: "Opus 4.6" }).click();
+
+      await vi.waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(text).toContain("medium");
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
 });

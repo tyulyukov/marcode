@@ -320,3 +320,22 @@ MarCode supports replying to specific text selections within assistant messages.
 - Quoted contexts are **not** persisted to localStorage (transient draft state) — they are cleared on thread switch or send.
 - Selection spanning multiple messages captures only text from the message where selection started.
 - Truncation at 5000 chars with `...[truncated]` suffix.
+
+## Testing
+
+### Regression Test Suite
+
+MarCode maintains a comprehensive regression test suite to protect MarCode-exclusive features during upstream merges. Tests are organized in layers:
+
+- **Pure function unit tests** (`quotedContext.test.ts`, `ansiToSpans.test.tsx`, `jiraContext.test.ts`, `turnNotification.test.ts`, `themes/themes.test.ts`, `contracts/model.test.ts`) — deep coverage of exported logic.
+- **Feature existence guards** (`featureGuards.test.ts` in both `apps/web/src/` and `apps/server/src/`) — read source files with `fs.readFileSync` and assert key patterns/exports are present. Catches features deleted during conflict resolution.
+- **Work card guards** (`workCards.guard.test.ts`) — verify all rich tool display card components exist and export correctly.
+- **Store guards** (`store.guard.test.ts`) — verify incremental event handlers and structural sharing logic exist in `store.ts`.
+- **Browser tests** (`*.browser.tsx`) — rendered component tests using Playwright via Vitest browser mode.
+- **Skeleton tests** (`Skeletons.browser.tsx`) — verify extracted skeleton components render correctly.
+
+### Testing Policy
+
+- **After every upstream merge:** run the full test suite (`bun run test` in each package) and verify all MarCode-exclusive features are preserved. Guard tests in `featureGuards.test.ts` and `workCards.guard.test.ts` will catch deleted/missing features immediately.
+- **When implementing new MarCode-exclusive features:** create at least an existence/smoke guard test in the relevant `featureGuards.test.ts`, plus unit tests for any pure logic. Update `FEATURES.md` with the new feature entry.
+- **When modifying existing features:** update or extend the corresponding tests. If changing exports, function signatures, or component structure — update the guard tests to match.
