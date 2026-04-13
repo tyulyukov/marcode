@@ -15,7 +15,7 @@ import type {
   ProjectId,
   ThreadId,
 } from "@marcode/contracts";
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 import type { Option } from "effect";
 import type { Effect } from "effect";
 
@@ -46,26 +46,15 @@ export interface ProjectionSnapshotQueryShape {
    */
   readonly getSnapshot: () => Effect.Effect<OrchestrationReadModel, ProjectionRepositoryError>;
 
-  /**
-   * Read a lightweight listing snapshot with thread summaries (no messages,
-   * activities, checkpoints, or proposed plans). Pre-computes sidebar-specific
-   * fields server-side for fast initial bootstrap.
-   */
   readonly getListingSnapshot: () => Effect.Effect<
     OrchestrationListingSnapshot,
     ProjectionRepositoryError
   >;
 
-  /**
-   * Read full data for a single thread by ID.
-   */
   readonly getThread: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThread>, ProjectionRepositoryError>;
 
-  /**
-   * Read aggregate projection counts without hydrating the full read model.
-   */
   readonly getCounts: () => Effect.Effect<ProjectionSnapshotCounts, ProjectionRepositoryError>;
 
   /**
@@ -93,7 +82,7 @@ export interface ProjectionSnapshotQueryShape {
 /**
  * ProjectionSnapshotQuery - Service tag for projection snapshot queries.
  */
-export class ProjectionSnapshotQuery extends ServiceMap.Service<
+export class ProjectionSnapshotQuery extends Context.Service<
   ProjectionSnapshotQuery,
   ProjectionSnapshotQueryShape
 >()("marcode/orchestration/Services/ProjectionSnapshotQuery") {}

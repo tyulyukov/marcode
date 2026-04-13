@@ -46,10 +46,10 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 
 const defaultServerSettingsLayer = ServerSettingsService.layerTest();
 
-const asRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.makeUnsafe(value);
-const asEventId = (value: string): EventId => EventId.makeUnsafe(value);
-const asThreadId = (value: string): ThreadId => ThreadId.makeUnsafe(value);
-const asTurnId = (value: string): TurnId => TurnId.makeUnsafe(value);
+const asRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
+const asEventId = (value: string): EventId => EventId.make(value);
+const asThreadId = (value: string): ThreadId => ThreadId.make(value);
+const asTurnId = (value: string): TurnId => TurnId.make(value);
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -101,7 +101,7 @@ function makeFakeCodexAdapter(provider: ProviderKind = "codex") {
 
       return Effect.succeed({
         threadId: input.threadId,
-        turnId: TurnId.makeUnsafe(`turn-${String(input.threadId)}`),
+        turnId: TurnId.make(`turn-${String(input.threadId)}`),
       });
     },
   );
@@ -355,7 +355,7 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
       const directory = yield* ProviderSessionDirectory;
       yield* directory.upsert({
         provider: "codex",
-        threadId: ThreadId.makeUnsafe("thread-stale"),
+        threadId: ThreadId.make("thread-stale"),
       });
     }).pipe(Effect.provide(directoryLayer));
 
@@ -1099,7 +1099,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
       const snapshots = yield* Metric.snapshot;
 
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "interrupt",
           outcome: "success",
@@ -1107,7 +1107,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "approval-response",
           outcome: "success",
@@ -1115,7 +1115,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "user-input-response",
           outcome: "success",
@@ -1123,7 +1123,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
           provider: "claudeAgent",
           operation: "rollback",
           outcome: "success",
@@ -1131,7 +1131,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         true,
       );
       assert.equal(
-        hasMetricSnapshot(snapshots, "t3_provider_sessions_total", {
+        hasMetricSnapshot(snapshots, "marcode_provider_sessions_total", {
           provider: "claudeAgent",
           operation: "stop",
           outcome: "success",
@@ -1163,7 +1163,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
         const snapshots = yield* Metric.snapshot;
 
         assert.equal(
-          hasMetricSnapshot(snapshots, "t3_provider_turns_total", {
+          hasMetricSnapshot(snapshots, "marcode_provider_turns_total", {
             provider: "claudeAgent",
             operation: "send",
             outcome: "success",
@@ -1171,7 +1171,7 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           true,
         );
         assert.equal(
-          hasMetricSnapshot(snapshots, "t3_provider_turn_duration", {
+          hasMetricSnapshot(snapshots, "marcode_provider_turn_duration", {
             provider: "claudeAgent",
             operation: "send",
           }),

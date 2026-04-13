@@ -33,8 +33,11 @@ import Migration0017 from "./Migrations/017_ProjectionThreadsArchivedAt.ts";
 import Migration0018 from "./Migrations/018_ProjectionThreadsArchivedAtIndex.ts";
 import Migration0019 from "./Migrations/019_ProjectJiraBoard.ts";
 import Migration0020 from "./Migrations/020_ProjectionThreadsAdditionalDirectories.ts";
-import Migration0021 from "./Migrations/019_ProjectionSnapshotLookupIndexes.ts";
 import Migration0022 from "./Migrations/022_ProjectionSnapshotOrderIndexes.ts";
+import Migration0023 from "./Migrations/023_ProjectionSnapshotLookupIndexes.ts";
+import Migration0024 from "./Migrations/024_AuthAccessManagement.ts";
+import Migration0025 from "./Migrations/025_AuthSessionClientMetadata.ts";
+import Migration0026 from "./Migrations/026_AuthSessionLastConnectedAt.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -67,8 +70,11 @@ export const migrationEntries = [
   [18, "ProjectionThreadsArchivedAtIndex", Migration0018],
   [19, "ProjectJiraBoard", Migration0019],
   [20, "ProjectionThreadsAdditionalDirectories", Migration0020],
-  [21, "ProjectionSnapshotLookupIndexes", Migration0021],
   [22, "ProjectionSnapshotOrderIndexes", Migration0022],
+  [23, "ProjectionSnapshotLookupIndexes", Migration0023],
+  [24, "AuthAccessManagement", Migration0024],
+  [25, "AuthSessionClientMetadata", Migration0025],
+  [26, "AuthSessionLastConnectedAt", Migration0026],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

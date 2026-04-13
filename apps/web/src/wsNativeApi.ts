@@ -1,33 +1,48 @@
-import { type ContextMenuItem, type NativeApi } from "@marcode/contracts";
+import {
+  type ContextMenuItem,
+  type LocalApi,
+  type EnvironmentApi,
+  type OrchestrationEvent,
+} from "@marcode/contracts";
 
 import { resetGitStatusStateForTests } from "./lib/gitStatusState";
 import { showContextMenuFallback } from "./contextMenuFallback";
-import { __resetWsRpcAtomClientForTests } from "./rpc/client";
+import {
+  readBrowserClientSettings,
+  readBrowserSavedEnvironmentRegistry,
+  readBrowserSavedEnvironmentSecret,
+  removeBrowserSavedEnvironmentSecret,
+  writeBrowserClientSettings,
+  writeBrowserSavedEnvironmentRegistry,
+  writeBrowserSavedEnvironmentSecret,
+} from "./clientPersistenceStorage";
+import { resetAppAtomRegistryForTests } from "./rpc/atomRegistry";
 import { resetRequestLatencyStateForTests } from "./rpc/requestLatencyState";
 import { resetServerStateForTests } from "./rpc/serverState";
 import { resetWsConnectionStateForTests } from "./rpc/wsConnectionState";
-import { __resetWsRpcClientForTests, getWsRpcClient } from "./wsRpcClient";
+import { getPrimaryEnvironmentConnection } from "./environments/runtime";
 
-let instance: { api: NativeApi } | null = null;
+export type MarCodeNativeApi = LocalApi & EnvironmentApi;
+
+let instance: { api: MarCodeNativeApi } | null = null;
 
 export async function __resetWsNativeApiForTests() {
   instance = null;
-  await __resetWsRpcAtomClientForTests();
-  await __resetWsRpcClientForTests();
+  resetAppAtomRegistryForTests();
   resetGitStatusStateForTests();
   resetRequestLatencyStateForTests();
   resetServerStateForTests();
   resetWsConnectionStateForTests();
 }
 
-export function createWsNativeApi(): NativeApi {
+export function createWsNativeApi(): MarCodeNativeApi {
   if (instance) {
     return instance.api;
   }
 
-  const rpcClient = getWsRpcClient();
+  const rpcClient = getPrimaryEnvironmentConnection().client;
 
-  const api: NativeApi = {
+  const api: MarCodeNativeApi = {
     dialogs: {
       pickFolder: async () => {
         if (!window.desktopBridge) return null;
@@ -93,6 +108,50 @@ export function createWsNativeApi(): NativeApi {
         return showContextMenuFallback(items, position);
       },
     },
+    persistence: {
+      getClientSettings: async () => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getClientSettings();
+        }
+        return readBrowserClientSettings();
+      },
+      setClientSettings: async (settings) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.setClientSettings(settings);
+        }
+        writeBrowserClientSettings(settings);
+      },
+      getSavedEnvironmentRegistry: async () => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getSavedEnvironmentRegistry();
+        }
+        return readBrowserSavedEnvironmentRegistry();
+      },
+      setSavedEnvironmentRegistry: async (records) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.setSavedEnvironmentRegistry(records);
+        }
+        writeBrowserSavedEnvironmentRegistry(records);
+      },
+      getSavedEnvironmentSecret: async (environmentId) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getSavedEnvironmentSecret(environmentId);
+        }
+        return readBrowserSavedEnvironmentSecret(environmentId);
+      },
+      setSavedEnvironmentSecret: async (environmentId, secret) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.setSavedEnvironmentSecret(environmentId, secret);
+        }
+        return writeBrowserSavedEnvironmentSecret(environmentId, secret);
+      },
+      removeSavedEnvironmentSecret: async (environmentId) => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.removeSavedEnvironmentSecret(environmentId);
+        }
+        removeBrowserSavedEnvironmentSecret(environmentId);
+      },
+    },
     server: {
       getConfig: rpcClient.server.getConfig,
       refreshProviders: rpcClient.server.refreshProviders,
@@ -110,7 +169,7 @@ export function createWsNativeApi(): NativeApi {
       replayEvents: (fromSequenceExclusive) =>
         rpcClient.orchestration
           .replayEvents({ fromSequenceExclusive })
-          .then((events) => [...events]),
+          .then((events: readonly OrchestrationEvent[]) => [...events]),
       onDomainEvent: (callback, options) =>
         rpcClient.orchestration.onDomainEvent(callback, options),
     },

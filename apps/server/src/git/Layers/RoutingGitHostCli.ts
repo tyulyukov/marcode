@@ -7,7 +7,7 @@
  *
  * @module RoutingGitHostCli
  */
-import { Effect, Layer, ServiceMap } from "effect";
+import { Context, Effect, Layer } from "effect";
 
 import { GitHostCliError } from "@marcode/contracts";
 import { runProcess } from "../../processRunner";
@@ -17,15 +17,16 @@ import { GitHostCli, type GitHostCliShape, type GitHostProvider } from "../Servi
 import { toGitHostCliShape } from "./GitHubCli.ts";
 import { makeGitLabCliShape } from "./GitLabCli.ts";
 
-class GitHubHost extends ServiceMap.Service<GitHubHost, GitHostCliShape>()(
+class GitHubHost extends Context.Service<GitHubHost, GitHostCliShape>()(
   "marcode/git/Layers/RoutingGitHostCli/GitHubHost",
 ) {}
 
-class GitLabHost extends ServiceMap.Service<GitLabHost, GitHostCliShape>()(
+class GitLabHost extends Context.Service<GitLabHost, GitHostCliShape>()(
   "marcode/git/Layers/RoutingGitHostCli/GitLabHost",
 ) {}
 
-function parseHostnameFromRemoteUrl(url: string): string | null {
+/** @internal */
+export function parseHostnameFromRemoteUrl(url: string): string | null {
   const trimmed = url.trim();
   if (trimmed.length === 0) return null;
 
@@ -41,7 +42,8 @@ function parseHostnameFromRemoteUrl(url: string): string | null {
   return null;
 }
 
-function providerFromHostname(hostname: string): GitHostProvider | null {
+/** @internal */
+export function providerFromHostname(hostname: string): GitHostProvider | null {
   if (hostname === "github.com") return "github";
   if (hostname === "gitlab.com" || hostname.startsWith("gitlab.")) return "gitlab";
   return null;

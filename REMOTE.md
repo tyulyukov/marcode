@@ -1,68 +1,87 @@
-# Remote Access Setup
+# Remote Access
 
-Use this when you want to open MarCode from another device (phone, tablet, another laptop).
+Use this when you want to connect to a MarCode server from another device such as a phone, tablet, or separate desktop app.
 
-## CLI ↔ Env option map
+## Recommended Setup
 
-The MarCode CLI accepts the following configuration options, available either as CLI flags or environment variables:
+Use a trusted private network that meshes your devices together, such as a tailnet.
 
-| CLI flag                | Env var                | Notes                                                                                |
-| ----------------------- | ---------------------- | ------------------------------------------------------------------------------------ |
-| `--mode <web\|desktop>` | `MARCODE_MODE`         | Runtime mode.                                                                        |
-| `--port <number>`       | `MARCODE_PORT`         | HTTP/WebSocket port.                                                                 |
-| `--host <address>`      | `MARCODE_HOST`         | Bind interface/address.                                                              |
-| `--base-dir <path>`     | `MARCODE_HOME`         | Base directory.                                                                      |
-| `--dev-url <url>`       | `VITE_DEV_SERVER_URL`  | Dev web URL redirect/proxy target.                                                   |
-| `--no-browser`          | `MARCODE_NO_BROWSER`   | Disable auto-open browser.                                                           |
-| `--auth-token <token>`  | `MARCODE_AUTH_TOKEN`   | WebSocket auth token. Use this for standard CLI and remote-server flows.             |
-| `--bootstrap-fd <fd>`   | `MARCODE_BOOTSTRAP_FD` | Read a one-shot bootstrap envelope from an inherited file descriptor during startup. |
+That gives you:
 
-> TIP: Use the `--help` flag to see all available options and their descriptions.
+- a stable address to connect to
+- transport security at the network layer
+- less exposure than opening the server to the public internet
 
-## Security First
+## Enabling Network Access
 
-- Always set `--auth-token` before exposing the server outside localhost.
-  - When you control the process launcher, prefer sending the auth token in a JSON envelope via `--bootstrap-fd <fd>`.
-    With `--bootstrap-fd <fd>`, the launcher starts the server first, then sends a one-shot JSON envelope over the inherited file descriptor. This allows the auth token to be delivered without putting it in process environment or command line arguments.
-- Treat the token like a password.
-- Prefer binding to trusted interfaces (LAN IP or Tailnet IP) instead of opening all interfaces unless needed.
+There are two ways to expose your server for remote connections: from the desktop app or from the CLI.
 
-## 1) Build + run server for remote access
+### Option 1: Desktop App
 
-Remote access should use the built web app (not local Vite redirect mode).
+If you are already running the desktop app and want to make it reachable from other devices:
 
-```bash
-bun run build
-TOKEN="$(openssl rand -hex 24)"
-bun run --cwd apps/server start -- --host 0.0.0.0 --port 3773 --auth-token "$TOKEN" --no-browser
-```
+1. Open **Settings** → **Connections**.
+2. Under **Manage Local Backend**, toggle **Network access** on. This will restart the app and run the backend on all network interfaces.
+3. The settings panel will show the address the server is reachable at (e.g. `http://192.168.x.y:3773`).
+4. Use **Create Link** to generate a pairing link you can share with another device.
 
-Then open on your phone:
+### Option 2: Headless Server (CLI)
 
-`http://<your-machine-ip>:3773`
+Use this when you want to run the server without a GUI, for example on a remote machine over SSH.
 
-Example:
-
-`http://192.168.1.42:3773`
-
-Notes:
-
-- `--host 0.0.0.0` listens on all IPv4 interfaces.
-- `--no-browser` prevents local auto-open, which is usually better for headless/remote sessions.
-- Ensure your OS firewall allows inbound TCP on the selected port.
-
-## 2) Tailnet / Tailscale access
-
-If you use Tailscale, you can bind directly to your Tailnet address.
+Run the server with `marcode serve`.
 
 ```bash
-TAILNET_IP="$(tailscale ip -4)"
-TOKEN="$(openssl rand -hex 24)"
-bun run --cwd apps/server start -- --host "$(tailscale ip -4)" --port 3773 --auth-token "$TOKEN" --no-browser
+npx marcode serve --host "$(tailscale ip -4)"
 ```
 
-Open from any device in your tailnet:
+`marcode serve` starts the server without opening a browser and prints:
 
-`http://<tailnet-ip>:3773`
+- a connection string
+- a pairing token
+- a pairing URL
+- a QR code for the pairing URL
 
-You can also bind `--host 0.0.0.0` and connect through the Tailnet IP, but binding directly to the Tailnet IP limits exposure.
+From there, connect from another device in either of these ways:
+
+- scan the QR code on your phone
+- in the desktop app, enter the full pairing URL
+- in the desktop app, enter the host and token separately
+
+Use `marcode serve --help` for the full flag reference. It supports the same general startup options as the normal server command, including an optional `cwd` argument.
+
+> Note
+> The GUIs do not currently support adding projects on remote environments.
+> For now, use `marcode project ...` on the server machine instead.
+> Full GUI support for remote project management is coming soon.
+
+## How Pairing Works
+
+The remote device does not need a long-lived secret up front.
+
+Instead:
+
+1. `marcode serve` issues a one-time owner pairing token.
+2. The remote device exchanges that token with the server.
+3. The server creates an authenticated session for that device.
+
+After pairing, future access is session-based. You do not need to keep reusing the original token unless you are pairing a new device.
+
+## Managing Access Later
+
+Use `marcode auth` to manage access after the initial pairing flow.
+
+Typical uses:
+
+- issue additional pairing credentials
+- inspect active sessions
+- revoke old pairing links or sessions
+
+Use `marcode auth --help` and the nested subcommand help pages for the full reference.
+
+## Security Notes
+
+- Treat pairing URLs and pairing tokens like passwords.
+- Prefer binding `--host` to a trusted private address, such as a Tailnet IP, instead of exposing the server broadly.
+- Anyone with a valid pairing credential can create a session until that credential expires or is revoked.
+- Use `marcode auth` to revoke credentials or sessions you no longer trust.

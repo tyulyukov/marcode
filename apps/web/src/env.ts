@@ -8,7 +8,7 @@ export const isElectron =
   (window.desktopBridge !== undefined || window.nativeApi !== undefined);
 
 export function getServerHttpOrigin(): string {
-  const bridgeUrl = window.desktopBridge?.getWsUrl();
+  const bridgeUrl = window.desktopBridge?.getLocalEnvironmentBootstrap()?.wsBaseUrl;
   const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
   const wsUrl =
     bridgeUrl && bridgeUrl.length > 0

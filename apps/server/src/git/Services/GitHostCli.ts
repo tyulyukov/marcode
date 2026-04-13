@@ -6,7 +6,7 @@
  *
  * @module GitHostCli
  */
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 import type { Effect } from "effect";
 
 import type { GitHostCliError } from "@marcode/contracts";
@@ -89,6 +89,6 @@ export interface GitHostCliShape {
 /**
  * GitHostCli - Service tag for provider-agnostic git host CLI execution.
  */
-export class GitHostCli extends ServiceMap.Service<GitHostCli, GitHostCliShape>()(
+export class GitHostCli extends Context.Service<GitHostCli, GitHostCliShape>()(
   "marcode/git/Services/GitHostCli",
 ) {}

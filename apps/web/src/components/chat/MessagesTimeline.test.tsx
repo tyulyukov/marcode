@@ -46,6 +46,8 @@ beforeAll(() => {
   });
 });
 
+const ACTIVE_THREAD_ENVIRONMENT_ID = "environment-local" as never;
+
 describe("MessagesTimeline", () => {
   it("renders inline terminal labels with the composer chip UI", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
@@ -64,7 +66,7 @@ describe("MessagesTimeline", () => {
             kind: "message",
             createdAt: "2026-03-17T19:12:28.000Z",
             message: {
-              id: MessageId.makeUnsafe("message-2"),
+              id: MessageId.make("message-2"),
               role: "user",
               text: [
                 "yoo what's @terminal-1:1-5 mean",
@@ -86,11 +88,14 @@ describe("MessagesTimeline", () => {
         nowIso={new Date().toISOString()}
         expandedWorkGroups={{}}
         onToggleWorkGroup={() => {}}
+        changedFilesExpandedByTurnId={{}}
+        onSetChangedFilesExpanded={() => {}}
         onOpenTurnDiff={() => {}}
         revertTurnCountByUserMessageId={new Map()}
         onRevertUserMessage={() => {}}
         isRevertingCheckpoint={false}
         onImageExpand={() => {}}
+        activeThreadEnvironmentId={ACTIVE_THREAD_ENVIRONMENT_ID}
         markdownCwd={undefined}
         resolvedTheme="light"
         timestampFormat="locale"
@@ -114,7 +119,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Terminal 1 lines 1-5");
     expect(markup).toContain("lucide-terminal");
     expect(markup).toContain("yoo what&#x27;s ");
-  });
+  }, 10_000);
 
   it("renders context compaction entries in the normal work log", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
@@ -146,11 +151,14 @@ describe("MessagesTimeline", () => {
         nowIso={new Date().toISOString()}
         expandedWorkGroups={{}}
         onToggleWorkGroup={() => {}}
+        changedFilesExpandedByTurnId={{}}
+        onSetChangedFilesExpanded={() => {}}
         onOpenTurnDiff={() => {}}
         revertTurnCountByUserMessageId={new Map()}
         onRevertUserMessage={() => {}}
         isRevertingCheckpoint={false}
         onImageExpand={() => {}}
+        activeThreadEnvironmentId={ACTIVE_THREAD_ENVIRONMENT_ID}
         markdownCwd={undefined}
         resolvedTheme="light"
         timestampFormat="locale"

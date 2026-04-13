@@ -5,6 +5,7 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import { RuntimeItemId, ThreadId } from "./baseSchemas";
 
 import { OpenError, OpenInEditorInput } from "./editor";
+import { AuthAccessStreamEvent } from "./auth";
 import {
   GitActionProgressEvent,
   GitCheckoutInput,
@@ -160,6 +161,7 @@ export const WS_METHODS = {
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeJiraConnectionStatus: JIRA_WS_CHANNELS.connectionStatusChanged,
   subscribeCommandOutput: "subscribeCommandOutput",
+  subscribeAuthAccess: "subscribeAuthAccess",
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -473,6 +475,12 @@ export const WsSubscribeCommandOutputRpc = Rpc.make(WS_METHODS.subscribeCommandO
   stream: true,
 });
 
+export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
+  payload: Schema.Struct({}),
+  success: AuthAccessStreamEvent,
+  stream: true,
+});
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -506,6 +514,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeTerminalEventsRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
+  WsSubscribeAuthAccessRpc,
   WsOrchestrationGetSnapshotRpc,
   WsOrchestrationGetListingSnapshotRpc,
   WsOrchestrationGetThreadRpc,

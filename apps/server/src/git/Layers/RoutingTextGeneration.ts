@@ -9,7 +9,7 @@
  *
  * @module RoutingTextGeneration
  */
-import { Effect, Layer, ServiceMap } from "effect";
+import { Context, Effect, Layer } from "effect";
 import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   type ModelSelection,
@@ -28,11 +28,11 @@ import { ClaudeTextGenerationLive } from "./ClaudeTextGeneration.ts";
 // Internal service tags so both concrete layers can coexist.
 // ---------------------------------------------------------------------------
 
-class CodexTextGen extends ServiceMap.Service<CodexTextGen, TextGenerationShape>()(
+class CodexTextGen extends Context.Service<CodexTextGen, TextGenerationShape>()(
   "marcode/git/Layers/RoutingTextGeneration/CodexTextGen",
 ) {}
 
-class ClaudeTextGen extends ServiceMap.Service<ClaudeTextGen, TextGenerationShape>()(
+class ClaudeTextGen extends Context.Service<ClaudeTextGen, TextGenerationShape>()(
   "marcode/git/Layers/RoutingTextGeneration/ClaudeTextGen",
 ) {}
 

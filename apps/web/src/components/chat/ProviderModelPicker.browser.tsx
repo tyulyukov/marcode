@@ -24,6 +24,8 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
     status: "ready",
     auth: { status: "authenticated" },
     checkedAt: new Date().toISOString(),
+    slashCommands: [],
+    skills: [],
     models: [
       {
         slug: "gpt-5-codex",
@@ -59,6 +61,8 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
     status: "ready",
     auth: { status: "authenticated" },
     checkedAt: new Date().toISOString(),
+    slashCommands: [],
+    skills: [],
     models: [
       {
         slug: "claude-opus-4-6",
@@ -120,6 +124,8 @@ function buildCodexProvider(models: ServerProvider["models"]): ServerProvider {
     auth: { status: "authenticated" },
     checkedAt: new Date().toISOString(),
     models,
+    slashCommands: [],
+    skills: [],
   };
 }
 
@@ -412,6 +418,39 @@ describe("ProviderModelPicker", () => {
       expect(button.className).toContain("bg-popover");
     } finally {
       await mounted.cleanup();
+    }
+  });
+
+  it("displays 'Opus 4.6' without 'Claude' prefix", async () => {
+    const mounted = await mountPicker({
+      provider: "claudeAgent",
+      model: "claude-opus-4-6",
+      lockedProvider: "claudeAgent",
+    });
+
+    try {
+      await page.getByRole("button").click();
+
+      await vi.waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(text).toContain("Opus 4.6");
+        expect(text).not.toMatch(/Claude\s+Opus/);
+      });
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("uses medium as the default effort level for all Claude models", () => {
+    const claudeProvider = TEST_PROVIDERS.find((p) => p.provider === "claudeAgent");
+    if (!claudeProvider) throw new Error("Claude provider missing from TEST_PROVIDERS");
+
+    for (const model of claudeProvider.models) {
+      const capabilities = model.capabilities;
+      if (!capabilities) throw new Error(`${model.name} is missing capabilities`);
+      const defaultEffort = capabilities.reasoningEffortLevels.find((e) => e.isDefault);
+      expect(defaultEffort, `${model.name} should have a default effort`).toBeDefined();
+      expect(defaultEffort!.value, `${model.name} default effort should be medium`).toBe("medium");
     }
   });
 });

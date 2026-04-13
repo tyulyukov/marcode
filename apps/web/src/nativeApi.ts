@@ -1,15 +1,19 @@
-import type { NativeApi } from "@marcode/contracts";
+import {
+  __resetWsNativeApiForTests,
+  createWsNativeApi,
+  type MarCodeNativeApi,
+} from "./wsNativeApi";
 
-import { __resetWsNativeApiForTests, createWsNativeApi } from "./wsNativeApi";
+export type NativeApi = MarCodeNativeApi;
 
-let cachedApi: NativeApi | undefined;
+let cachedApi: MarCodeNativeApi | undefined;
 
-export function readNativeApi(): NativeApi | undefined {
+export function readNativeApi(): MarCodeNativeApi | undefined {
   if (typeof window === "undefined") return undefined;
   if (cachedApi) return cachedApi;
 
-  if (window.nativeApi) {
-    cachedApi = window.nativeApi;
+  if ((window as unknown as Record<string, unknown>).nativeApi) {
+    cachedApi = (window as unknown as Record<string, unknown>).nativeApi as MarCodeNativeApi;
     return cachedApi;
   }
 
@@ -17,7 +21,7 @@ export function readNativeApi(): NativeApi | undefined {
   return cachedApi;
 }
 
-export function ensureNativeApi(): NativeApi {
+export function ensureNativeApi(): MarCodeNativeApi {
   const api = readNativeApi();
   if (!api) {
     throw new Error("Native API not found");

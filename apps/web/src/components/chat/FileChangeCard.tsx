@@ -1,7 +1,8 @@
 import { parsePatchFiles } from "@pierre/diffs";
+import { cn } from "~/lib/utils";
 import { FileDiff, type FileDiffMetadata } from "@pierre/diffs/react";
-import { ChevronDownIcon, ChevronUpIcon, SquarePenIcon } from "lucide-react";
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDownIcon, ChevronUpIcon, ShieldQuestionIcon, SquarePenIcon } from "lucide-react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { type InlineDiffHunk } from "~/lib/inlineDiff";
 import { buildPatchCacheKey, resolveDiffThemeName } from "~/lib/diffRendering";
 import { useTheme } from "~/hooks/useTheme";
@@ -94,34 +95,26 @@ const InlineDiffBlock = memo(function InlineDiffBlock(props: {
 interface FileChangeCardProps {
   diffPreviews: ReadonlyArray<InlineDiffHunk>;
   cwd: string | undefined;
-}
-
-function HunkHeader(props: { hunk: InlineDiffHunk; cwd: string | undefined }) {
-  const { hunk, cwd } = props;
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5">
-      <SquarePenIcon className="size-3.5 shrink-0 text-primary/50" />
-      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
-        {relativizePath(hunk.filePath, cwd)}
-      </span>
-      <span className="shrink-0 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/60">
-        {OPERATION_LABELS[hunk.operation]}
-      </span>
-      <DiffStatSummary additions={hunk.stats.additions} deletions={hunk.stats.deletions} />
-    </div>
-  );
+  isLive?: boolean;
+  isPendingApproval?: boolean;
 }
 
 export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCardProps) {
-  const { diffPreviews, cwd } = props;
+  const { diffPreviews, cwd, isPendingApproval = false } = props;
   const [expanded, setExpanded] = useState(false);
   const [previewOverflows, setPreviewOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const el = previewRef.current;
     if (!el || expanded) return;
-    setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
+
+    const check = () => setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
+    check();
+
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [expanded, diffPreviews]);
 
   if (diffPreviews.length === 0) return null;
@@ -136,10 +129,31 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   return (
     <div
       data-scroll-anchor-target
-      className="overflow-hidden rounded-xl border border-border/40 border-l-2 border-l-primary/25 bg-card/25"
+      className={cn(
+        "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
+        isPendingApproval ? "border-l-blue-400/40" : "border-l-primary/25",
+      )}
     >
       {isSingleHunk ? (
-        <HunkHeader hunk={diffPreviews[0]!} cwd={cwd} />
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <SquarePenIcon className="size-3.5 shrink-0 text-primary/50" />
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
+            {relativizePath(diffPreviews[0]!.filePath, cwd)}
+          </span>
+          <span className="shrink-0 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/60">
+            {OPERATION_LABELS[diffPreviews[0]!.operation]}
+          </span>
+          <DiffStatSummary
+            additions={diffPreviews[0]!.stats.additions}
+            deletions={diffPreviews[0]!.stats.deletions}
+          />
+          {isPendingApproval && (
+            <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
+              <ShieldQuestionIcon className="size-3" />
+              Approval requested
+            </span>
+          )}
+        </div>
       ) : (
         <div className="flex items-center gap-2 px-3 py-1.5">
           <SquarePenIcon className="size-3.5 shrink-0 text-primary/50" />
@@ -147,6 +161,12 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
             {diffPreviews.length} files changed
           </span>
           <DiffStatSummary additions={totalAdditions} deletions={totalDeletions} />
+          {isPendingApproval && (
+            <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
+              <ShieldQuestionIcon className="size-3" />
+              Approval requested
+            </span>
+          )}
         </div>
       )}
 

@@ -187,6 +187,33 @@ MarCode supports 24+ themes across 12 families (MarCode branded, Catppuccin, Sol
 3. Import and spread into `THEME_REGISTRY` in `apps/web/src/themes/registry.ts`.
 4. Add the group entry to `THEME_GROUPS` in the same file.
 
+## Upstream Merge: Migration Ordering
+
+MarCode has its own database migrations that were added at specific IDs. When merging upstream t3code changes that introduce NEW migrations, **never renumber existing MarCode migrations** — existing users already have them applied at their original IDs. The Effect SQL migrator tracks migrations by numeric ID in the `effect_sql_migrations` table; renumbering causes it to skip the new upstream tables (thinking those IDs are done) and attempt to re-create existing tables at the new IDs.
+
+**Current migration layout (as of upstream sync April 2026):**
+
+| IDs     | Origin                         | Content                                  |
+| ------- | ------------------------------ | ---------------------------------------- |
+| 001–018 | Shared (upstream + MarCode)    | Core schema, projections, checkpoints    |
+| 019     | MarCode                        | `ProjectJiraBoard`                       |
+| 020     | MarCode                        | `ProjectionThreadsAdditionalDirectories` |
+| 021     | _(gap — intentionally unused)_ |                                          |
+| 022     | MarCode                        | `ProjectionSnapshotOrderIndexes`         |
+| 023     | Upstream (was 019)             | `ProjectionSnapshotLookupIndexes`        |
+| 024     | Upstream (was 020)             | `AuthAccessManagement`                   |
+| 025     | Upstream (was 021)             | `AuthSessionClientMetadata`              |
+| 026     | Upstream (was 022)             | `AuthSessionLastConnectedAt`             |
+
+**Rules for future upstream merges:**
+
+1. Keep MarCode migrations at their original IDs (019, 020, 022).
+2. Slot upstream's new migrations **after** the highest existing ID (currently 026+).
+3. If upstream adds migrations at IDs that MarCode already occupies, renumber the **upstream** ones to higher slots — never the MarCode ones.
+4. If MarCode adds new migrations, use the next available ID after the highest.
+5. After reordering, update `apps/server/src/persistence/Migrations.ts` (imports + `migrationEntries` array).
+6. Always test with both a **fresh database** (all migrations run) and verify the sequence is correct for **existing users** (only new migrations run).
+
 ## Reference Repos
 
 - Open-source Codex repo: https://github.com/openai/codex
@@ -293,3 +320,22 @@ MarCode supports replying to specific text selections within assistant messages.
 - Quoted contexts are **not** persisted to localStorage (transient draft state) — they are cleared on thread switch or send.
 - Selection spanning multiple messages captures only text from the message where selection started.
 - Truncation at 5000 chars with `...[truncated]` suffix.
+
+## Testing
+
+### Regression Test Suite
+
+MarCode maintains a comprehensive regression test suite to protect MarCode-exclusive features during upstream merges. Tests are organized in layers:
+
+- **Pure function unit tests** (`quotedContext.test.ts`, `ansiToSpans.test.tsx`, `jiraContext.test.ts`, `turnNotification.test.ts`, `themes/themes.test.ts`, `contracts/model.test.ts`) — deep coverage of exported logic.
+- **Feature existence guards** (`featureGuards.test.ts` in both `apps/web/src/` and `apps/server/src/`) — read source files with `fs.readFileSync` and assert key patterns/exports are present. Catches features deleted during conflict resolution.
+- **Work card guards** (`workCards.guard.test.ts`) — verify all rich tool display card components exist and export correctly.
+- **Store guards** (`store.guard.test.ts`) — verify incremental event handlers and structural sharing logic exist in `store.ts`.
+- **Browser tests** (`*.browser.tsx`) — rendered component tests using Playwright via Vitest browser mode.
+- **Skeleton tests** (`Skeletons.browser.tsx`) — verify extracted skeleton components render correctly.
+
+### Testing Policy
+
+- **After every upstream merge:** run the full test suite (`bun run test` in each package) and verify all MarCode-exclusive features are preserved. Guard tests in `featureGuards.test.ts` and `workCards.guard.test.ts` will catch deleted/missing features immediately.
+- **When implementing new MarCode-exclusive features:** create at least an existence/smoke guard test in the relevant `featureGuards.test.ts`, plus unit tests for any pure logic. Update `FEATURES.md` with the new feature entry.
+- **When modifying existing features:** update or extend the corresponding tests. If changing exports, function signatures, or component structure — update the guard tests to match.

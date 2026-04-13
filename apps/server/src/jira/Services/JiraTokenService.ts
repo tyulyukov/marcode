@@ -1,4 +1,4 @@
-import { Effect, Option, ServiceMap, Stream } from "effect";
+import { Context, Effect, Option, Stream } from "effect";
 import { JiraTokenError } from "../Errors";
 
 export interface JiraTokenSet {
@@ -16,6 +16,6 @@ export interface JiraTokenServiceShape {
   readonly streamChanges: Stream.Stream<Option.Option<JiraTokenSet>>;
 }
 
-export class JiraTokenService extends ServiceMap.Service<JiraTokenService, JiraTokenServiceShape>()(
+export class JiraTokenService extends Context.Service<JiraTokenService, JiraTokenServiceShape>()(
   "marcode/jira/JiraTokenService",
 ) {}

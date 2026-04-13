@@ -5,7 +5,7 @@
  *
  * @module GitHubCli
  */
-import { ServiceMap } from "effect";
+import { Context } from "effect";
 import type { Effect } from "effect";
 
 import type { ProcessRunResult } from "../../processRunner";
@@ -18,7 +18,6 @@ export interface GitHubPullRequestSummary {
   readonly baseRefName: string;
   readonly headRefName: string;
   readonly state?: "open" | "closed" | "merged";
-  readonly updatedAt?: string | null;
   readonly isCrossRepository?: boolean;
   readonly headRepositoryNameWithOwner?: string | null;
   readonly headRepositoryOwnerLogin?: string | null;
@@ -100,6 +99,6 @@ export interface GitHubCliShape {
 /**
  * GitHubCli - Service tag for GitHub CLI process execution.
  */
-export class GitHubCli extends ServiceMap.Service<GitHubCli, GitHubCliShape>()(
+export class GitHubCli extends Context.Service<GitHubCli, GitHubCliShape>()(
   "marcode/git/Services/GitHubCli",
 ) {}

@@ -1,7 +1,6 @@
 import { Effect, Exit, PubSub, Scope, Stream } from "effect";
 import { WS_METHODS, WsRpcGroup } from "@marcode/contracts";
-import { RpcSerialization, RpcServer } from "effect/unstable/rpc";
-import { constPong } from "effect/unstable/rpc/RpcMessage";
+import { RpcMessage, RpcSerialization, RpcServer } from "effect/unstable/rpc";
 
 type RpcServerInstance = RpcServer.RpcServer<any>;
 
@@ -30,8 +29,9 @@ const STREAM_METHODS = new Set<string>([
   WS_METHODS.subscribeTerminalEvents,
   WS_METHODS.subscribeServerConfig,
   WS_METHODS.subscribeServerLifecycle,
-  WS_METHODS.subscribeCommandOutput,
   WS_METHODS.subscribeJiraConnectionStatus,
+  WS_METHODS.subscribeCommandOutput,
+  WS_METHODS.subscribeAuthAccess,
 ]);
 
 const ALL_RPC_METHODS = Array.from(WsRpcGroup.requests.keys());
@@ -78,11 +78,9 @@ export class BrowserWsRpcHarness {
     if (this.scope) {
       void Effect.runPromise(Scope.close(this.scope, Exit.void)).catch(() => undefined);
     }
-    for (const pubsub of this.streamPubSubs.values()) {
-      Effect.runSync(PubSub.shutdown(pubsub));
+    if (this.streamPubSubs.size === 0) {
+      this.initializeStreamPubSubs();
     }
-    this.streamPubSubs.clear();
-    this.initializeStreamPubSubs();
     this.client = client;
     this.scope = Effect.runSync(Scope.make());
     this.serverReady = Effect.runPromise(
@@ -118,11 +116,10 @@ export class BrowserWsRpcHarness {
     }
     const messages = this.parser.decode(rawData);
     for (const message of messages) {
-      const msg = message as { _tag?: string };
-      if (msg._tag === "Ping") {
-        const pong = this.parser.encode(constPong);
-        if (typeof pong === "string") {
-          this.client?.send(pong);
+      if (message && typeof message === "object" && "_tag" in message && message._tag === "Ping") {
+        const encoded = this.parser.encode(RpcMessage.constPong);
+        if (typeof encoded === "string") {
+          this.client?.send(encoded);
         }
         continue;
       }

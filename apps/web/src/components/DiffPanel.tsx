@@ -2,7 +2,8 @@ import { parsePatchFiles } from "@pierre/diffs";
 import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { ThreadId, type TurnId } from "@marcode/contracts";
+import { scopeThreadRef } from "@marcode/client-runtime";
+import type { TurnId } from "@marcode/contracts";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -27,7 +28,7 @@ import type { QuotedContext } from "../lib/quotedContext";
 import { DiffSelectionReplyToolbar } from "./DiffSelectionReplyToolbar";
 import { checkpointDiffQueryOptions } from "~/lib/providerReactQuery";
 import { cn } from "~/lib/utils";
-import { readNativeApi } from "../nativeApi";
+import { readLocalApi } from "../localApi";
 import { resolvePathLinkTarget } from "../terminal-links";
 import { parseDiffRouteSearch, stripDiffSearchParams, type DiffScope } from "../diffRouteSearch";
 import { gitWorkingTreeDiffQueryOptions, gitQueryKeys } from "~/lib/gitReactQuery";
@@ -35,7 +36,9 @@ import { useTheme } from "../hooks/useTheme";
 import { buildPatchCacheKey } from "../lib/diffRendering";
 import { resolveDiffThemeName } from "../lib/diffRendering";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
-import { useStore } from "../store";
+import { selectProjectByRef, useStore } from "../store";
+import { createThreadSelectorByRef } from "../storeSelectors";
+import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { useSettings } from "../hooks/useSettings";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
@@ -180,33 +183,41 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const previousDiffOpenRef = useRef(false);
   const [canScrollTurnStripLeft, setCanScrollTurnStripLeft] = useState(false);
   const [canScrollTurnStripRight, setCanScrollTurnStripRight] = useState(false);
-  const routeThreadId = useParams({
+  const routeThreadRef = useParams({
     strict: false,
-    select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
+    select: (params) => resolveThreadRouteRef(params),
   });
   const diffSearch = useSearch({ strict: false, select: (search) => parseDiffRouteSearch(search) });
   const diffOpen = diffSearch.diff === "1";
   const diffScope: DiffScope = diffSearch.diffScope ?? "session";
   const isGitMode = diffScope === "git";
   const queryClient = useQueryClient();
-  const activeThreadId = routeThreadId;
-  const activeThread = useStore((store) =>
-    activeThreadId ? store.threads.find((thread) => thread.id === activeThreadId) : undefined,
+  const activeThreadId = routeThreadRef?.threadId ?? null;
+  const activeThread = useStore(
+    useMemo(() => createThreadSelectorByRef(routeThreadRef), [routeThreadRef]),
   );
   const activeProjectId = activeThread?.projectId ?? null;
   const activeProject = useStore((store) =>
-    activeProjectId ? store.projects.find((project) => project.id === activeProjectId) : undefined,
+    activeThread && activeProjectId
+      ? selectProjectByRef(store, {
+          environmentId: activeThread.environmentId,
+          projectId: activeProjectId,
+        })
+      : undefined,
   );
   const activeCwd = activeThread?.worktreePath ?? activeProject?.cwd;
-  const gitStatusQuery = useGitStatus(activeCwd ?? null);
+  const gitStatusQuery = useGitStatus({
+    environmentId: activeThread?.environmentId ?? null,
+    cwd: activeCwd ?? null,
+  });
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const addQuotedContext = useComposerDraftStore((store) => store.addQuotedContext);
   const onDiffReplyToSelection = useCallback(
     (context: QuotedContext) => {
-      if (!activeThreadId) return;
-      addQuotedContext(activeThreadId, context);
+      if (!routeThreadRef) return;
+      addQuotedContext(routeThreadRef, context);
     },
-    [activeThreadId, addQuotedContext],
+    [routeThreadRef, addQuotedContext],
   );
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
@@ -279,6 +290,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   }, [orderedTurnDiffSummaries, selectedTurn]);
   const activeCheckpointDiffQuery = useQuery(
     checkpointDiffQueryOptions({
+      environmentId: activeThread?.environmentId ?? null,
       threadId: activeThreadId,
       fromTurnCount: activeCheckpointRange?.fromTurnCount ?? null,
       toTurnCount: activeCheckpointRange?.toTurnCount ?? null,
@@ -288,6 +300,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   );
   const gitWorkingTreeDiffQuery = useQuery(
     gitWorkingTreeDiffQueryOptions({
+      environmentId: activeThread?.environmentId ?? null,
       cwd: activeCwd ?? null,
       enabled: isGitRepo && isGitMode && diffOpen,
     }),
@@ -365,7 +378,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
 
   const openDiffFileInEditor = useCallback(
     (filePath: string) => {
-      const api = readNativeApi();
+      const api = readLocalApi();
       if (!api) return;
       const targetPath = activeCwd ? resolvePathLinkTarget(filePath, activeCwd) : filePath;
       void openInPreferredEditor(api, targetPath).catch((error) => {
@@ -378,8 +391,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const selectTurn = (turnId: TurnId) => {
     if (!activeThread) return;
     void navigate({
-      to: "/$threadId",
-      params: { threadId: activeThread.id },
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
         return { ...rest, diff: "1", diffTurnId: turnId, diffScope: undefined };
@@ -389,8 +402,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const selectWholeConversation = () => {
     if (!activeThread) return;
     void navigate({
-      to: "/$threadId",
-      params: { threadId: activeThread.id },
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
         return { ...rest, diff: "1", diffScope: undefined };
@@ -400,8 +413,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const setDiffScope = (scope: DiffScope) => {
     if (!activeThread) return;
     void navigate({
-      to: "/$threadId",
-      params: { threadId: activeThread.id },
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       search: (previous) => {
         const rest = stripDiffSearchParams(previous);
         return { ...rest, diff: "1" as const, diffScope: scope === "session" ? undefined : scope };

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ServerProviderModel } from "@marcode/contracts";
-import { getComposerProviderState } from "./composerProviderRegistry";
+import {
+  getComposerProviderState,
+  renderProviderTraitsMenuContent,
+  renderProviderTraitsPicker,
+} from "./composerProviderRegistry";
 
 const CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
@@ -25,7 +29,7 @@ const CODEX_MODELS: ReadonlyArray<ServerProviderModel> = [
 const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-6",
-    name: "Opus 4.6",
+    name: "Claude Opus 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
@@ -42,7 +46,7 @@ const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
   {
     slug: "claude-sonnet-4-6",
-    name: "Sonnet 4.6",
+    name: "Claude Sonnet 4.6",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
@@ -59,7 +63,7 @@ const CLAUDE_MODELS: ReadonlyArray<ServerProviderModel> = [
   },
   {
     slug: "claude-haiku-4-5",
-    name: "Haiku 4.5",
+    name: "Claude Haiku 4.5",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [],
@@ -78,8 +82,8 @@ const CLAUDE_MODELS_WITH_CONTEXT_WINDOW: ReadonlyArray<ServerProviderModel> = [
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [
-        { value: "medium", label: "Medium" },
-        { value: "high", label: "High", isDefault: true },
+        { value: "medium", label: "Medium", isDefault: true },
+        { value: "high", label: "High" },
         { value: "max", label: "Max" },
         { value: "ultrathink", label: "Ultrathink" },
       ],
@@ -415,5 +419,33 @@ describe("getComposerProviderState", () => {
     });
 
     expect(state.modelOptionsForDispatch).not.toHaveProperty("fastMode");
+  });
+});
+
+describe("provider traits render guards", () => {
+  it("returns null for codex traits picker when no thread target is provided", () => {
+    const content = renderProviderTraitsPicker({
+      provider: "codex",
+      model: "gpt-5.4",
+      models: CODEX_MODELS,
+      modelOptions: undefined,
+      prompt: "",
+      onPromptChange: () => {},
+    });
+
+    expect(content).toBeNull();
+  });
+
+  it("returns null for claude traits menu content when no thread target is provided", () => {
+    const content = renderProviderTraitsMenuContent({
+      provider: "claudeAgent",
+      model: "claude-sonnet-4-6",
+      models: CLAUDE_MODELS,
+      modelOptions: undefined,
+      prompt: "",
+      onPromptChange: () => {},
+    });
+
+    expect(content).toBeNull();
   });
 });
