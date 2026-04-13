@@ -12,7 +12,7 @@ describe("ansiToSpans", () => {
   it("produces a span with fontWeight bold for SGR code 1", () => {
     const result = ansiToSpans("\x1b[1mbold text\x1b[0m");
     const html = renderToStaticMarkup(<>{result}</>);
-    expect(html).toContain('font-weight:bold');
+    expect(html).toContain("font-weight:bold");
     expect(html).toContain("bold text");
   });
 
@@ -26,7 +26,7 @@ describe("ansiToSpans", () => {
   it("clears styles after a reset code", () => {
     const result = ansiToSpans("\x1b[1mbold\x1b[0mplain");
     const html = renderToStaticMarkup(<>{result}</>);
-    expect(html).toContain('font-weight:bold');
+    expect(html).toContain("font-weight:bold");
     expect(html).toContain("bold");
     expect(html).toContain("plain");
     expect(html).not.toMatch(/<span[^>]*>plain<\/span>/);

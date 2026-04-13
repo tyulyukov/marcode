@@ -2,10 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const STORE_SOURCE = fs.readFileSync(
-  path.resolve(__dirname, "store.ts"),
-  "utf-8",
-);
+const STORE_SOURCE = fs.readFileSync(path.resolve(__dirname, "store.ts"), "utf-8");
 
 describe("store.ts incremental event guards", () => {
   it("contains thread.message-sent event handler", () => {

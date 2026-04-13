@@ -19,7 +19,9 @@ describe("parseHostnameFromRemoteUrl", () => {
   });
 
   it("extracts hostname from SSH URL with ssh:// prefix", () => {
-    expect(parseHostnameFromRemoteUrl("ssh://git@gitlab.example.com:22/repo.git")).toBe("gitlab.example.com");
+    expect(parseHostnameFromRemoteUrl("ssh://git@gitlab.example.com:22/repo.git")).toBe(
+      "gitlab.example.com",
+    );
   });
 });
 

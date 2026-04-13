@@ -5,8 +5,7 @@ import { describe, expect, it } from "vitest";
 const SRC_DIR = path.resolve(__dirname);
 const readSrc = (relativePath: string) =>
   fs.readFileSync(path.resolve(SRC_DIR, relativePath), "utf-8");
-const fileExists = (relativePath: string) =>
-  fs.existsSync(path.resolve(SRC_DIR, relativePath));
+const fileExists = (relativePath: string) => fs.existsSync(path.resolve(SRC_DIR, relativePath));
 
 describe("MarCode feature guards", () => {
   it("CSS content-visibility is used (no JS virtualizer)", () => {
@@ -76,10 +75,7 @@ describe("MarCode feature guards", () => {
   it("no PostHog/telemetry imports in web app", () => {
     const files = fs.globSync("**/*.{ts,tsx}", {
       cwd: SRC_DIR,
-      exclude: (p) =>
-        p.includes("node_modules") ||
-        p.includes(".test.") ||
-        p.includes(".browser."),
+      exclude: (p) => p.includes("node_modules") || p.includes(".test.") || p.includes(".browser."),
     });
     for (const file of files) {
       const content = fs.readFileSync(path.resolve(SRC_DIR, file), "utf-8");
@@ -88,11 +84,7 @@ describe("MarCode feature guards", () => {
   });
 
   it("no T3/t3tools branding references in key source files", () => {
-    const keyFiles = [
-      "store.ts",
-      "session-logic.ts",
-      "types.ts",
-    ];
+    const keyFiles = ["store.ts", "session-logic.ts", "types.ts"];
     for (const file of keyFiles) {
       if (!fileExists(file)) continue;
       const content = readSrc(file);

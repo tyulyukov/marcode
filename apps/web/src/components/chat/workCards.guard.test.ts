@@ -3,10 +3,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const CHAT_DIR = path.resolve(__dirname);
-const readCard = (filename: string) =>
-  fs.readFileSync(path.resolve(CHAT_DIR, filename), "utf-8");
-const cardExists = (filename: string) =>
-  fs.existsSync(path.resolve(CHAT_DIR, filename));
+const readCard = (filename: string) => fs.readFileSync(path.resolve(CHAT_DIR, filename), "utf-8");
+const cardExists = (filename: string) => fs.existsSync(path.resolve(CHAT_DIR, filename));
 
 describe("Work card component existence guards", () => {
   it("WebSearchCard exists and exports correctly", () => {

@@ -5,8 +5,7 @@ import { describe, expect, it } from "vitest";
 const SRC_DIR = path.resolve(__dirname);
 const readSrc = (relativePath: string) =>
   fs.readFileSync(path.resolve(SRC_DIR, relativePath), "utf-8");
-const fileExists = (relativePath: string) =>
-  fs.existsSync(path.resolve(SRC_DIR, relativePath));
+const fileExists = (relativePath: string) => fs.existsSync(path.resolve(SRC_DIR, relativePath));
 
 describe("Server feature existence guards", () => {
   it("GitLab CLI implementation exists", () => {
@@ -33,9 +32,7 @@ describe("Server feature existence guards", () => {
     const jiraDir = path.resolve(SRC_DIR, "jira");
     expect(fs.existsSync(jiraDir)).toBe(true);
     const files = fs.readdirSync(jiraDir, { recursive: true }) as string[];
-    const tsFiles = files.filter(
-      (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
-    );
+    const tsFiles = files.filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
     expect(tsFiles.length).toBeGreaterThan(0);
   });
 

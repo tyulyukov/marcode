@@ -222,11 +222,7 @@ describe("derivePendingApprovals", () => {
 
     const result = derivePendingApprovals(activities);
     expect(result).toHaveLength(3);
-    expect(result.map((r) => r.requestKind)).toEqual([
-      "command",
-      "file-read",
-      "file-change",
-    ]);
+    expect(result.map((r) => r.requestKind)).toEqual(["command", "file-read", "file-change"]);
   });
 });
 

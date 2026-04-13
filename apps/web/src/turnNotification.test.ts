@@ -27,10 +27,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   } as Project;
 }
 
-function makeSessionSetEvent(
-  threadId: string,
-  status: string,
-): OrchestrationEvent {
+function makeSessionSetEvent(threadId: string, status: string): OrchestrationEvent {
   return {
     type: "thread.session-set",
     payload: {
@@ -40,10 +37,7 @@ function makeSessionSetEvent(
   } as unknown as OrchestrationEvent;
 }
 
-function makeActivityAppendedEvent(
-  threadId: string,
-  kind: string,
-): OrchestrationEvent {
+function makeActivityAppendedEvent(threadId: string, kind: string): OrchestrationEvent {
   return {
     type: "thread.activity-appended",
     payload: {

@@ -19,8 +19,12 @@ function makeMockJiraIssue(overrides?: Partial<JiraIssue>): JiraIssue {
     issueType: "Bug" as JiraIssue["issueType"],
     priority: "High" as JiraIssue["priority"],
     assignee: {
-      accountId: "abc123" as JiraIssue["assignee"] extends { accountId: infer T } | undefined ? T : never,
-      displayName: "Jane Doe" as JiraIssue["assignee"] extends { displayName: infer T } | undefined ? T : never,
+      accountId: "abc123" as JiraIssue["assignee"] extends { accountId: infer T } | undefined
+        ? T
+        : never,
+      displayName: "Jane Doe" as JiraIssue["assignee"] extends { displayName: infer T } | undefined
+        ? T
+        : never,
     },
     description: "Users cannot log in with SSO",
     labels: [],
