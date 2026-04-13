@@ -11,6 +11,7 @@ import {
   type LocalApi,
   type ServerConfig,
 } from "@marcode/contracts";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DateTime } from "effect";
 import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -130,6 +131,59 @@ vi.mock("../../environments/runtime", () => {
       server: {
         subscribeAuthAccess: (listener: Parameters<typeof authAccessHarness.subscribe>[0]) =>
           authAccessHarness.subscribe(listener),
+      },
+      projects: {
+        searchEntries: vi.fn().mockResolvedValue({ entries: [] }),
+        browseDirectories: vi.fn().mockResolvedValue({ directories: [] }),
+        writeFile: vi.fn().mockResolvedValue({}),
+      },
+      terminal: {
+        open: vi.fn().mockResolvedValue({}),
+        write: vi.fn().mockResolvedValue({}),
+        resize: vi.fn().mockResolvedValue({}),
+        clear: vi.fn().mockResolvedValue({}),
+        restart: vi.fn().mockResolvedValue({}),
+        close: vi.fn().mockResolvedValue({}),
+        onEvent: () => () => {},
+      },
+      shell: {
+        openInEditor: vi.fn().mockResolvedValue(undefined),
+      },
+      git: {
+        pull: vi.fn().mockResolvedValue({}),
+        refreshStatus: vi.fn().mockResolvedValue({}),
+        onStatus: () => () => {},
+        listBranches: vi.fn().mockResolvedValue({ branches: [] }),
+        createWorktree: vi.fn().mockResolvedValue({}),
+        removeWorktree: vi.fn().mockResolvedValue({}),
+        createBranch: vi.fn().mockResolvedValue({}),
+        checkout: vi.fn().mockResolvedValue({}),
+        init: vi.fn().mockResolvedValue({}),
+        resolvePullRequest: vi.fn().mockResolvedValue({}),
+        preparePullRequestThread: vi.fn().mockResolvedValue({}),
+        workingTreeDiff: vi.fn().mockResolvedValue({}),
+        runStackedAction: vi.fn().mockResolvedValue({}),
+      },
+      orchestration: {
+        getSnapshot: vi.fn().mockResolvedValue({}),
+        getListingSnapshot: vi.fn().mockResolvedValue({}),
+        getThread: vi.fn().mockResolvedValue(null),
+        dispatchCommand: vi.fn().mockResolvedValue({}),
+        getTurnDiff: vi.fn().mockResolvedValue({}),
+        getFullThreadDiff: vi.fn().mockResolvedValue({}),
+        replayEvents: vi.fn().mockResolvedValue({}),
+        onDomainEvent: () => () => {},
+      },
+      jira: {
+        getConnectionStatus: vi.fn().mockResolvedValue({ connected: false }),
+        disconnect: vi.fn().mockResolvedValue({}),
+        listSites: vi.fn().mockResolvedValue({ sites: [] }),
+        listBoards: vi.fn().mockResolvedValue({ boards: [] }),
+        listSprints: vi.fn().mockResolvedValue({ sprints: [] }),
+        listIssues: vi.fn().mockResolvedValue({ issues: [] }),
+        getIssue: vi.fn().mockResolvedValue(null),
+        getAttachment: vi.fn().mockResolvedValue(null),
+        onConnectionStatusChanged: () => () => {},
       },
     },
     ensureBootstrapped: async () => undefined,
@@ -424,9 +478,11 @@ describe("GeneralSettingsPanel observability", () => {
     setServerConfigSnapshot(createBaseServerConfig());
 
     mounted = await render(
-      <AppAtomRegistryProvider>
-        <GeneralSettingsPanel />
-      </AppAtomRegistryProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AppAtomRegistryProvider>
+          <GeneralSettingsPanel />
+        </AppAtomRegistryProvider>
+      </QueryClientProvider>,
     );
 
     await expect.element(page.getByText("About")).toBeInTheDocument();
@@ -682,9 +738,11 @@ describe("GeneralSettingsPanel observability", () => {
     setServerConfigSnapshot(createBaseServerConfig());
 
     mounted = await render(
-      <AppAtomRegistryProvider>
-        <GeneralSettingsPanel />
-      </AppAtomRegistryProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AppAtomRegistryProvider>
+          <GeneralSettingsPanel />
+        </AppAtomRegistryProvider>
+      </QueryClientProvider>,
     );
 
     const openLogsButton = page.getByText("Open logs folder");

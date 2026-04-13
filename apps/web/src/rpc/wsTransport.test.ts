@@ -120,11 +120,15 @@ beforeEach(() => {
   transports.length = 0;
   resetRequestLatencyStateForTests();
   resetWsConnectionStateForTests();
+  vi.stubEnv("VITE_HTTP_URL", "");
+  vi.stubEnv("VITE_WS_URL", "");
+  vi.stubEnv("VITE_DEV_SERVER_URL", "");
 
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
       location: {
+        href: "http://localhost:3020/",
         origin: "http://localhost:3020",
         hostname: "localhost",
         port: "3020",

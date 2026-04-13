@@ -7,6 +7,7 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { NetService } from "@marcode/shared/Net";
 import { assert, it } from "@effect/vitest";
+import { afterEach, beforeEach } from "vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -148,6 +149,18 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
       }).pipe(Effect.provide(Layer.mergeAll(appLayer, NodeServices.layer))),
     );
   });
+
+const savedViteDevServerUrl = process.env.VITE_DEV_SERVER_URL;
+
+beforeEach(() => {
+  delete process.env.VITE_DEV_SERVER_URL;
+});
+
+afterEach(() => {
+  if (savedViteDevServerUrl !== undefined) {
+    process.env.VITE_DEV_SERVER_URL = savedViteDevServerUrl;
+  }
+});
 
 it.layer(NodeServices.layer)("cli log-level parsing", (it) => {
   it.effect("accepts the built-in lowercase log-level flag values", () =>
