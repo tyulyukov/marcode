@@ -26,6 +26,12 @@ import {
 import { ensureLocalApi } from "~/localApi";
 import { collectActiveTerminalThreadIds } from "~/lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "~/orchestrationEventEffects";
+import { deriveTurnNotificationTriggers } from "~/turnNotification";
+import {
+  dispatchTurnNotifications,
+  type TurnNotificationSettings,
+} from "~/turnNotificationDispatcher";
+import { readClientSettingsSync } from "~/hooks/useSettings";
 import { projectQueryKeys } from "~/lib/projectReactQuery";
 import { providerQueryKeys } from "~/lib/providerReactQuery";
 import { getPrimaryKnownEnvironment } from "../primary";
@@ -52,10 +58,12 @@ import {
 import { createEnvironmentConnection, type EnvironmentConnection } from "./connection";
 import {
   useStore,
+  selectEnvironmentState,
   selectProjectsAcrossEnvironments,
   selectThreadByRef,
   selectThreadsAcrossEnvironments,
 } from "~/store";
+import { getThreadFromEnvironmentState } from "~/threadDerivation";
 import { useTerminalStateStore } from "~/terminalStateStore";
 import { useUiStateStore } from "~/uiStateStore";
 import { WsTransport } from "../../rpc/wsTransport";
@@ -234,6 +242,14 @@ function applyRecoveredEventBatch(
     void activeService?.queryInvalidationThrottler.maybeExecute();
   }
 
+  const storeState = useStore.getState();
+  const envState = selectEnvironmentState(storeState, environmentId);
+  const notificationTriggers = deriveTurnNotificationTriggers(
+    events,
+    (threadId) => getThreadFromEnvironmentState(envState, threadId),
+    (projectId) => envState.projectById[projectId],
+  );
+
   useStore.getState().applyOrchestrationEvents(uiEvents, environmentId);
   if (needsProjectUiSync) {
     const projects = selectProjectsAcrossEnvironments(useStore.getState());
@@ -270,6 +286,18 @@ function applyRecoveredEventBatch(
   }
   for (const threadId of batchEffects.removeTerminalStateThreadIds) {
     useTerminalStateStore.getState().removeTerminalState(scopeThreadRef(environmentId, threadId));
+  }
+
+  if (notificationTriggers.length > 0) {
+    const clientSettings = readClientSettingsSync();
+    const notificationSettings: TurnNotificationSettings = {
+      mode: clientSettings.turnNotificationMode,
+      soundId: clientSettings.turnNotificationSoundId,
+      customSounds: clientSettings.turnNotificationCustomSounds,
+      advancedSounds: clientSettings.turnNotificationAdvancedSounds,
+      soundMap: clientSettings.turnNotificationSoundMap,
+    };
+    dispatchTurnNotifications(notificationTriggers, notificationSettings);
   }
 }
 

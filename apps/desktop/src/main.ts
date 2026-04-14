@@ -67,6 +67,8 @@ import {
   reduceDesktopUpdateStateOnUpdateAvailable,
 } from "./updateMachine";
 import { isArm64HostRunningIntelBuild, resolveDesktopRuntimeInfo } from "./runtimeArch";
+import { readWindowState, resolveWindowBounds, writeWindowState } from "./windowState";
+import type { WindowState } from "./windowState";
 
 syncShellEnvironment();
 
@@ -95,6 +97,7 @@ const SET_SERVER_EXPOSURE_MODE_CHANNEL = "desktop:set-server-exposure-mode";
 const BASE_DIR = process.env.MARCODE_HOME?.trim() || Path.join(OS.homedir(), ".marcode");
 const STATE_DIR = Path.join(BASE_DIR, "userdata");
 const DESKTOP_SETTINGS_PATH = Path.join(STATE_DIR, "desktop-settings.json");
+const WINDOW_STATE_PATH = Path.join(STATE_DIR, "window-state.json");
 const CLIENT_SETTINGS_PATH = Path.join(STATE_DIR, "client-settings.json");
 const SAVED_ENVIRONMENT_REGISTRY_PATH = Path.join(STATE_DIR, "saved-environments.json");
 const DESKTOP_SCHEME = "marcode";
@@ -146,6 +149,7 @@ let restoreStdIoCapture: (() => void) | null = null;
 let backendObservabilitySettings = readPersistedBackendObservabilitySettings();
 let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH);
 let desktopServerExposureMode: DesktopServerExposureMode = desktopSettings.serverExposureMode;
+let lastWindowState: WindowState = readWindowState(WINDOW_STATE_PATH);
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
 const expectedBackendExitChildren = new WeakSet<ChildProcess.ChildProcess>();
@@ -1650,10 +1654,29 @@ function getInitialWindowBackgroundColor(): string {
   return nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
 }
 
+function captureWindowState(window: BrowserWindow): WindowState {
+  const isMaximized = window.isMaximized();
+  const bounds = isMaximized ? window.getNormalBounds() : window.getBounds();
+  return {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    isMaximized,
+  };
+}
+
+function saveWindowState(window: BrowserWindow): void {
+  if (window.isMinimized() || window.isDestroyed()) return;
+  lastWindowState = captureWindowState(window);
+  writeWindowState(WINDOW_STATE_PATH, lastWindowState);
+}
+
 function createWindow(): BrowserWindow {
+  const restoredBounds = resolveWindowBounds(lastWindowState);
+
   const window = new BrowserWindow({
-    width: 1100,
-    height: 780,
+    ...restoredBounds,
     minWidth: 840,
     minHeight: 620,
     show: isDevelopment,
@@ -1670,6 +1693,21 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+
+  if (lastWindowState.isMaximized) {
+    window.maximize();
+  }
+
+  let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const debouncedSave = () => {
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = setTimeout(() => saveWindowState(window), 500);
+  };
+
+  window.on("resize", debouncedSave);
+  window.on("move", debouncedSave);
+  window.on("maximize", () => saveWindowState(window));
+  window.on("unmaximize", () => saveWindowState(window));
 
   window.webContents.on("context-menu", (event, params) => {
     event.preventDefault();
@@ -1854,6 +1892,9 @@ app.on("before-quit", () => {
   isQuitting = true;
   updateInstallInFlight = false;
   writeDesktopLogHeader("before-quit received");
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    saveWindowState(mainWindow);
+  }
   clearUpdatePollTimer();
   cancelBackendReadinessWait();
   stopBackend();
