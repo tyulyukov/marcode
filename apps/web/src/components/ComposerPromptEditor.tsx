@@ -26,6 +26,7 @@ import {
   KEY_TAB_COMMAND,
   COMMAND_PRIORITY_HIGH,
   COMMAND_PRIORITY_CRITICAL,
+  COPY_COMMAND,
   PASTE_COMMAND,
   KEY_BACKSPACE_COMMAND,
   $getRoot,
@@ -36,6 +37,7 @@ import {
   type SerializedLexicalNode,
   type EditorState,
   type NodeKey,
+  type PasteCommandType,
   type Spread,
 } from "lexical";
 import {
@@ -68,7 +70,11 @@ import {
   INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
   type TerminalContextDraft,
 } from "~/lib/terminalContext";
-import { INLINE_JIRA_CONTEXT_PLACEHOLDER, type JiraTaskDraft } from "~/lib/jiraContext";
+import {
+  formatJiraTaskInlineLabel,
+  INLINE_JIRA_CONTEXT_PLACEHOLDER,
+  type JiraTaskDraft,
+} from "~/lib/jiraContext";
 import { cn } from "~/lib/utils";
 import { basenameOfPath, getVscodeIconUrlForEntry, inferEntryKindFromPath } from "~/vscode-icons";
 import {
@@ -1241,17 +1247,48 @@ function ComposerInlineTokenBackspacePlugin() {
   return null;
 }
 
+function extractPlainTextFromPasteEvent(event: PasteCommandType): string {
+  if (event instanceof ClipboardEvent) {
+    return event.clipboardData?.getData("text/plain") ?? "";
+  }
+  if (event instanceof InputEvent) {
+    return event.dataTransfer?.getData("text/plain") ?? "";
+  }
+  return "";
+}
+
+function $getSelectedTextWithJiraLabels(): string | null {
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection) || selection.isCollapsed()) {
+    return null;
+  }
+  const nodes = selection.getNodes();
+  const hasJiraNode = nodes.some((node) => node instanceof ComposerJiraTaskNode);
+  if (!hasJiraNode) {
+    return null;
+  }
+  let text = "";
+  for (const node of nodes) {
+    if (node instanceof ComposerJiraTaskNode) {
+      text += formatJiraTaskInlineLabel(node.__task);
+    } else {
+      text += node.getTextContent();
+    }
+  }
+  return text;
+}
+
 function ComposerJiraPastePlugin(props: { onJiraPaste: ((url: string) => boolean) | undefined }) {
   const [editor] = useLexicalComposerContext();
   const onJiraPasteRef = useRef(props.onJiraPaste);
   onJiraPasteRef.current = props.onJiraPaste;
 
   useEffect(() => {
-    return editor.registerCommand(
+    const unregisterPaste = editor.registerCommand(
       PASTE_COMMAND,
-      (event: ClipboardEvent) => {
+      (event: PasteCommandType) => {
         if (!onJiraPasteRef.current) return false;
-        const text = event.clipboardData?.getData("text/plain") ?? "";
+        const text = extractPlainTextFromPasteEvent(event);
         if (!text) return false;
         const handled = onJiraPasteRef.current(text);
         if (handled) {
@@ -1261,6 +1298,29 @@ function ComposerJiraPastePlugin(props: { onJiraPaste: ((url: string) => boolean
       },
       COMMAND_PRIORITY_CRITICAL,
     );
+
+    const unregisterCopy = editor.registerCommand(
+      COPY_COMMAND,
+      (event: ClipboardEvent | KeyboardEvent) => {
+        if (event instanceof KeyboardEvent) return false;
+        const clipboardData = event.clipboardData;
+        if (!clipboardData) return false;
+        let labeledText: string | null = null;
+        editor.getEditorState().read(() => {
+          labeledText = $getSelectedTextWithJiraLabels();
+        });
+        if (labeledText === null) return false;
+        event.preventDefault();
+        clipboardData.setData("text/plain", labeledText);
+        return true;
+      },
+      COMMAND_PRIORITY_CRITICAL,
+    );
+
+    return () => {
+      unregisterPaste();
+      unregisterCopy();
+    };
   }, [editor]);
 
   return null;

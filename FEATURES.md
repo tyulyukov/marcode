@@ -176,6 +176,17 @@ Progressive text generation for semantic commit messages and PR content using Cl
 - `apps/web/src/lib/jiraReactQuery.ts` — React Query options
 - `apps/web/src/components/chat/JiraTaskInlineChip.tsx` — Composer chip
 - `apps/web/src/components/settings/JiraSettingsSection.tsx` — Settings panel
+- `apps/desktop/src/main.ts` — Build-time embedded env var injection into server child process
+- `apps/desktop/tsdown.config.ts` — `__EMBEDDED_MARCODE_JIRA_*__` defines baked at build time
+
+### Desktop Env Var Wiring (Critical)
+
+`tsdown.config.ts` embeds `MARCODE_JIRA_REDIRECT_URI` and `MARCODE_JIRA_TOKEN_PROXY_URL` at build time via `define`. `main.ts` must declare them (`declare const __EMBEDDED_MARCODE_JIRA_*__`) and inject them into the server child process env in `backendChildEnv()`. Without this, the server never receives the values and OAuth fails with "MARCODE_JIRA_TOKEN_PROXY_URL is not configured".
+
+When merging upstream, **reject** any removal of:
+
+- `declare const __EMBEDDED_MARCODE_JIRA_REDIRECT_URI__` / `__EMBEDDED_MARCODE_JIRA_TOKEN_PROXY_URL__` in `main.ts`
+- The `embeddedJiraDefaults` loop in `backendChildEnv()`
 
 ### Composer Integration
 

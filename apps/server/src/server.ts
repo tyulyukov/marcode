@@ -49,7 +49,11 @@ import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScrip
 import { ObservabilityLive } from "./observability/Layers/Observability";
 import { JiraTokenServiceLive } from "./jira/Layers/JiraTokenService";
 import { JiraApiClientLive } from "./jira/Layers/JiraApiClient";
-import { jiraAuthRouteLayer, jiraCallbackRouteLayer } from "./jira/oauthRoutes";
+import {
+  jiraAttachmentProxyRouteLayer,
+  jiraAuthRouteLayer,
+  jiraCallbackRouteLayer,
+} from "./jira/oauthRoutes";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment";
 import { AnalyticsServiceNoopLive } from "./telemetry/Layers/AnalyticsService";
 import {
@@ -249,6 +253,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   orchestrationSnapshotRouteLayer,
   otlpTracesProxyRouteLayer,
   projectFaviconRouteLayer,
+  jiraAttachmentProxyRouteLayer,
   jiraAuthRouteLayer,
   jiraCallbackRouteLayer,
   serverEnvironmentRouteLayer,

@@ -555,21 +555,44 @@ export function deriveWorkLogEntries(
 
   const collabToolDataByItemId = new Map<string, SubagentCollabToolData>();
   const collabToolDataUnkeyed: SubagentCollabToolData[] = [];
+  const collabToolItemIds = new Set<string>();
   for (const activity of ordered) {
     if (latestTurnId && activity.turnId !== latestTurnId) continue;
+    if (activity.kind === "tool.started") {
+      const payload = asRecord(activity.payload);
+      if (payload?.itemType === "collab_agent_tool_call") {
+        const itemId = asTrimmedString(payload?.itemId);
+        if (itemId) collabToolItemIds.add(itemId);
+      }
+      continue;
+    }
     if (!isSubagentToolActivity(activity)) continue;
     const payload = asRecord(activity.payload);
+    const itemId = asTrimmedString(payload?.itemId);
+    if (itemId) collabToolItemIds.add(itemId);
     const data = asRecord(payload?.data);
     if (!data) continue;
     const input = asRecord(data.input);
     const prompt = asTrimmedString(input?.prompt) ?? null;
     const response = extractCollabToolResponse(data.result);
     const entry: SubagentCollabToolData = { prompt, response };
-    const itemId = asTrimmedString(payload?.itemId);
     if (itemId) {
       collabToolDataByItemId.set(itemId, entry);
     } else {
       collabToolDataUnkeyed.push(entry);
+    }
+  }
+
+  const nestedTaskIds = new Set<string>();
+  for (const activity of ordered) {
+    if (activity.kind !== "task.started") continue;
+    if (latestTurnId && activity.turnId !== latestTurnId) continue;
+    const payload = asRecord(activity.payload);
+    const taskId = asTrimmedString(payload?.taskId);
+    if (!taskId) continue;
+    const toolUseId = asTrimmedString(payload?.toolUseId);
+    if (toolUseId && !collabToolItemIds.has(toolUseId)) {
+      nestedTaskIds.add(taskId);
     }
   }
 
@@ -584,6 +607,10 @@ export function deriveWorkLogEntries(
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
     .filter((activity) => !isSubagentToolActivity(activity))
+    .filter((activity) => {
+      const taskId = extractTaskId(activity);
+      return !taskId || !nestedTaskIds.has(taskId);
+    })
     .filter((activity) => !excludeTodos || !isTodoWriteActivity(activity))
     .filter((activity) => !activity.kind.startsWith("setup-script."))
     .filter((activity) => !activity.kind.startsWith("approval."));

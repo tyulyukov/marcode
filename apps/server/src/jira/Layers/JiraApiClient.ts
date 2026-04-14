@@ -212,13 +212,11 @@ export const JiraApiClientLive = Layer.effect(
             const digits = keyPatternMatch[2] ?? "";
             if (digits.length > 0) {
               const n = Number(digits);
-              const ranges = [
-                `key = "${projectKey}-${n}"`,
-                `(key >= "${projectKey}-${n * 10}" AND key <= "${projectKey}-${(n + 1) * 10 - 1}")`,
-                `(key >= "${projectKey}-${n * 100}" AND key <= "${projectKey}-${(n + 1) * 100 - 1}")`,
-                `(key >= "${projectKey}-${n * 1000}" AND key <= "${projectKey}-${(n + 1) * 1000 - 1}")`,
-              ];
-              queryClause = `project = "${projectKey}" AND (${ranges.join(" OR ")})`;
+              const keys: string[] = [`${projectKey}-${n}`];
+              const lo = n * 10;
+              const hi = (n + 1) * 10 - 1;
+              for (let i = lo; i <= hi; i++) keys.push(`${projectKey}-${i}`);
+              queryClause = `key in (${keys.join(", ")})`;
             } else {
               queryClause = `project = "${projectKey}" AND sprint in openSprints() AND assignee = currentUser()`;
             }
@@ -228,8 +226,9 @@ export const JiraApiClientLive = Layer.effect(
           const isKeySearch = !!keyPatternMatch;
           const parts = [projectClause, queryClause].filter(Boolean);
           const orderBy = isKeySearch ? "ORDER BY key ASC" : "ORDER BY updated DESC";
-          const jql = encodeURIComponent(`${parts.join(" AND ")} ${orderBy}`);
-          path = `/ex/jira/${input.cloudId}/rest/api/3/search/jql?jql=${jql}&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`;
+          const rawJql = `${parts.join(" AND ")} ${orderBy}`;
+          const jql = encodeURIComponent(rawJql);
+          path = `/ex/jira/${input.cloudId}/rest/api/3/search/jql?jql=${jql}&validateQuery=warn&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`;
 
           const response = yield* authedFetch(path, "listIssues");
           const data = yield* parseJsonResponse<{
@@ -237,9 +236,34 @@ export const JiraApiClientLive = Layer.effect(
             total?: number;
           }>(response, "listIssues");
 
-          if (data.issues.length === 0 && keyPatternMatch && !(keyPatternMatch[2] ?? "")) {
+          if (data.issues.length === 0 && keyPatternMatch) {
+            const digits = keyPatternMatch[2] ?? "";
+            const projectKey = keyPatternMatch[1]!.toUpperCase();
+            if (digits.length > 0) {
+              const n = Number(digits);
+              const wideKeys: string[] = [];
+              const lo100 = n * 100;
+              const hi100 = (n + 1) * 100 - 1;
+              for (let i = lo100; i <= hi100; i++) wideKeys.push(`${projectKey}-${i}`);
+              const wideClause = `key in (${wideKeys.join(", ")})`;
+              const wideParts = [projectClause, wideClause].filter(Boolean);
+              const wideRawJql = `${wideParts.join(" AND ")} ORDER BY key ASC`;
+              const wideJql = encodeURIComponent(wideRawJql);
+              const widePath = `/ex/jira/${input.cloudId}/rest/api/3/search/jql?jql=${wideJql}&validateQuery=warn&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`;
+              const wideResponse = yield* authedFetch(widePath, "listIssues");
+              const wideData = yield* parseJsonResponse<{
+                issues: ReadonlyArray<JiraApiIssueRaw>;
+                total?: number;
+              }>(wideResponse, "listIssues");
+              return {
+                issues: wideData.issues.map(
+                  mapRawIssue(input.cloudId as string, siteUrlByCloudId, serverPort),
+                ),
+                total: wideData.total ?? wideData.issues.length,
+              } as unknown as JiraListIssuesResult;
+            }
             const fallbackJql = encodeURIComponent(
-              `${[projectClause, `project = "${keyPatternMatch[1]!.toUpperCase()}"`].filter(Boolean).join(" AND ")} ORDER BY updated DESC`,
+              `${[projectClause, `project = "${projectKey}"`].filter(Boolean).join(" AND ")} ORDER BY updated DESC`,
             );
             const fallbackPath = `/ex/jira/${input.cloudId}/rest/api/3/search/jql?jql=${fallbackJql}&startAt=${startAt}&maxResults=${maxResults}&fields=${fields}`;
             const fallbackResponse = yield* authedFetch(fallbackPath, "listIssues");

@@ -279,6 +279,24 @@ function JiraDetailCard(props: { header: string; body: string }) {
   );
 }
 
+const JIRA_COPY_PREFIX_CLASS_NAME =
+  "absolute overflow-hidden whitespace-nowrap pointer-events-none select-all";
+const JIRA_COPY_PREFIX_STYLE = {
+  fontSize: 0,
+  lineHeight: 0,
+  width: 0,
+  height: 0,
+  opacity: 0,
+} as const;
+
+function JiraCopyPrefix() {
+  return (
+    <span className={JIRA_COPY_PREFIX_CLASS_NAME} style={JIRA_COPY_PREFIX_STYLE} aria-hidden="true">
+      @jira:
+    </span>
+  );
+}
+
 export function JiraTaskInlineChip(props: JiraTaskInlineChipProps) {
   const { label, tooltipText, detailHeader, detailBody } = props;
   const hasDetail = detailHeader !== undefined && detailBody !== undefined;
@@ -290,6 +308,7 @@ export function JiraTaskInlineChip(props: JiraTaskInlineChipProps) {
           nativeButton={false}
           render={
             <span className={JIRA_CHIP_CLICKABLE_CLASS_NAME} data-jira-context="true">
+              <JiraCopyPrefix />
               <JiraIcon />
               <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
             </span>
@@ -307,6 +326,7 @@ export function JiraTaskInlineChip(props: JiraTaskInlineChipProps) {
       <TooltipTrigger
         render={
           <span className={JIRA_CHIP_CLASS_NAME} data-jira-context="true">
+            <JiraCopyPrefix />
             <JiraIcon />
             <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
           </span>

@@ -1746,7 +1746,9 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
     if (jiraIssuesError && isJiraAtQueryActive) {
       console.error("[jira autocomplete]", jiraIssuesError);
     }
-  }, [jiraIssuesError, isJiraAtQueryActive]);
+  }, [isJiraAtQueryActive, jiraIssuesError]);
+  const composerMenuEmptyState =
+    isJiraAtQueryActive && jiraIssuesError ? "Jira search failed. Check connection." : undefined;
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -2495,7 +2497,10 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
       }
     }
 
-    setShowScrollToBottom(!shouldAutoScrollRef.current);
+    const nextShowScrollToBottom = !shouldAutoScrollRef.current;
+    setShowScrollToBottom((prev) =>
+      prev === nextShowScrollToBottom ? prev : nextShowScrollToBottom,
+    );
     lastKnownScrollTopRef.current = currentScrollTop;
   }, []);
   const onMessagesWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
@@ -3230,7 +3235,14 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
       })();
       return true;
     },
-    [addComposerDraftJiraTaskContext, jiraCloudId, jiraConnected, queryClient, setPrompt, threadId],
+    [
+      addComposerDraftJiraTaskContext,
+      jiraCloudId,
+      jiraConnected,
+      queryClient,
+      setPrompt,
+      threadRef,
+    ],
   );
 
   const onComposerPaste = useCallback(
@@ -4787,7 +4799,7 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
             {/* Messages */}
             <div
               ref={setMessagesScrollContainerRef}
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain [overflow-anchor:none] px-3 py-3 sm:px-5 sm:py-4"
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-3 py-3 sm:px-5 sm:py-4"
               onScroll={onMessagesScroll}
               onClickCapture={onMessagesClickCapture}
               onWheel={onMessagesWheel}
@@ -4927,6 +4939,9 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
                           resolvedTheme={resolvedTheme}
                           isLoading={isComposerMenuLoading}
                           triggerKind={composerTriggerKind}
+                          {...(composerMenuEmptyState
+                            ? { emptyStateText: composerMenuEmptyState }
+                            : {})}
                           activeItemId={activeComposerMenuItem?.id ?? null}
                           onHighlightedItemChange={onComposerMenuItemHighlighted}
                           onSelect={onSelectComposerItem}

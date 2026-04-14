@@ -8,6 +8,9 @@ import {
   formatJiraTaskInlineLabel,
   jiraTaskDedupKey,
   buildJiraContextBlock,
+  extractTrailingJiraContexts,
+  stripInlineJiraContextPlaceholders,
+  INLINE_JIRA_CONTEXT_PLACEHOLDER,
 } from "./jiraContext";
 import type { JiraIssue } from "@marcode/contracts";
 
@@ -83,5 +86,53 @@ describe("jiraContext", () => {
   it("formatJiraTaskInlineLabel returns @jira:KEY", () => {
     const draft = jiraIssueToTaskDraft(makeMockJiraIssue());
     expect(formatJiraTaskInlineLabel(draft)).toBe("@jira:PROJ-123");
+  });
+
+  it("parseJiraUrl trims whitespace around URLs", () => {
+    expect(parseJiraUrl("  https://myorg.atlassian.net/browse/PROJ-456  ")).toBe("PROJ-456");
+  });
+
+  it("parseJiraUrl rejects URLs with query params or extra path segments", () => {
+    expect(parseJiraUrl("https://myorg.atlassian.net/browse/PROJ-123?foo=bar")).toBeNull();
+    expect(parseJiraUrl("https://myorg.atlassian.net/browse/PROJ-123/extra")).toBeNull();
+  });
+
+  it("parseJiraUrl rejects text containing a URL among other content", () => {
+    expect(parseJiraUrl("check https://myorg.atlassian.net/browse/PROJ-123 out")).toBeNull();
+  });
+
+  it("extractTrailingJiraContexts strips trailing context block from prompt", () => {
+    const prompt =
+      "hello @jira:PROJ-123\n<jira_context>\n[PROJ-123] Fix bug\nStatus: Open\n</jira_context>";
+    const result = extractTrailingJiraContexts(prompt);
+    expect(result.promptText).toBe("hello @jira:PROJ-123");
+    expect(result.contextCount).toBe(1);
+    expect(result.contexts[0]?.header).toBe("[PROJ-123] Fix bug");
+  });
+
+  it("stripInlineJiraContextPlaceholders removes all placeholder chars", () => {
+    const input = `hello${INLINE_JIRA_CONTEXT_PLACEHOLDER}world${INLINE_JIRA_CONTEXT_PLACEHOLDER}`;
+    expect(stripInlineJiraContextPlaceholders(input)).toBe("helloworld");
+  });
+
+  it("buildJiraContextBlock formats multiple tasks with separator", () => {
+    const task1 = jiraIssueToTaskDraft(makeMockJiraIssue());
+    const task2 = jiraIssueToTaskDraft(
+      makeMockJiraIssue({
+        key: "PROJ-456" as JiraIssue["key"],
+        summary: "Another bug" as JiraIssue["summary"],
+      }),
+    );
+    const block = buildJiraContextBlock([task1, task2]);
+    expect(block).toContain("<jira_context>");
+    expect(block).toContain("</jira_context>");
+    expect(block).toContain("[PROJ-123]");
+    expect(block).toContain("[PROJ-456]");
+    expect(block).toContain("<!-- jira-task-separator -->");
+  });
+
+  it("jiraTaskDedupKey uppercases issue key for dedup", () => {
+    const draft = jiraIssueToTaskDraft(makeMockJiraIssue());
+    expect(jiraTaskDedupKey(draft)).toBe("PROJ-123");
   });
 });

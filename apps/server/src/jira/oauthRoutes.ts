@@ -6,7 +6,8 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 import { ServerConfig, type ServerConfigShape } from "../config";
 import { JiraTokenService } from "./Services/JiraTokenService";
 import type { JiraTokenSet } from "./Services/JiraTokenService";
-import { JiraOAuthError, JiraTokenError } from "./Errors";
+import { JiraApiClient } from "./Services/JiraApiClient";
+import { JiraOAuthError, JiraTokenError, JiraApiError } from "./Errors";
 
 const ATLASSIAN_AUTHORIZE_URL = "https://auth.atlassian.com/authorize";
 
@@ -342,6 +343,53 @@ export const jiraCallbackRouteLayer = HttpRouter.add(
           error.message,
         ),
       ),
+    ),
+  ),
+);
+
+const DATA_URI_RE = /^data:([^;]+);base64,(.+)$/;
+
+export const jiraAttachmentProxyRouteLayer = HttpRouter.add(
+  "GET",
+  "/api/jira/attachment/:attachmentId",
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const url = HttpServerRequest.toURL(request);
+    if (Option.isNone(url)) {
+      return HttpServerResponse.text("Bad Request", { status: 400 });
+    }
+
+    const pathParams = yield* HttpRouter.params;
+    const attachmentId = pathParams.attachmentId;
+    const cloudId = url.value.searchParams.get("cloudId");
+
+    if (!attachmentId || !cloudId) {
+      return HttpServerResponse.text("Missing attachmentId or cloudId", { status: 400 });
+    }
+
+    const jiraClient = yield* JiraApiClient;
+    const result = yield* jiraClient.getAttachment({
+      cloudId: cloudId as typeof import("@marcode/contracts").JiraCloudId.Type,
+      attachmentId: attachmentId as typeof import("@marcode/contracts").TrimmedNonEmptyString.Type,
+    });
+
+    const dataUriMatch = DATA_URI_RE.exec(result.content);
+    if (dataUriMatch) {
+      const mimeType = dataUriMatch[1]!;
+      const base64Data = dataUriMatch[2]!;
+      const buffer = Buffer.from(base64Data, "base64");
+      return HttpServerResponse.uint8Array(new Uint8Array(buffer), {
+        contentType: mimeType,
+        headers: { "Cache-Control": "private, max-age=3600" },
+      });
+    }
+
+    return HttpServerResponse.text(result.content, {
+      contentType: result.mimeType,
+    });
+  }).pipe(
+    Effect.catch((error: JiraApiError | JiraTokenError) =>
+      Effect.succeed(HttpServerResponse.text(error.message, { status: 502 })),
     ),
   ),
 );

@@ -4,6 +4,9 @@ import * as FS from "node:fs";
 import * as OS from "node:os";
 import * as Path from "node:path";
 
+declare const __EMBEDDED_MARCODE_JIRA_REDIRECT_URI__: string;
+declare const __EMBEDDED_MARCODE_JIRA_TOKEN_PROXY_URL__: string;
+
 import {
   app,
   BrowserWindow,
@@ -219,6 +222,17 @@ function backendChildEnv(): NodeJS.ProcessEnv {
   delete env.MARCODE_DESKTOP_WS_URL;
   delete env.MARCODE_DESKTOP_LAN_ACCESS;
   delete env.MARCODE_DESKTOP_LAN_HOST;
+
+  const embeddedJiraDefaults: ReadonlyArray<[string, string]> = [
+    ["MARCODE_JIRA_REDIRECT_URI", __EMBEDDED_MARCODE_JIRA_REDIRECT_URI__],
+    ["MARCODE_JIRA_TOKEN_PROXY_URL", __EMBEDDED_MARCODE_JIRA_TOKEN_PROXY_URL__],
+  ];
+  for (const [key, embedded] of embeddedJiraDefaults) {
+    if (!env[key] && embedded) {
+      env[key] = embedded;
+    }
+  }
+
   return env;
 }
 

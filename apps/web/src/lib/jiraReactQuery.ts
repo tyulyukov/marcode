@@ -79,6 +79,7 @@ export function jiraIssueSearchQueryOptions(cloudId: JiraCloudId, query: string)
       return result;
     },
     staleTime: 30 * 1000,
+    retry: 1,
     enabled: cloudId.length > 0 && query.length > 0,
   });
 }
