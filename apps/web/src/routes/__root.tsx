@@ -75,14 +75,10 @@ function RouteTransitionGuard({ children }: { children: ReactNode }) {
 
   const targetIsSettings = targetPathname.startsWith("/settings");
   const resolvedIsSettings = resolvedPathname?.startsWith("/settings") ?? false;
-  const isCrossZoneTransition =
-    resolvedPathname != null && targetIsSettings !== resolvedIsSettings;
+  const isCrossZoneTransition = resolvedPathname != null && targetIsSettings !== resolvedIsSettings;
 
   return (
-    <div
-      className="contents"
-      style={isCrossZoneTransition ? { visibility: "hidden" } : undefined}
-    >
+    <div className="contents" style={isCrossZoneTransition ? { visibility: "hidden" } : undefined}>
       {children}
     </div>
   );

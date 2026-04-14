@@ -39,7 +39,10 @@ interface OrchestrationHandlers {
     events: ReadonlyArray<OrchestrationEvent>,
     environmentId: EnvironmentId,
   ) => void;
-  readonly syncListingSnapshot: (listing: OrchestrationListingSnapshot, environmentId: EnvironmentId) => void;
+  readonly syncListingSnapshot: (
+    listing: OrchestrationListingSnapshot,
+    environmentId: EnvironmentId,
+  ) => void;
   readonly applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => void;
 }
 

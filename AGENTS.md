@@ -181,7 +181,6 @@ MarCode has its own database migrations that were added at specific IDs. When me
 5. After reordering, update `apps/server/src/persistence/Migrations.ts` (imports + `migrationEntries` array).
 6. Always test with both a **fresh database** (all migrations run) and verify the sequence is correct for **existing users** (only new migrations run).
 
-
 ## Testing
 
 ### Regression Test Suite

@@ -77,8 +77,12 @@ export function readWindowState(statePath: string): WindowState {
 
     const x = isValidNumber(parsed.x) ? parsed.x : DEFAULT_WINDOW_STATE.x;
     const y = isValidNumber(parsed.y) ? parsed.y : DEFAULT_WINDOW_STATE.y;
-    const width = isValidNumber(parsed.width) && parsed.width > 0 ? parsed.width : DEFAULT_WINDOW_STATE.width;
-    const height = isValidNumber(parsed.height) && parsed.height > 0 ? parsed.height : DEFAULT_WINDOW_STATE.height;
+    const width =
+      isValidNumber(parsed.width) && parsed.width > 0 ? parsed.width : DEFAULT_WINDOW_STATE.width;
+    const height =
+      isValidNumber(parsed.height) && parsed.height > 0
+        ? parsed.height
+        : DEFAULT_WINDOW_STATE.height;
     const isMaximized = typeof parsed.isMaximized === "boolean" ? parsed.isMaximized : false;
 
     return { x, y, width, height, isMaximized };

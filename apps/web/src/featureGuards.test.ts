@@ -107,9 +107,7 @@ describe("MarCode feature guards", () => {
 
   it("bootstrap uses listing snapshot, not full snapshot", () => {
     const connectionSource = readSrc("environments/runtime/connection.ts");
-    const recoveryBody = connectionSource.slice(
-      connectionSource.indexOf("runSnapshotRecovery"),
-    );
+    const recoveryBody = connectionSource.slice(connectionSource.indexOf("runSnapshotRecovery"));
     expect(recoveryBody).toContain("getListingSnapshot");
     expect(recoveryBody).not.toContain("getSnapshot()");
   });

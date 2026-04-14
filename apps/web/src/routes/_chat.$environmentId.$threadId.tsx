@@ -28,7 +28,12 @@ import {
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { readEnvironmentApi } from "../environmentApi";
-import { isThreadHydrated, selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
+import {
+  isThreadHydrated,
+  selectEnvironmentState,
+  selectThreadExistsByRef,
+  useStore,
+} from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { Sheet, SheetPopup } from "../components/ui/sheet";

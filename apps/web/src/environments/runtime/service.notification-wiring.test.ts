@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const SERVICE_SOURCE = readFileSync(
-  resolve(__dirname, "service.ts"),
-  "utf-8",
-);
+const SERVICE_SOURCE = readFileSync(resolve(__dirname, "service.ts"), "utf-8");
 
 describe("notification wiring regression guard", () => {
   it("imports deriveTurnNotificationTriggers", () => {
