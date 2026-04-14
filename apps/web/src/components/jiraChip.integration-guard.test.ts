@@ -42,7 +42,7 @@ describe("Jira chip paste integration guard", () => {
 
   it("onComposerJiraPaste callback has threadRef in dependency array", () => {
     const src = readSource(CHATVIEW_PATH);
-    const jiraPasteDeps = src.match(/\[addComposerDraftJiraTaskContext.*?threadRef\]/s);
+    const jiraPasteDeps = src.match(/\[\s*addComposerDraftJiraTaskContext.*?threadRef[,\s]*\]/s);
     expect(jiraPasteDeps).not.toBeNull();
     expect(jiraPasteDeps?.[0]).toContain("threadRef");
     expect(jiraPasteDeps?.[0]).not.toMatch(/threadId\]/);
