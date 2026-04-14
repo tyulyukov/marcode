@@ -2,7 +2,7 @@ import {
   type AuthSessionRole,
   type EnvironmentId,
   type OrchestrationEvent,
-  type OrchestrationReadModel,
+  type OrchestrationListingSnapshot,
   type ServerConfig,
   type TerminalEvent,
   ThreadId,
@@ -304,8 +304,8 @@ function applyRecoveredEventBatch(
 function createEnvironmentConnectionHandlers() {
   return {
     applyEventBatch: applyRecoveredEventBatch,
-    syncSnapshot: (snapshot: OrchestrationReadModel, environmentId: EnvironmentId) => {
-      useStore.getState().syncServerReadModel(snapshot, environmentId);
+    syncListingSnapshot: (listing: OrchestrationListingSnapshot, environmentId: EnvironmentId) => {
+      useStore.getState().syncListingSnapshot(listing, environmentId);
       reconcileSnapshotDerivedState();
     },
     applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => {

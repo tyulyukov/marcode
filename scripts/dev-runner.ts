@@ -27,10 +27,10 @@ const MODE_ARGS = {
     "--ui=tui",
     "--filter=@marcode/contracts",
     "--filter=@marcode/web",
-    "--filter=marcode",
+    "--filter=@tyulyukov/marcode",
     "--parallel",
   ],
-  "dev:server": ["run", "dev", "--filter=marcode"],
+  "dev:server": ["run", "dev", "--filter=@tyulyukov/marcode"],
   "dev:web": ["run", "dev", "--filter=@marcode/web"],
   "dev:desktop": ["run", "dev", "--filter=@marcode/desktop", "--filter=@marcode/web", "--parallel"],
 } as const satisfies Record<string, ReadonlyArray<string>>;

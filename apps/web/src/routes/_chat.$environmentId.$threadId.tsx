@@ -4,9 +4,9 @@ import {
   lazy,
   type ReactNode,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -27,7 +27,8 @@ import {
   stripDiffSearchParams,
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
+import { readEnvironmentApi } from "../environmentApi";
+import { isThreadHydrated, selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
@@ -39,6 +40,8 @@ const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
+const HYDRATION_RETRY_DELAY_MS = 1000;
+const MAX_HYDRATION_RETRIES = 5;
 
 const DiffPanelSheet = (props: {
   children: ReactNode;
@@ -199,6 +202,11 @@ function ChatThreadRouteView() {
     return store.hasDraftThreadsInEnvironment(threadRef.environmentId);
   });
   const routeThreadExists = threadExists || draftThreadExists;
+  const needsHydration = serverThread !== undefined && !isThreadHydrated(serverThread);
+  const hydrateThread = useStore((store) => store.hydrateThread);
+  const hydrationInFlightRef = useRef<string | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hydrationRetry, setHydrationRetry] = useState(0);
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
   const diffOpen = search.diff === "1";
@@ -265,10 +273,53 @@ function ChatThreadRouteView() {
     finalizePromotedDraftThreadByRef(threadRef);
   }, [draftThread?.promotedTo, serverThreadStarted, threadRef]);
 
-  const deferredThreadKey = useDeferredValue(currentThreadKey);
-  const isThreadTransitioning = currentThreadKey !== deferredThreadKey;
+  const threadEnvironmentId = threadRef?.environmentId ?? null;
+  const threadThreadId = threadRef?.threadId ?? null;
 
-  if (!threadRef || !bootstrapComplete || !routeThreadExists || isThreadTransitioning) {
+  useEffect(() => {
+    setHydrationRetry(0);
+  }, [threadEnvironmentId, threadThreadId]);
+
+  useEffect(() => {
+    if (!needsHydration || !threadEnvironmentId || !threadThreadId) return;
+    if (hydrationRetry >= MAX_HYDRATION_RETRIES) return;
+    const threadKey = `${threadEnvironmentId}:${threadThreadId}`;
+    if (hydrationInFlightRef.current === threadKey) return;
+
+    const api = readEnvironmentApi(threadEnvironmentId);
+    if (!api) return;
+
+    hydrationInFlightRef.current = threadKey;
+    let cancelled = false;
+    api.orchestration
+      .getThread({ threadId: threadThreadId })
+      .then((fullThread) => {
+        if (!cancelled && fullThread) {
+          hydrateThread(fullThread, threadEnvironmentId);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          retryTimerRef.current = setTimeout(
+            () => setHydrationRetry((n) => n + 1),
+            HYDRATION_RETRY_DELAY_MS,
+          );
+        }
+      })
+      .finally(() => {
+        hydrationInFlightRef.current = null;
+      });
+    return () => {
+      cancelled = true;
+      hydrationInFlightRef.current = null;
+      if (retryTimerRef.current !== null) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
+  }, [threadEnvironmentId, threadThreadId, needsHydration, hydrateThread, hydrationRetry]);
+
+  if (!threadRef || !bootstrapComplete || !routeThreadExists || needsHydration) {
     return <ChatViewSkeleton />;
   }
 

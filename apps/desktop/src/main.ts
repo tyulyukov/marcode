@@ -1672,7 +1672,7 @@ function saveWindowState(window: BrowserWindow): void {
   writeWindowState(WINDOW_STATE_PATH, lastWindowState);
 }
 
-function createWindow(): BrowserWindow {
+function createWindow(options?: { deferLoad?: boolean }): BrowserWindow {
   const restoredBounds = resolveWindowBounds(lastWindowState);
 
   const window = new BrowserWindow({
@@ -1783,7 +1783,9 @@ function createWindow(): BrowserWindow {
   }
 
   if (isDevelopment) {
-    void window.loadURL(resolveDesktopDevServerUrl());
+    if (!options?.deferLoad) {
+      void window.loadURL(resolveDesktopDevServerUrl());
+    }
     window.webContents.openDevTools({ mode: "detach" });
     setImmediate(() => {
       revealWindow(window);
@@ -1864,11 +1866,15 @@ async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap backend start requested");
 
   if (isDevelopment) {
-    mainWindow = createWindow();
-    writeDesktopLogHeader("bootstrap main window created");
+    mainWindow = createWindow({ deferLoad: true });
+    writeDesktopLogHeader("bootstrap main window created (deferred load)");
     void waitForBackendHttpReady(backendHttpUrl)
       .then(() => {
         writeDesktopLogHeader("bootstrap backend ready");
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          void mainWindow.loadURL(resolveDesktopDevServerUrl());
+          writeDesktopLogHeader("bootstrap dev URL loaded after backend ready");
+        }
       })
       .catch((error) => {
         if (isBackendReadinessAborted(error)) {
@@ -1878,6 +1884,9 @@ async function bootstrap(): Promise<void> {
           `bootstrap backend readiness warning message=${formatErrorMessage(error)}`,
         );
         console.warn("[desktop] backend readiness check timed out during dev bootstrap", error);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          void mainWindow.loadURL(resolveDesktopDevServerUrl());
+        }
       });
     return;
   }

@@ -83,7 +83,7 @@ describe("MarCode feature guards", () => {
     }
   });
 
-  it("no T3/t3tools branding references in key source files", () => {
+  it("no upstream branding references in key source files", () => {
     const keyFiles = ["store.ts", "session-logic.ts", "types.ts"];
     for (const file of keyFiles) {
       if (!fileExists(file)) continue;
@@ -101,5 +101,35 @@ describe("MarCode feature guards", () => {
   it("lazy thread hydration exists", () => {
     const storeSource = readSrc("store.ts");
     expect(storeSource).toContain("threadShellById");
+    expect(storeSource).toContain("syncListingSnapshot");
+    expect(storeSource).toContain("hydrateThread");
+  });
+
+  it("bootstrap uses listing snapshot, not full snapshot", () => {
+    const connectionSource = readSrc("environments/runtime/connection.ts");
+    const recoveryBody = connectionSource.slice(
+      connectionSource.indexOf("runSnapshotRecovery"),
+    );
+    expect(recoveryBody).toContain("getListingSnapshot");
+    expect(recoveryBody).not.toContain("getSnapshot()");
+  });
+
+  it("service handler maps to syncListingSnapshot", () => {
+    const serviceSource = readSrc("environments/runtime/service.ts");
+    const handlerBody = serviceSource.slice(
+      serviceSource.indexOf("createEnvironmentConnectionHandlers"),
+    );
+    expect(handlerBody).toContain("syncListingSnapshot");
+  });
+
+  it("route triggers per-thread lazy hydration", () => {
+    const routeSource = readSrc("routes/_chat.$environmentId.$threadId.tsx");
+    expect(routeSource).toContain("needsHydration");
+    expect(routeSource).toContain("hydrateThread");
+    expect(routeSource).toContain("readEnvironmentApi");
+    expect(routeSource).toContain("getThread");
+    expect(routeSource).toContain("MAX_HYDRATION_RETRIES");
+    expect(routeSource).toContain("retryTimerRef");
+    expect(routeSource).toContain("clearTimeout");
   });
 });

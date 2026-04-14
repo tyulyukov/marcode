@@ -6,8 +6,9 @@ import {
   type ErrorComponentProps,
   useLocation,
   useNavigate,
+  useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useEffectEvent, useRef } from "react";
+import { useEffect, useEffectEvent, useRef, type ReactNode } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import { APP_DISPLAY_NAME } from "../branding";
@@ -66,6 +67,27 @@ export const Route = createRootRouteWithContext<{
   }),
 });
 
+function RouteTransitionGuard({ children }: { children: ReactNode }) {
+  const targetPathname = useLocation({ select: (loc) => loc.pathname });
+  const resolvedPathname = useRouterState({
+    select: (s) => s.resolvedLocation?.pathname,
+  });
+
+  const targetIsSettings = targetPathname.startsWith("/settings");
+  const resolvedIsSettings = resolvedPathname?.startsWith("/settings") ?? false;
+  const isCrossZoneTransition =
+    resolvedPathname != null && targetIsSettings !== resolvedIsSettings;
+
+  return (
+    <div
+      className="contents"
+      style={isCrossZoneTransition ? { visibility: "hidden" } : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
@@ -98,7 +120,9 @@ function RootRouteView() {
         <WebSocketConnectionSurface>
           <CommandPalette>
             <AppSidebarLayout>
-              <Outlet />
+              <RouteTransitionGuard>
+                <Outlet />
+              </RouteTransitionGuard>
             </AppSidebarLayout>
           </CommandPalette>
         </WebSocketConnectionSurface>

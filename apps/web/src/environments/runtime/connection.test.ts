@@ -5,7 +5,7 @@ import { createEnvironmentConnection } from "./connection";
 import type { WsRpcClient } from "~/rpc/wsRpcClient";
 
 function createTestClient(options?: {
-  readonly getSnapshot?: () => Promise<{ readonly snapshotSequence: number }>;
+  readonly getListingSnapshot?: () => Promise<{ readonly snapshotSequence: number }>;
   readonly replayEvents?: () => Promise<ReadonlyArray<any>>;
 }) {
   const lifecycleListeners = new Set<(event: any) => void>();
@@ -13,8 +13,8 @@ function createTestClient(options?: {
   const terminalListeners = new Set<(event: any) => void>();
   let domainResubscribe: (() => void) | undefined;
 
-  const getSnapshot = vi.fn(
-    options?.getSnapshot ??
+  const getListingSnapshot = vi.fn(
+    options?.getListingSnapshot ??
       (async () =>
         ({
           snapshotSequence: 1,
@@ -48,7 +48,8 @@ function createTestClient(options?: {
       updateSettings: vi.fn(async () => undefined),
     },
     orchestration: {
-      getSnapshot,
+      getSnapshot: vi.fn(async () => undefined),
+      getListingSnapshot,
       dispatchCommand: vi.fn(async () => undefined),
       getTurnDiff: vi.fn(async () => undefined),
       getFullThreadDiff: vi.fn(async () => undefined),
@@ -99,7 +100,7 @@ function createTestClient(options?: {
 
   return {
     client,
-    getSnapshot,
+    getListingSnapshot,
     replayEvents,
     emitWelcome: (environmentId: EnvironmentId) => {
       for (const listener of lifecycleListeners) {
@@ -132,10 +133,10 @@ function createTestClient(options?: {
 }
 
 describe("createEnvironmentConnection", () => {
-  it("bootstraps a snapshot immediately for a new connection", async () => {
+  it("bootstraps a listing snapshot immediately for a new connection", async () => {
     const environmentId = EnvironmentId.make("env-1");
-    const { client, getSnapshot } = createTestClient();
-    const syncSnapshot = vi.fn();
+    const { client, getListingSnapshot } = createTestClient();
+    const syncListingSnapshot = vi.fn();
 
     const connection = createEnvironmentConnection({
       kind: "saved",
@@ -151,15 +152,15 @@ describe("createEnvironmentConnection", () => {
       },
       client,
       applyEventBatch: vi.fn(),
-      syncSnapshot,
+      syncListingSnapshot,
       applyTerminalEvent: vi.fn(),
     });
 
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(getSnapshot).toHaveBeenCalledTimes(1);
-    expect(syncSnapshot).toHaveBeenCalledWith(
+    expect(getListingSnapshot).toHaveBeenCalledTimes(1);
+    expect(syncListingSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ snapshotSequence: 1 }),
       environmentId,
     );
@@ -185,7 +186,7 @@ describe("createEnvironmentConnection", () => {
       },
       client,
       applyEventBatch: vi.fn(),
-      syncSnapshot: vi.fn(),
+      syncListingSnapshot: vi.fn(),
       applyTerminalEvent: vi.fn(),
     });
 
@@ -200,7 +201,7 @@ describe("createEnvironmentConnection", () => {
     const environmentId = EnvironmentId.make("env-1");
     const snapshotError = new Error("snapshot failed");
     const { client } = createTestClient({
-      getSnapshot: async () => {
+      getListingSnapshot: async () => {
         throw snapshotError;
       },
     });
@@ -219,7 +220,7 @@ describe("createEnvironmentConnection", () => {
       },
       client,
       applyEventBatch: vi.fn(),
-      syncSnapshot: vi.fn(),
+      syncListingSnapshot: vi.fn(),
       applyTerminalEvent: vi.fn(),
     });
 
@@ -263,7 +264,7 @@ describe("createEnvironmentConnection", () => {
       },
       client,
       applyEventBatch,
-      syncSnapshot: vi.fn(),
+      syncListingSnapshot: vi.fn(),
       applyTerminalEvent: vi.fn(),
     });
 
@@ -291,7 +292,7 @@ describe("createEnvironmentConnection", () => {
     const snapshotError = new Error("snapshot failed");
     let snapshotCalls = 0;
     const { client, triggerDomainResubscribe } = createTestClient({
-      getSnapshot: async () => {
+      getListingSnapshot: async () => {
         snapshotCalls += 1;
         if (snapshotCalls === 1) {
           return {
@@ -322,7 +323,7 @@ describe("createEnvironmentConnection", () => {
       },
       client,
       applyEventBatch: vi.fn(),
-      syncSnapshot: vi.fn(),
+      syncListingSnapshot: vi.fn(),
       applyTerminalEvent: vi.fn(),
     });
 

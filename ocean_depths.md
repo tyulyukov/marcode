@@ -1,0 +1,7 @@
+# The Ocean Depths
+
+Beneath the surface of the Pacific, pressure mounts with every meter of descent. At a thousand meters, sunlight has long since surrendered to the dark, and the water presses against everything with the weight of a hundred atmospheres. Creatures here have evolved bioluminescence not as decoration but as survival — lanterns in an infinite night, signaling mates, luring prey, and confusing predators with choreographed displays of cold blue fire.
+
+The hadal zone, named after Hades himself, begins at six thousand meters. Here, the trenches carve wounds into the ocean floor that could swallow mountains whole. The Mariana Trench drops to nearly eleven thousand meters, a depth so extreme that if Mount Everest were placed at its bottom, its peak would still be submerged by more than a mile of black water. Yet even here, life persists — amphipods scavenge in the silt, xenophyophores sprawl across the sediment like living carpets, and bacteria thrive in conditions that would obliterate most known organisms.
+
+Perhaps the most unsettling fact about the deep ocean is how little of it we have explored. More humans have walked on the surface of the Moon than have visited the deepest points of our own planet. The maps we have of Mars are more detailed than those of our ocean floor. Somewhere in that unmapped darkness, entire ecosystems pulse and feed and reproduce, completely indifferent to whether we ever find them.

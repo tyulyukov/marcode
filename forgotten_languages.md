@@ -1,0 +1,7 @@
+# Forgotten Languages
+
+Every two weeks, a language dies. Not with a dramatic final broadcast or a monument erected in its honor, but quietly — in a hospital bed, at a kitchen table, in the middle of a sentence that no one else on Earth can finish. The last fluent speaker of Eyak passed away in Alaska in 2008. With her went not just vocabulary and grammar, but an entire framework for understanding the world — concepts that English has no words for, metaphors rooted in landscapes that only that language could describe.
+
+Linguists sometimes speak of "language nests," small immersive environments where children are raised hearing and speaking endangered tongues. In New Zealand, Maori language nests have helped pull te reo Maori back from the edge. In Hawaii, similar programs have given 'Olelo Hawai'i a second wind. But for every success story, there are dozens of languages slipping away without any intervention at all, their speakers switching to dominant languages out of economic necessity or social pressure, their children growing up monolingual in a tongue their grandparents would have considered foreign.
+
+The Pirah people of the Amazon speak a language with no fixed words for numbers, no perfect tense, and no embedded clauses. Their communication challenges fundamental assumptions about what human language must contain. If Pirah vanishes, we lose not just a way of speaking but a living counterexample to theories that have shaped our understanding of cognition itself. Every extinct language is a closed door to a room we never entered.

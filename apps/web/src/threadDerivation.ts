@@ -137,7 +137,7 @@ export function getThreadFromEnvironmentState(
     proposedPlans,
     turnDiffSummaries,
     additionalDirectories: [],
-    hydrated: true,
+    hydrated: shell.hydrated,
   };
 
   threadCache.set(shell, {

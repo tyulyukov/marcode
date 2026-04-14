@@ -3,23 +3,23 @@
 ## GitHub Repository
 
 - **Origin**: `tyulyukov/marcode` (this is the main repo for CI checks)
-- **Upstream**: `pingdotgg/t3code` (the fork source — do NOT check CI here)
+- **Upstream**: `pingdotgg/t3code` (the fork source — do NOT check CI here, do NOT reference upstream branding)
 - When checking CI status, always use `--repo tyulyukov/marcode` with `gh` commands.
 
 ## Rebrand Note
 
-This project was forked from T3 Code and fully rebranded to MarCode. When merging upstream changes, always check for and replace any remaining T3 references, and **reject reintroduction of JS virtualization in `MessagesTimeline.tsx`** (see "Timeline rendering" section under Performance):
+This project was forked from upstream and fully rebranded to MarCode. When merging upstream changes, always check for and replace any remaining upstream references, and **reject reintroduction of JS virtualization in `MessagesTimeline.tsx`** (see "Timeline rendering" section under Performance):
 
 - Package imports: `@marcode/contracts`, `@marcode/shared/*` (never `@t3tools`)
 - Env vars: `MARCODE_` prefix (never `T3CODE_`)
 - Branch prefixes in tests: `marcode/` (never `t3code/`)
 - Test file prefixes: `marcode-` (never `t3-`)
-- User-facing strings: "MarCode" (never "T3 Code")
+- User-facing strings: "MarCode" (never upstream branding)
 - Monorepo name in `bun.lock`/`package.json`: `@marcode/monorepo`
 
 ## Task Completion Requirements
 
-- All of `bun fmt`, `bun lint`, and `bun typecheck` must pass before considering tasks completed.
+- All of `bun fmt`, `bun lint`, `bun typecheck` and all relevant tests must pass before considering tasks completed.
 - Do NOT run `bun run build` — typecheck is sufficient for validation.
 - NEVER run `bun test`. Always use `bun run test` (runs Vitest).
 
@@ -116,7 +116,7 @@ ChatView uses **fine-grained Zustand selectors** (one per thread/project ID) ins
 
 ### Timeline rendering: NO JS virtualization (`MessagesTimeline.tsx`)
 
-**CRITICAL — DO NOT REINTRODUCE `@tanstack/react-virtual` or any JS virtualizer for the messages timeline.** This has been deliberately removed twice. Upstream (T3 Code) uses `useVirtualizer` with absolute positioning + `transform: translateY()`, but it causes persistent message overlap and scroll lag in MarCode because:
+**CRITICAL — DO NOT REINTRODUCE `@tanstack/react-virtual` or any JS virtualizer for the messages timeline.** This has been deliberately removed twice. Upstream uses `useVirtualizer` with absolute positioning + `transform: translateY()`, but it causes persistent message overlap and scroll lag in MarCode because:
 
 - Variable-height messages (markdown, code blocks, images, expandable diffs, quoted contexts) make height estimation fundamentally inaccurate
 - Async content (Suspense code highlighting, image loads) changes height after initial measurement
@@ -161,49 +161,16 @@ className = "pr-3 sm:pr-5 pl-[90px]";
 
 The same applies to `py-*` vs `pt-*`/`pb-*`.
 
-## Custom Theme System
+## Reference Repos
 
-MarCode supports 24+ themes across 12 families (MarCode branded, Catppuccin, Solarized, Dracula, Nord, One Dark, GitHub, Gruvbox, Tokyo Night, Rosé Pine, Ayu, Monokai). The default "System" preference uses branded MarCode Light/Dark based on OS preference.
+- Open-source Codex repo: https://github.com/openai/codex
+- Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
 
-### Architecture
-
-- **Theme definitions** live in `apps/web/src/themes/definitions/` — one file per family, each exporting a `readonly ThemeDefinition[]`.
-- **Registry** (`apps/web/src/themes/registry.ts`) — `THEME_REGISTRY` array, `THEME_MAP` for O(1) lookup, `THEME_GROUPS` for UI grouping.
-- **Application** (`apps/web/src/themes/apply.ts`) — `applyThemeToDOM()` sets CSS variables via `document.documentElement.style` inline overrides (highest specificity). MarCode branded themes (`variables: null`) use the existing CSS cascade in `index.css` untouched.
-- **Hook** (`apps/web/src/hooks/useTheme.ts`) — `useTheme()` returns `{ theme, activeTheme, resolvedTheme, setTheme }`. `resolvedTheme` is always `"light" | "dark"` derived from `ThemeDefinition.base`.
-- **UI** (`apps/web/src/components/settings/ThemePicker.tsx`) — Grouped `Select` dropdown in Settings > General.
-
-### Key Patterns
-
-- `.dark` class on `<html>` is toggled based on `ThemeDefinition.base` — all `dark:` Tailwind utilities continue working.
-- Custom theme CSS vars are set as inline styles on `document.documentElement`; cleared when switching back to branded themes.
-- `resolvedTheme` ("light"|"dark") is used by diff rendering, code highlighting, and ~12 consumer components — none need changes when adding themes.
-- localStorage migration: old `"light"` → `"marcode-light"`, `"dark"` → `"marcode-dark"`, handled transparently in `getStored()`.
-
-### Adding New Themes
-
-1. Create a new file in `apps/web/src/themes/definitions/` exporting a `ThemeDefinition[]`.
-2. Add the `ThemeGroup` value to the union in `apps/web/src/themes/types.ts`.
-3. Import and spread into `THEME_REGISTRY` in `apps/web/src/themes/registry.ts`.
-4. Add the group entry to `THEME_GROUPS` in the same file.
+Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
 
 ## Upstream Merge: Migration Ordering
 
-MarCode has its own database migrations that were added at specific IDs. When merging upstream t3code changes that introduce NEW migrations, **never renumber existing MarCode migrations** — existing users already have them applied at their original IDs. The Effect SQL migrator tracks migrations by numeric ID in the `effect_sql_migrations` table; renumbering causes it to skip the new upstream tables (thinking those IDs are done) and attempt to re-create existing tables at the new IDs.
-
-**Current migration layout (as of upstream sync April 2026):**
-
-| IDs     | Origin                         | Content                                  |
-| ------- | ------------------------------ | ---------------------------------------- |
-| 001–018 | Shared (upstream + MarCode)    | Core schema, projections, checkpoints    |
-| 019     | MarCode                        | `ProjectJiraBoard`                       |
-| 020     | MarCode                        | `ProjectionThreadsAdditionalDirectories` |
-| 021     | _(gap — intentionally unused)_ |                                          |
-| 022     | MarCode                        | `ProjectionSnapshotOrderIndexes`         |
-| 023     | Upstream (was 019)             | `ProjectionSnapshotLookupIndexes`        |
-| 024     | Upstream (was 020)             | `AuthAccessManagement`                   |
-| 025     | Upstream (was 021)             | `AuthSessionClientMetadata`              |
-| 026     | Upstream (was 022)             | `AuthSessionLastConnectedAt`             |
+MarCode has its own database migrations that were added at specific IDs. When merging upstream changes that introduce NEW migrations, **never renumber existing MarCode migrations** — existing users already have them applied at their original IDs. The Effect SQL migrator tracks migrations by numeric ID in the `effect_sql_migrations` table; renumbering causes it to skip the new upstream tables (thinking those IDs are done) and attempt to re-create existing tables at the new IDs.
 
 **Rules for future upstream merges:**
 
@@ -214,112 +181,6 @@ MarCode has its own database migrations that were added at specific IDs. When me
 5. After reordering, update `apps/server/src/persistence/Migrations.ts` (imports + `migrationEntries` array).
 6. Always test with both a **fresh database** (all migrations run) and verify the sequence is correct for **existing users** (only new migrations run).
 
-## Reference Repos
-
-- Open-source Codex repo: https://github.com/openai/codex
-- Codex-Monitor (Tauri, feature-complete, strong reference implementation): https://github.com/Dimillian/CodexMonitor
-
-Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
-
-## Additional Directories (Thread Context)
-
-Directories can be added to agent context at the thread level via a toolbar popover (`DirectoryPickerPopover`). They persist as `additionalDirectories` on `OrchestrationThread` metadata (survive server restart).
-
-### Architecture
-
-- **Server**: `additionalDirectories` is a field on `OrchestrationThread` schema (`packages/contracts/src/orchestration.ts`), persisted via `thread.meta.update` / `thread.meta-updated` events. The `ProviderCommandReactor` reads directories from the thread read model (not in-memory state) and triggers session restart when directories change.
-- **Web**: `DirectoryPickerPopover` (`apps/web/src/components/chat/DirectoryPickerPopover.tsx`) renders in the composer footer toolbar. On add/remove it dispatches `thread.meta.update` with the merged `additionalDirectories` array. The `Thread` type in `types.ts` has `additionalDirectories: string[]`.
-- **Persistence**: SQLite column `additional_directories_json` on projection threads table (migration 020).
-
-### Key Patterns
-
-- Directories are **thread-level persistent context**, NOT per-message inline chips. There is no inline placeholder or draft store infrastructure for directories.
-- The popover reuses `projectBrowseDirectoriesQueryOptions` for search.
-- Session restart comparison uses `threadSessionStartDirectories` Map to track what directories the last session was started with.
-
-## Jira Integration
-
-MarCode supports read-only Jira Cloud integration via OAuth 2.0 (3LO) with PKCE.
-
-### Architecture
-
-- `apps/server/src/jira/` — Server-side Jira services following Effect Service/Layer pattern
-  - `Services/JiraTokenService.ts` — Token persistence, refresh, encryption (encrypted at rest in `{stateDir}/jira-tokens.json`)
-  - `Services/JiraApiClient.ts` — Atlassian REST API wrapper for boards, sprints, issues, attachments
-  - `Layers/` — Effect Layer implementations
-  - `oauthRoutes.ts` — HTTP GET `/api/jira/auth` + `/api/jira/callback` for OAuth flow
-  - `crypto.ts` — AES-256-GCM encryption for token storage
-- `packages/contracts/src/jira.ts` — Shared schemas (JiraIssue, JiraBoard, JiraSprint, etc.)
-- `apps/web/src/lib/jiraContext.ts` — Context formatting, URL parsing, `<jira_context>` XML blocks
-- `apps/web/src/lib/jiraReactQuery.ts` — React Query options for all Jira endpoints
-
-### Configuration
-
-Jira integration requires OAuth 2.0 credentials from Atlassian. Set these environment variables to enable Jira:
-
-- `MARCODE_JIRA_CLIENT_ID` — Atlassian OAuth app client ID (required to enable Jira)
-- `MARCODE_JIRA_CLIENT_SECRET` — OAuth app client secret (required for token exchange)
-- `MARCODE_JIRA_REDIRECT_URI` — OAuth redirect URI (defaults to `http://localhost:{port}/api/jira/callback` if not set)
-
-**Setup Steps:**
-
-1. Create an OAuth app at [Atlassian Developer Console](https://developer.atlassian.com/console/myapps/)
-2. Configure the app with:
-   - Redirect URL: `http://localhost:PORT/api/jira/callback` (for development) or your production domain
-   - Scopes: `read:jira-work`, `read:jira-user`, `read:account` (read-only access)
-3. Copy the Client ID and Client Secret and set them as environment variables
-4. In the released desktop app, set environment variables via:
-   - **macOS/Linux:** Set in shell profile (`.zshrc`, `.bashrc`) before launching the app
-   - **Windows:** Set via System Properties > Environment Variables
-   - **Or:** Create a `.env` file in the MarCode state directory (`~/.marcode/.env` on Unix, `%APPDATA%\marcode\.env` on Windows)
-
-Board selection stored per project via `jiraBoard` field on `OrchestrationProject`
-
-### Composer Integration
-
-- `@PROJ-123` mention autocomplete (triggers when `@` query matches `/^[A-Z]{2,}-\d*/i`)
-- `/jira` slash command for browsing sprint tasks
-- Pasted Jira URL auto-detection (`*.atlassian.net/browse/PROJ-123`)
-- Jira task context appended as `<jira_context>` XML blocks (same pattern as `<terminal_context>`)
-- Text attachments included inline, images as `ChatImageAttachment`, binaries as metadata
-
-### UI Components
-
-- `JiraTaskInlineChip` — Visual chip for Jira tasks in the composer (parallel to `TerminalContextInlineChip`)
-- `ComposerJiraTaskNode` — Lexical `DecoratorNode` for inline Jira task chips in the editor
-- `UserMessageJiraContextLabel` — Expandable Jira context label rendered in the message timeline
-- `JiraSettingsSection` — Settings panel component for Jira connection + board selection
-- Settings page includes "Integrations" section between "General" and "Providers"
-
-### Key Patterns
-
-- `JiraTaskDraft` in composer draft store follows the `TerminalContextDraft` pattern
-- `INLINE_JIRA_CONTEXT_PLACEHOLDER` (`\uFFFD`) for Lexical cursor math (like `\uFFFC` for terminal)
-- `ComposerPromptSegment` union includes `"jira-context"` type alongside `"terminal-context"`
-- `ComposerCommandItem` union includes `"jira-task"` type for menu autocomplete
-- `Project` type in `types.ts` includes `jiraBoard: JiraBoardReference | null`
-
-## Reply to Selection (Quoted Context)
-
-MarCode supports replying to specific text selections within assistant messages. Users can select text in an agent response, click "Reply" in a floating toolbar, and the selected text is quoted as structured context in the composer.
-
-### Architecture
-
-- **`apps/web/src/lib/quotedContext.ts`** — `QuotedContext` type, prompt assembly (`appendQuotedContextsToPrompt`), extraction (`extractLeadingQuotedContexts`), dedup, truncation (5000 char limit).
-- **`apps/web/src/components/chat/SelectionReplyToolbar.tsx`** — Floating toolbar that appears on text selection within assistant messages. Renders via `createPortal` to `document.body`. Detects code block selections and extracts language.
-- **`apps/web/src/components/chat/QuotedContextInlineChip.tsx`** — Visual chip rendered in the composer above the editor showing quoted text preview with remove button. Uses violet color scheme.
-- **`apps/web/src/components/chat/UserMessageQuotedContextLabel.tsx`** — Expandable label in the message timeline showing quoted context when a sent message includes it.
-- **`apps/web/src/components/chat/MessagesTimeline.tsx`** — `AssistantMessageContentWithReply` wraps assistant message content with a ref for selection tracking and renders `SelectionReplyToolbar`.
-
-### Key Patterns
-
-- `QuotedContext` is stored in `composerDraftStore` as `quotedContexts: QuotedContext[]` on `ComposerThreadDraftState`.
-- Quoted context blocks are **prepended** to the prompt (unlike terminal/jira which are appended) as `<quoted_context message_id="..." language="...">` XML blocks.
-- `extractLeadingQuotedContexts()` parses leading quoted blocks from stored message text for timeline display.
-- Keyboard shortcut: `Cmd/Ctrl+Shift+R` to reply to current selection, `Escape` to dismiss toolbar.
-- Quoted contexts are **not** persisted to localStorage (transient draft state) — they are cleared on thread switch or send.
-- Selection spanning multiple messages captures only text from the message where selection started.
-- Truncation at 5000 chars with `...[truncated]` suffix.
 
 ## Testing
 

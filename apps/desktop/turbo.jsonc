@@ -7,16 +7,16 @@
       "outputs": ["dist-electron/**"],
     },
     "dev": {
-      "dependsOn": ["marcode#build"],
+      "dependsOn": ["@tyulyukov/marcode#build"],
       "persistent": true,
     },
     "start": {
-      "dependsOn": ["build", "@marcode/web#build", "marcode#build"],
+      "dependsOn": ["build", "@marcode/web#build", "@tyulyukov/marcode#build"],
       "cache": false,
       "persistent": true,
     },
     "smoke-test": {
-      "dependsOn": ["build", "@marcode/web#build", "marcode#build"],
+      "dependsOn": ["build", "@marcode/web#build", "@tyulyukov/marcode#build"],
       "cache": false,
       "outputs": [],
     },

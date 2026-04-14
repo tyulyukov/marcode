@@ -47,7 +47,7 @@ the package version to the release tag version.
 
 Checklist:
 
-1. Confirm npm org/user owns package `marcode` (or rename package first if needed).
+1. Confirm npm user owns package `@tyulyukov/marcode` (or rename package first if needed).
 2. In npm package settings, configure Trusted Publisher:
    - Provider: GitHub Actions
    - Repository: this repo

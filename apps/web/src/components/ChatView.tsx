@@ -911,6 +911,7 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
   const pendingInteractionAnchorRef = useRef<{
     element: HTMLElement;
     top: number;
+    height: number;
   } | null>(null);
   const pendingInteractionAnchorFrameRef = useRef<number | null>(null);
   const previousPhaseRef = useRef<ReturnType<typeof derivePhase>>("disconnected");
@@ -2430,9 +2431,11 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
         if (!trigger || !scrollContainer.contains(trigger)) return;
       }
 
+      const triggerRect = trigger.getBoundingClientRect();
       pendingInteractionAnchorRef.current = {
         element: trigger,
-        top: trigger.getBoundingClientRect().top,
+        top: triggerRect.top,
+        height: triggerRect.height,
       };
 
       cancelPendingInteractionAnchorAdjustment();
@@ -2444,11 +2447,16 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
         if (!anchor || !activeScrollContainer) return;
         if (!anchor.element.isConnected || !activeScrollContainer.contains(anchor.element)) return;
 
-        const nextTop = anchor.element.getBoundingClientRect().top;
-        const delta = nextTop - anchor.top;
-        if (Math.abs(delta) < 0.5) return;
+        const nextRect = anchor.element.getBoundingClientRect();
+        const delta = nextRect.top - anchor.top;
 
-        activeScrollContainer.scrollTop += delta;
+        if (Math.abs(delta) >= 0.5) {
+          activeScrollContainer.scrollTop += delta;
+        } else if (nextRect.top < 0 && nextRect.height < anchor.height) {
+          activeScrollContainer.scrollTop += nextRect.top;
+        } else {
+          return;
+        }
         lastKnownScrollTopRef.current = activeScrollContainer.scrollTop;
       });
     },

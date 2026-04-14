@@ -90,9 +90,10 @@ function getDesktopBootstrapCredential(): string | null {
 }
 
 export async function fetchSessionState(): Promise<AuthSessionState> {
-  return retryTransientBootstrap(async () => {
+  return retryTransientBootstrap(async (signal) => {
     const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/session"), {
       credentials: "include",
+      signal,
     });
     if (!response.ok) {
       throw new BootstrapHttpError({
@@ -110,7 +111,7 @@ async function readErrorMessage(response: Response, fallbackMessage: string): Pr
 }
 
 async function exchangeBootstrapCredential(credential: string): Promise<AuthBootstrapResult> {
-  return retryTransientBootstrap(async () => {
+  return retryTransientBootstrap(async (signal) => {
     const payload: AuthBootstrapInput = { credential };
     const response = await fetch(resolvePrimaryEnvironmentHttpUrl("/api/auth/bootstrap"), {
       body: JSON.stringify(payload),
@@ -119,6 +120,7 @@ async function exchangeBootstrapCredential(credential: string): Promise<AuthBoot
         "content-type": "application/json",
       },
       method: "POST",
+      signal,
     });
 
     if (!response.ok) {
@@ -155,22 +157,31 @@ const BOOTSTRAP_RETRY_TIMEOUT_MS = 15_000;
 const BOOTSTRAP_RETRY_STEP_MS = 500;
 const BOOTSTRAP_ATTEMPT_TIMEOUT_MS = 5_000;
 
-function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function raceWithAbortableTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
   let timerId: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timerId = setTimeout(
-      () => reject(new DOMException("Bootstrap attempt timed out", "AbortError")),
-      timeoutMs,
-    );
+    timerId = setTimeout(() => {
+      controller.abort();
+      reject(new DOMException("Bootstrap attempt timed out", "AbortError"));
+    }, timeoutMs);
   });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timerId));
+  return Promise.race([operation(controller.signal), timeoutPromise]).finally(() => {
+    clearTimeout(timerId);
+    controller.abort();
+  });
 }
 
-export async function retryTransientBootstrap<T>(operation: () => Promise<T>): Promise<T> {
+export async function retryTransientBootstrap<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const startedAt = Date.now();
   while (true) {
     try {
-      return await raceWithTimeout(operation(), BOOTSTRAP_ATTEMPT_TIMEOUT_MS);
+      return await raceWithAbortableTimeout(operation, BOOTSTRAP_ATTEMPT_TIMEOUT_MS);
     } catch (error) {
       if (!isTransientBootstrapError(error)) {
         throw error;

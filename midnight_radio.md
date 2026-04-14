@@ -1,0 +1,7 @@
+# Midnight Radio
+
+There is a specific frequency of loneliness that only reveals itself after midnight. It lives in the static between AM stations, in the hum of a refrigerator in an otherwise silent apartment, in the orange glow of a streetlight painting shadows on a ceiling. This is the hour when the mind stops performing for others and begins its private audit — tallying regrets, rehearsing conversations that will never happen, and wondering whether the version of you that exists in other people's memories bears any resemblance to the one lying awake right now.
+
+Late-night radio hosts understand this frequency instinctively. They speak slowly, with warmth and without urgency, as if time has pooled around the microphone like spilled honey. The callers are truckers crossing Nebraska, insomniacs in studio apartments, night-shift nurses sitting in parking lots before walking back in. Each voice carries the particular vulnerability of someone speaking into darkness, unsure who is listening but grateful that the channel is open.
+
+Podcasts have not replaced this experience, despite their convenience. A podcast is a performance delivered on your schedule. Late-night radio is a shared moment — fragile, unrepeatable, and defined by the fact that you and a stranger are both awake at an hour when the world has agreed to sleep. There is a communion in that simultaneity, a threadbare church built from signal and silence and the stubborn refusal to close your eyes just yet.

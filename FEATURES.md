@@ -1,6 +1,6 @@
 # MarCode Exclusive Features
 
-Features implemented exclusively in MarCode that do **not** exist in upstream t3code. This document serves as a safeguard during upstream merges — every feature listed here **must be preserved**.
+Features implemented exclusively in MarCode that do **not** exist upstream. This document serves as a safeguard during upstream merges — every feature listed here **must be preserved**.
 
 ---
 
@@ -324,7 +324,7 @@ Full marketing/download landing page:
 
 **Commit:** `5ad43ef9`
 
-Complete rebrand from T3 Code:
+Complete rebrand to MarCode:
 
 - Package imports: `@marcode/contracts`, `@marcode/shared`
 - Env vars: `MARCODE_` prefix
@@ -361,5 +361,5 @@ After any upstream merge, verify each feature still works:
 - [ ] Thread name generation
 - [ ] Fullscreen desktop handling
 - [ ] Landing page
-- [ ] MarCode branding (no T3 references)
+- [ ] MarCode branding (no upstream references)
 - [ ] No telemetry/PostHog code

@@ -143,6 +143,7 @@ describe("resolveInitialServerAuthGateState", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("https://remote.example.com/api/auth/session", {
       credentials: "include",
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -175,6 +176,7 @@ describe("resolveInitialServerAuthGateState", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:5735/api/auth/session", {
       credentials: "include",
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -216,6 +218,7 @@ describe("resolveInitialServerAuthGateState", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:5733/api/auth/session", {
       credentials: "include",
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -514,7 +517,7 @@ describe("retryTransientBootstrap", () => {
 
   it("retries when individual fetch hangs past per-attempt timeout", async () => {
     let callCount = 0;
-    const operation = vi.fn(() => {
+    const operation = vi.fn((_signal: AbortSignal) => {
       callCount++;
       if (callCount === 1) {
         return new Promise<string>(() => {});
@@ -535,7 +538,7 @@ describe("retryTransientBootstrap", () => {
   });
 
   it("gives up after overall timeout when all attempts hang", async () => {
-    const operation = vi.fn(() => new Promise<string>(() => {}));
+    const operation = vi.fn((_signal: AbortSignal) => new Promise<string>(() => {}));
 
     const { retryTransientBootstrap } = await import("./environments/primary/auth");
 

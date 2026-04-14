@@ -131,6 +131,7 @@ function makeState(thread: Thread): AppState {
         updatedAt: thread.updatedAt,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
+        hydrated: thread.hydrated,
       },
     },
     threadSessionById: {
@@ -842,6 +843,7 @@ describe("incremental orchestration updates", () => {
           updatedAt: thread2.updatedAt,
           branch: thread2.branch,
           worktreePath: thread2.worktreePath,
+          hydrated: thread2.hydrated,
         },
       },
       threadSessionById: {

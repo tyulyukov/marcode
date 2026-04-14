@@ -95,7 +95,7 @@ describe("formatWorktreePathForDisplay", () => {
 
   it("normalizes windows separators before selecting the final segment", () => {
     const result = formatWorktreePathForDisplay(
-      "C:\\Users\\julius\\.t3\\worktrees\\marcode-mvp\\marcode-4e609bb8",
+      "C:\\Users\\julius\\.marcode\\worktrees\\marcode-mvp\\marcode-4e609bb8",
     );
     expect(result).toBe("marcode-4e609bb8");
   });

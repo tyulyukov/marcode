@@ -81,6 +81,16 @@ function resolveConfiguredPrimaryTarget(): PrimaryEnvironmentTarget | null {
       ? swapBaseUrlProtocol(configuredHttpBaseUrl, "wss:")
       : swapBaseUrlProtocol(configuredHttpBaseUrl!, "ws:"));
 
+  const httpHostname = normalizeHostname(new URL(normalizeBaseUrl(resolvedHttpBaseUrl)).hostname);
+  const wsHostname = normalizeHostname(new URL(normalizeBaseUrl(resolvedWsBaseUrl)).hostname);
+  const currentHostname = normalizeHostname(window.location.hostname);
+  const isCurrentLoopback = isLoopbackHostname(currentHostname);
+  const isConfiguredLoopback = isLoopbackHostname(httpHostname) || isLoopbackHostname(wsHostname);
+
+  if (!isCurrentLoopback && isConfiguredLoopback) {
+    return null;
+  }
+
   return {
     source: "configured",
     target: {

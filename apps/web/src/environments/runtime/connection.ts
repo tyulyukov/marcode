@@ -1,7 +1,7 @@
 import type {
   EnvironmentId,
   OrchestrationEvent,
-  OrchestrationReadModel,
+  OrchestrationListingSnapshot,
   ServerConfig,
   ServerLifecycleWelcomePayload,
   TerminalEvent,
@@ -39,7 +39,7 @@ interface OrchestrationHandlers {
     events: ReadonlyArray<OrchestrationEvent>,
     environmentId: EnvironmentId,
   ) => void;
-  readonly syncSnapshot: (snapshot: OrchestrationReadModel, environmentId: EnvironmentId) => void;
+  readonly syncListingSnapshot: (listing: OrchestrationListingSnapshot, environmentId: EnvironmentId) => void;
   readonly applyTerminalEvent: (event: TerminalEvent, environmentId: EnvironmentId) => void;
 }
 
@@ -231,10 +231,10 @@ export function createEnvironmentConnection(
 
     try {
       const snapshot = await retryTransportRecoveryOperation(() =>
-        input.client.orchestration.getSnapshot(),
+        input.client.orchestration.getListingSnapshot(),
       );
       if (!disposed) {
-        input.syncSnapshot(snapshot, environmentId);
+        input.syncListingSnapshot(snapshot, environmentId);
         if (recovery.completeSnapshotRecovery(snapshot.snapshotSequence)) {
           scheduleReplayRecovery("sequence-gap");
         }

@@ -1,6 +1,6 @@
 # MarCode
 
-MarCode is a web GUI for coding agents, built as a rebrand and major evolution of [T3 Code](https://github.com/t3dotgg/t3code). On top of the original foundation, MarCode brings performance optimizations, new integrations, and a refined experience:
+MarCode is a web GUI for coding agents. On top of a solid foundation, MarCode brings performance optimizations, new integrations, and a refined experience:
 
 - **Claude Code CLI** as the default and primary provider
 - **Jira Cloud integration** (OAuth 2.0, sprint browsing, `@PROJ-123` mentions in composer)
