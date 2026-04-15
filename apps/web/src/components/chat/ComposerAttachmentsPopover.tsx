@@ -4,6 +4,9 @@ import type { ThreadId, RuntimeMode } from "@marcode/contracts";
 import { Button } from "../ui/button";
 import {
   Menu,
+  MenuCreateHandle,
+  MenuGroup,
+  MenuGroupLabel,
   MenuItem,
   MenuPopup,
   MenuRadioGroup,
@@ -14,6 +17,7 @@ import {
 import { readNativeApi } from "~/nativeApi";
 import { newCommandId } from "~/lib/utils";
 import { basenameOfPath } from "~/vscode-icons";
+import { toastManager } from "~/components/ui/toast";
 
 interface ComposerAttachmentsPopoverProps {
   threadId: ThreadId;
@@ -35,6 +39,7 @@ export function ComposerAttachmentsPopover({
   disabled,
 }: ComposerAttachmentsPopoverProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const menuHandleRef = useRef(MenuCreateHandle());
   const [isPickingFolder, setIsPickingFolder] = useState(false);
 
   const count = additionalDirectories.length;
@@ -68,19 +73,32 @@ export function ComposerAttachmentsPopover({
     [threadId, onLocalDirectoriesChange],
   );
 
+  const pickingRef = useRef(false);
   const handlePickFolder = useCallback(async () => {
     const api = readNativeApi();
-    if (!api || isPickingFolder) return;
+    if (!api || pickingRef.current) return;
+    pickingRef.current = true;
     setIsPickingFolder(true);
     try {
+      menuHandleRef.current.close();
       const pickedPath = await api.dialogs.pickFolder();
       if (pickedPath && !additionalDirectories.includes(pickedPath)) {
         await dispatchMetaUpdate([...additionalDirectories, pickedPath]);
       }
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: "Failed to add folder",
+        description:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred while adding the folder.",
+      });
     } finally {
+      pickingRef.current = false;
       setIsPickingFolder(false);
     }
-  }, [additionalDirectories, dispatchMetaUpdate, isPickingFolder]);
+  }, [additionalDirectories, dispatchMetaUpdate]);
 
   const removeDirectory = useCallback(
     (path: string) => {
@@ -91,7 +109,7 @@ export function ComposerAttachmentsPopover({
 
   return (
     <>
-      <Menu>
+      <Menu handle={menuHandleRef.current}>
         <MenuTrigger
           render={
             <Button
@@ -112,45 +130,60 @@ export function ComposerAttachmentsPopover({
           }
         />
         <MenuPopup side="top" align="start" sideOffset={8} className="min-w-52">
-          <MenuItem onClick={() => fileInputRef.current?.click()}>
-            <ImageIcon />
-            Attach image
-          </MenuItem>
-
-          <MenuItem onClick={() => void handlePickFolder()} disabled={isPickingFolder}>
-            <FolderPlusIcon />
-            Add folder
-          </MenuItem>
+          <MenuGroup>
+            <MenuGroupLabel>Attach</MenuGroupLabel>
+            <MenuItem onClick={() => fileInputRef.current?.click()}>
+              <ImageIcon className="size-4" />
+              Attach image
+            </MenuItem>
+            <MenuItem
+              closeOnClick={false}
+              onClick={() => void handlePickFolder()}
+              disabled={isPickingFolder}
+            >
+              <FolderPlusIcon className="size-4" />
+              Add folder
+            </MenuItem>
+          </MenuGroup>
 
           {additionalDirectories.length > 0 && (
             <>
               <MenuSeparator />
-              {additionalDirectories.map((dirPath) => (
-                <MenuItem key={dirPath} className="group" onClick={() => removeDirectory(dirPath)}>
-                  <FolderIcon />
-                  <span className="min-w-0 flex-1 truncate" title={dirPath}>
-                    {basenameOfPath(dirPath) || dirPath}
-                  </span>
-                  <XIcon className="ml-auto size-3.5 opacity-50 group-data-highlighted:opacity-100" />
-                </MenuItem>
-              ))}
+              <MenuGroup>
+                <MenuGroupLabel>Folders</MenuGroupLabel>
+                {additionalDirectories.map((dirPath) => (
+                  <MenuItem
+                    key={dirPath}
+                    className="group"
+                    onClick={() => removeDirectory(dirPath)}
+                  >
+                    <FolderIcon className="size-4" />
+                    <span className="min-w-0 flex-1 truncate" title={dirPath}>
+                      {basenameOfPath(dirPath) || dirPath}
+                    </span>
+                    <XIcon className="ml-auto size-3.5 opacity-50 group-data-highlighted:opacity-100" />
+                  </MenuItem>
+                ))}
+              </MenuGroup>
             </>
           )}
 
           <MenuSeparator />
 
-          <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
-          <MenuRadioGroup
-            value={runtimeMode}
-            onValueChange={(value) => {
-              if (!value || value === runtimeMode) return;
-              onRuntimeModeChange(value as RuntimeMode);
-            }}
-          >
-            <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
-            <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
-            <MenuRadioItem value="full-access">Full access</MenuRadioItem>
-          </MenuRadioGroup>
+          <MenuGroup>
+            <MenuGroupLabel>Access</MenuGroupLabel>
+            <MenuRadioGroup
+              value={runtimeMode}
+              onValueChange={(value) => {
+                if (!value || value === runtimeMode) return;
+                onRuntimeModeChange(value as RuntimeMode);
+              }}
+            >
+              <MenuRadioItem value="approval-required">Supervised</MenuRadioItem>
+              <MenuRadioItem value="auto-accept-edits">Auto-accept edits</MenuRadioItem>
+              <MenuRadioItem value="full-access">Full access</MenuRadioItem>
+            </MenuRadioGroup>
+          </MenuGroup>
         </MenuPopup>
       </Menu>
 

@@ -5142,11 +5142,9 @@ export default function ChatView({ threadId, environmentId: environmentIdProp }:
                             activePlan={activePlan !== null}
                             interactionMode={interactionMode}
                             planSidebarOpen={planSidebarOpen}
-                            runtimeMode={runtimeMode}
                             traitsMenuContent={providerTraitsMenuContent}
                             onToggleInteractionMode={toggleInteractionMode}
                             onTogglePlanSidebar={togglePlanSidebar}
-                            onRuntimeModeChange={handleRuntimeModeChange}
                           />
                         ) : (
                           <>
