@@ -136,7 +136,7 @@ export function getThreadFromEnvironmentState(
     activities,
     proposedPlans,
     turnDiffSummaries,
-    additionalDirectories: [],
+    additionalDirectories: shell.additionalDirectories,
     hydrated: shell.hydrated,
   };
 

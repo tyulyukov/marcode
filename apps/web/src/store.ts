@@ -239,6 +239,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    additionalDirectories: thread.additionalDirectories,
     hydrated: thread.hydrated,
   };
 }
@@ -329,6 +330,7 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.updatedAt === right.updatedAt &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
+    left.additionalDirectories === right.additionalDirectories &&
     left.hydrated === right.hydrated
   );
 }
@@ -1235,6 +1237,9 @@ function applyEnvironmentOrchestrationEvent(
         ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
         ...(event.payload.worktreePath !== undefined
           ? { worktreePath: event.payload.worktreePath }
+          : {}),
+        ...(event.payload.additionalDirectories !== undefined
+          ? { additionalDirectories: [...event.payload.additionalDirectories] }
           : {}),
         updatedAt: event.payload.updatedAt,
       }));

@@ -274,6 +274,7 @@ function setStoreThreads(threads: ReadonlyArray<ReturnType<typeof makeThread>>) 
           updatedAt: thread.updatedAt,
           branch: thread.branch,
           worktreePath: thread.worktreePath,
+          additionalDirectories: thread.additionalDirectories,
           hydrated: thread.hydrated,
         },
       ]),

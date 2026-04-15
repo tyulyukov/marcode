@@ -1927,11 +1927,9 @@ export const ChatComposer = memo(
                       activePlan={showPlanSidebarToggle}
                       interactionMode={interactionMode}
                       planSidebarOpen={planSidebarOpen}
-                      runtimeMode={runtimeMode}
                       traitsMenuContent={providerTraitsMenuContent}
                       onToggleInteractionMode={toggleInteractionMode}
                       onTogglePlanSidebar={togglePlanSidebar}
-                      onRuntimeModeChange={handleRuntimeModeChange}
                     />
                   ) : (
                     <>
