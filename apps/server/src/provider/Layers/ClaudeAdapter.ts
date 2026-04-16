@@ -39,7 +39,7 @@ import {
   ThreadId,
   TurnId,
   type UserInputQuestion,
-  ClaudeCodeEffort,
+  ClaudeAgentEffort,
 } from "@marcode/contracts";
 import {
   applyClaudePromptEffortPrefix,
@@ -211,9 +211,32 @@ function isSyntheticClaudeThreadId(value: string): boolean {
   return value.startsWith("claude-thread-");
 }
 
-function getEffectiveClaudeCodeEffort(
-  effort: ClaudeCodeEffort | null | undefined,
-): Exclude<ClaudeCodeEffort, "ultrathink"> | null {
+function toMessage(cause: unknown, fallback: string): string {
+  if (cause instanceof Error && cause.message.length > 0) {
+    return cause.message;
+  }
+  return fallback;
+}
+
+function toError(cause: unknown, fallback: string): Error {
+  return cause instanceof Error ? cause : new Error(toMessage(cause, fallback));
+}
+
+function normalizeClaudeStreamMessages(cause: Cause.Cause<Error>): ReadonlyArray<string> {
+  const errors = Cause.prettyErrors(cause)
+    .map((error) => error.message.trim())
+    .filter((message) => message.length > 0);
+  if (errors.length > 0) {
+    return errors;
+  }
+
+  const squashed = toMessage(Cause.squash(cause), "").trim();
+  return squashed.length > 0 ? [squashed] : [];
+}
+
+function getEffectiveClaudeAgentEffort(
+  effort: ClaudeAgentEffort | null | undefined,
+): Exclude<ClaudeAgentEffort, "ultrathink"> | null {
   if (!effort) {
     return null;
   }
@@ -2899,13 +2922,13 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const caps = getClaudeModelCapabilities(modelSelection?.model);
       const apiModelId = modelSelection ? resolveApiModelId(modelSelection) : undefined;
       const effort = (resolveEffort(caps, modelSelection?.options?.effort) ??
-        null) as ClaudeCodeEffort | null;
+        null) as ClaudeAgentEffort | null;
       const fastMode = modelSelection?.options?.fastMode === true && caps.supportsFastMode;
       const thinking =
         typeof modelSelection?.options?.thinking === "boolean" && caps.supportsThinkingToggle
           ? modelSelection.options.thinking
           : undefined;
-      const effectiveEffort = getEffectiveClaudeCodeEffort(effort);
+      const effectiveEffort = getEffectiveClaudeAgentEffort(effort);
       const runtimeModeToPermission: Record<string, PermissionMode> = {
         "auto-accept-edits": "acceptEdits",
         "full-access": "bypassPermissions",

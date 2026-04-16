@@ -2,7 +2,7 @@ import {
   type ApprovalRequestId,
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_PROVIDER_KIND,
-  type ClaudeCodeEffort,
+  type ClaudeAgentEffort,
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
@@ -378,7 +378,7 @@ function formatOutgoingPrompt(params: {
 }): string {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   if (params.effort && caps.promptInjectedEffortLevels.includes(params.effort)) {
-    return applyClaudePromptEffortPrefix(params.text, params.effort as ClaudeCodeEffort | null);
+    return applyClaudePromptEffortPrefix(params.text, params.effort as ClaudeAgentEffort | null);
   }
   return params.text;
 }
