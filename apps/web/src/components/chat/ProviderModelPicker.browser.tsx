@@ -421,7 +421,7 @@ describe("ProviderModelPicker", () => {
     }
   });
 
-  it("displays 'Opus 4.6' without 'Claude' prefix", async () => {
+  it("displays Claude model names without the 'Claude' prefix", async () => {
     const mounted = await mountPicker({
       provider: "claudeAgent",
       model: "claude-opus-4-6",
@@ -434,7 +434,11 @@ describe("ProviderModelPicker", () => {
       await vi.waitFor(() => {
         const text = document.body.textContent ?? "";
         expect(text).toContain("Opus 4.6");
+        expect(text).toContain("Sonnet 4.6");
+        expect(text).toContain("Haiku 4.5");
         expect(text).not.toMatch(/Claude\s+Opus/);
+        expect(text).not.toMatch(/Claude\s+Sonnet/);
+        expect(text).not.toMatch(/Claude\s+Haiku/);
       });
     } finally {
       await mounted.cleanup();

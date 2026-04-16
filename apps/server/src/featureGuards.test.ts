@@ -41,6 +41,21 @@ describe("Server feature existence guards", () => {
     expect(content).toContain('"Opus 4.6"');
   });
 
+  it("Claude provider uses 'Sonnet 4.6' display name", () => {
+    const content = readSrc("provider/Layers/ClaudeProvider.ts");
+    expect(content).toContain('"Sonnet 4.6"');
+  });
+
+  it("Claude provider uses 'Haiku 4.5' display name", () => {
+    const content = readSrc("provider/Layers/ClaudeProvider.ts");
+    expect(content).toContain('"Haiku 4.5"');
+  });
+
+  it("Claude provider model names do not include the 'Claude' prefix", () => {
+    const content = readSrc("provider/Layers/ClaudeProvider.ts");
+    expect(content).not.toMatch(/name:\s*"Claude\s+(Opus|Sonnet|Haiku)/);
+  });
+
   it("Default effort is medium for Opus", () => {
     const content = readSrc("provider/Layers/ClaudeProvider.ts");
     const lines = content.split("\n");
