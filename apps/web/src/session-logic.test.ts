@@ -394,6 +394,30 @@ describe("deriveActivePlanState", () => {
       steps: [{ step: "Implement Codex user input", status: "inProgress" }],
     });
   });
+
+  it("falls back to the most recent plan from a previous turn", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "plan-from-turn-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        payload: {
+          plan: [{ step: "Write tests", status: "completed" }],
+        },
+      }),
+    ];
+
+    // Current turn is turn-2, which has no plan activity — should fall back to turn-1's plan
+    const result = deriveActivePlanState(activities, TurnId.make("turn-2"));
+    expect(result).toEqual({
+      createdAt: "2026-02-23T00:00:01.000Z",
+      turnId: "turn-1",
+      steps: [{ step: "Write tests", status: "completed" }],
+    });
+  });
 });
 
 describe("findLatestProposedPlan", () => {
@@ -2003,6 +2027,19 @@ describe("deriveActiveWorkStartedAt", () => {
         "2026-02-27T21:11:00.000Z",
       ),
     ).toBe("2026-02-27T21:10:00.000Z");
+  });
+
+  it("uses the new send start while the session is running a different turn", () => {
+    expect(
+      deriveActiveWorkStartedAt(
+        latestTurn,
+        {
+          orchestrationStatus: "running",
+          activeTurnId: TurnId.make("turn-2"),
+        },
+        "2026-02-27T21:11:00.000Z",
+      ),
+    ).toBe("2026-02-27T21:11:00.000Z");
   });
 
   it("falls back to sendStartedAt once the latest turn is settled", () => {

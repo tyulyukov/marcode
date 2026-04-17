@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
-import { runProcess } from "./processRunner";
+import { runProcess } from "./processRunner.ts";
 
 import {
   type ProjectBrowseDirectoriesInput,

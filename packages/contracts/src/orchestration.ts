@@ -1,7 +1,7 @@
 import { Effect, Option, Schema, SchemaIssue, Struct } from "effect";
-import { ClaudeModelOptions, CodexModelOptions } from "./model";
-import { JiraBoardReference } from "./jira";
-import { RepositoryIdentity } from "./environment";
+import { ClaudeModelOptions, CodexModelOptions } from "./model.ts";
+import { JiraBoardReference } from "./jira.ts";
+import { RepositoryIdentity } from "./environment.ts";
 import {
   ApprovalRequestId,
   CheckpointRef,
@@ -15,7 +15,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
   TurnId,
-} from "./baseSchemas";
+} from "./baseSchemas.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   getSnapshot: "orchestration.getSnapshot",
@@ -25,6 +25,8 @@ export const ORCHESTRATION_WS_METHODS = {
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   replayEvents: "orchestration.replayEvents",
+  subscribeShell: "orchestration.subscribeShell",
+  subscribeThread: "orchestration.subscribeThread",
 } as const;
 
 export const ORCHESTRATION_WS_CHANNELS = {
@@ -320,7 +322,19 @@ export const OrchestrationReadModel = Schema.Struct({
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
 
-export const OrchestrationThreadSummary = Schema.Struct({
+export const OrchestrationProjectShell = Schema.Struct({
+  id: ProjectId,
+  title: TrimmedNonEmptyString,
+  workspaceRoot: TrimmedNonEmptyString,
+  repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
+  defaultModelSelection: Schema.NullOr(ModelSelection),
+  scripts: Schema.Array(ProjectScript),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
+
+export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -345,6 +359,61 @@ export const OrchestrationThreadSummary = Schema.Struct({
   hasPendingUserInput: Schema.Boolean,
   hasActionableProposedPlan: Schema.Boolean,
 });
+export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
+
+export const OrchestrationShellSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  projects: Schema.Array(OrchestrationProjectShell),
+  threads: Schema.Array(OrchestrationThreadShell),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationShellSnapshot = typeof OrchestrationShellSnapshot.Type;
+
+export const OrchestrationShellStreamEvent = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("project-upserted"),
+    sequence: NonNegativeInt,
+    project: OrchestrationProjectShell,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("project-removed"),
+    sequence: NonNegativeInt,
+    projectId: ProjectId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("thread-upserted"),
+    sequence: NonNegativeInt,
+    thread: OrchestrationThreadShell,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("thread-removed"),
+    sequence: NonNegativeInt,
+    threadId: ThreadId,
+  }),
+]);
+export type OrchestrationShellStreamEvent = typeof OrchestrationShellStreamEvent.Type;
+
+export const OrchestrationShellStreamItem = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("snapshot"),
+    snapshot: OrchestrationShellSnapshot,
+  }),
+  OrchestrationShellStreamEvent,
+]);
+export type OrchestrationShellStreamItem = typeof OrchestrationShellStreamItem.Type;
+
+export const OrchestrationSubscribeThreadInput = Schema.Struct({
+  threadId: ThreadId,
+});
+export type OrchestrationSubscribeThreadInput = typeof OrchestrationSubscribeThreadInput.Type;
+
+export const OrchestrationThreadDetailSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  thread: OrchestrationThread,
+});
+export type OrchestrationThreadDetailSnapshot = typeof OrchestrationThreadDetailSnapshot.Type;
+
+export const OrchestrationThreadSummary = OrchestrationThreadShell;
 export type OrchestrationThreadSummary = typeof OrchestrationThreadSummary.Type;
 
 export const OrchestrationListingSnapshot = Schema.Struct({
@@ -361,6 +430,7 @@ export const ProjectCreateCommand = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   jiraBoard: Schema.optional(Schema.NullOr(JiraBoardReference)),
   createdAt: IsoDateTime,
@@ -1010,6 +1080,18 @@ export const OrchestrationEvent = Schema.Union([
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
 
+export const OrchestrationThreadStreamItem = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("snapshot"),
+    snapshot: OrchestrationThreadDetailSnapshot,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    event: OrchestrationEvent,
+  }),
+]);
+export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -1143,6 +1225,14 @@ export const OrchestrationRpcSchemas = {
   replayEvents: {
     input: OrchestrationReplayEventsInput,
     output: OrchestrationReplayEventsResult,
+  },
+  subscribeThread: {
+    input: OrchestrationSubscribeThreadInput,
+    output: OrchestrationThreadStreamItem,
+  },
+  subscribeShell: {
+    input: Schema.Struct({}),
+    output: OrchestrationShellStreamItem,
   },
 } as const;
 

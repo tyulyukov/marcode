@@ -16,7 +16,11 @@ import {
   type ThreadSession,
 } from "../types";
 import { randomUUID } from "~/lib/utils";
-import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import {
+  type ComposerImageAttachment,
+  type DraftThreadEnvMode,
+  type DraftThreadState,
+} from "../composerDraftStore";
 import { Schema } from "effect";
 import { selectThreadByRef, selectThreadsAcrossEnvironments, useStore } from "../store";
 import {
@@ -168,10 +172,11 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-export function buildTemporaryWorktreeBranchName(): string {
-  // Keep the 8-hex suffix shape for backend temporary-branch detection.
-  const token = randomUUID().slice(0, 8).toLowerCase();
-  return `${WORKTREE_BRANCH_PREFIX}/${token}`;
+export function resolveSendEnvMode(input: {
+  requestedEnvMode: DraftThreadEnvMode;
+  isGitRepo: boolean;
+}): DraftThreadEnvMode {
+  return input.isGitRepo ? input.requestedEnvMode : "local";
 }
 
 export function cloneComposerImageForRetry(
@@ -347,23 +352,37 @@ export function hasServerAcknowledgedLocalDispatch(input: {
   if (!input.localDispatch) {
     return false;
   }
-  if (
-    input.phase === "running" ||
-    input.hasPendingApproval ||
-    input.hasPendingUserInput ||
-    Boolean(input.threadError)
-  ) {
+  if (input.hasPendingApproval || input.hasPendingUserInput || Boolean(input.threadError)) {
     return true;
   }
 
   const latestTurn = input.latestTurn ?? null;
   const session = input.session ?? null;
-
-  return (
+  const latestTurnChanged =
     input.localDispatch.latestTurnTurnId !== (latestTurn?.turnId ?? null) ||
     input.localDispatch.latestTurnRequestedAt !== (latestTurn?.requestedAt ?? null) ||
     input.localDispatch.latestTurnStartedAt !== (latestTurn?.startedAt ?? null) ||
-    input.localDispatch.latestTurnCompletedAt !== (latestTurn?.completedAt ?? null) ||
+    input.localDispatch.latestTurnCompletedAt !== (latestTurn?.completedAt ?? null);
+
+  if (input.phase === "running") {
+    if (!latestTurnChanged) {
+      return false;
+    }
+    if (latestTurn?.startedAt === null || latestTurn === null) {
+      return false;
+    }
+    if (
+      session?.activeTurnId !== undefined &&
+      session.activeTurnId !== null &&
+      latestTurn?.turnId !== session.activeTurnId
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  return (
+    latestTurnChanged ||
     input.localDispatch.sessionOrchestrationStatus !== (session?.orchestrationStatus ?? null) ||
     input.localDispatch.sessionUpdatedAt !== (session?.updatedAt ?? null)
   );

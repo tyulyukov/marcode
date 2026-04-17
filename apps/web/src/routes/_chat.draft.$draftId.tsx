@@ -56,7 +56,11 @@ function DraftChatThreadRouteView() {
   if (canonicalThreadRef) {
     return (
       <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-        <ChatView threadId={canonicalThreadRef.threadId} />
+        <ChatView
+          routeKind="server"
+          environmentId={canonicalThreadRef.environmentId}
+          threadId={canonicalThreadRef.threadId}
+        />
       </SidebarInset>
     );
   }
@@ -67,7 +71,12 @@ function DraftChatThreadRouteView() {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <ChatView threadId={draftSession.threadId} />
+      <ChatView
+        routeKind="draft"
+        environmentId={draftSession.environmentId}
+        threadId={draftSession.threadId}
+        draftId={draftId}
+      />
     </SidebarInset>
   );
 }
