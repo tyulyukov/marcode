@@ -45,7 +45,7 @@ const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
     slug: "claude-opus-4-7",
-    name: "Claude Opus 4.7",
+    name: "Opus 4.7",
     isCustom: false,
     capabilities: {
       reasoningEffortLevels: [

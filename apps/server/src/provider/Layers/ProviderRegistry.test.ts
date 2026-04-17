@@ -925,7 +925,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
             }
             assert.deepStrictEqual(
               opus47.capabilities.reasoningEffortLevels.find((level) => level.isDefault),
-              { value: "xhigh", label: "Extra High", isDefault: true },
+              { value: "high", label: "High", isDefault: true },
             );
           }).pipe(
             Effect.provide(
