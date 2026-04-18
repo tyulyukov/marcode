@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FolderIcon, FolderPlusIcon, ImageIcon, PlusIcon, XIcon } from "lucide-react";
 import type { ThreadId, RuntimeMode } from "@marcode/contracts";
 import { Button } from "../ui/button";
@@ -18,6 +18,8 @@ import { readNativeApi } from "~/nativeApi";
 import { newCommandId } from "~/lib/utils";
 import { basenameOfPath } from "~/vscode-icons";
 import { toastManager } from "~/components/ui/toast";
+import { useCommandPaletteStore } from "~/commandPaletteStore";
+import { ensureBrowseDirectoryPath, getBrowseParentPath } from "~/lib/projectPaths";
 
 interface ComposerAttachmentsPopoverProps {
   threadId: ThreadId;
@@ -27,6 +29,14 @@ interface ComposerAttachmentsPopoverProps {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onAttachImages: (files: File[]) => void;
   disabled: boolean;
+  projectCwd?: string | null;
+}
+
+function resolveAddFolderInitialPath(projectCwd: string | null | undefined): string {
+  if (!projectCwd) {
+    return "~/";
+  }
+  return ensureBrowseDirectoryPath(getBrowseParentPath(projectCwd) ?? projectCwd);
 }
 
 export function ComposerAttachmentsPopover({
@@ -37,10 +47,15 @@ export function ComposerAttachmentsPopover({
   onRuntimeModeChange,
   onAttachImages,
   disabled,
+  projectCwd,
 }: ComposerAttachmentsPopoverProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuHandleRef = useRef(MenuCreateHandle());
   const [isPickingFolder, setIsPickingFolder] = useState(false);
+  const openAddFolder = useCommandPaletteStore((state) => state.openAddFolder);
+  const addFolderResult = useCommandPaletteStore((state) => state.addFolderResult);
+  const consumeAddFolderResult = useCommandPaletteStore((state) => state.consumeAddFolderResult);
+  const pendingAddFolderRequestIdRef = useRef<number | null>(null);
 
   const count = additionalDirectories.length;
 
@@ -73,17 +88,52 @@ export function ComposerAttachmentsPopover({
     [threadId, onLocalDirectoriesChange],
   );
 
+  const addDirectory = useCallback(
+    async (path: string) => {
+      if (additionalDirectories.includes(path)) return;
+      try {
+        await dispatchMetaUpdate([...additionalDirectories, path]);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Failed to add folder",
+          description:
+            error instanceof Error
+              ? error.message
+              : "An unexpected error occurred while adding the folder.",
+        });
+      }
+    },
+    [additionalDirectories, dispatchMetaUpdate],
+  );
+
+  useEffect(() => {
+    if (!addFolderResult) return;
+    if (addFolderResult.requestId !== pendingAddFolderRequestIdRef.current) return;
+    const { requestId, path } = addFolderResult;
+    pendingAddFolderRequestIdRef.current = null;
+    consumeAddFolderResult(requestId);
+    void addDirectory(path);
+  }, [addDirectory, addFolderResult, consumeAddFolderResult]);
+
   const pickingRef = useRef(false);
   const handlePickFolder = useCallback(async () => {
+    if (pickingRef.current) return;
+    menuHandleRef.current.close();
+
+    if (projectCwd) {
+      pendingAddFolderRequestIdRef.current = openAddFolder(resolveAddFolderInitialPath(projectCwd));
+      return;
+    }
+
     const api = readNativeApi();
-    if (!api || pickingRef.current) return;
+    if (!api) return;
     pickingRef.current = true;
     setIsPickingFolder(true);
     try {
-      menuHandleRef.current.close();
       const pickedPath = await api.dialogs.pickFolder();
-      if (pickedPath && !additionalDirectories.includes(pickedPath)) {
-        await dispatchMetaUpdate([...additionalDirectories, pickedPath]);
+      if (pickedPath) {
+        await addDirectory(pickedPath);
       }
     } catch (error) {
       toastManager.add({
@@ -98,7 +148,7 @@ export function ComposerAttachmentsPopover({
       pickingRef.current = false;
       setIsPickingFolder(false);
     }
-  }, [additionalDirectories, dispatchMetaUpdate]);
+  }, [addDirectory, openAddFolder, projectCwd]);
 
   const removeDirectory = useCallback(
     (path: string) => {

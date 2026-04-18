@@ -4,29 +4,19 @@ import { describe, expect, it, vi } from "vitest";
 import { createEnvironmentConnection } from "./connection";
 import type { WsRpcClient } from "~/rpc/wsRpcClient";
 
-function createTestClient(options?: {
-  readonly getListingSnapshot?: () => Promise<{ readonly snapshotSequence: number }>;
-  readonly replayEvents?: () => Promise<ReadonlyArray<any>>;
-}) {
+function createTestClient() {
   const lifecycleListeners = new Set<(event: any) => void>();
   const configListeners = new Set<(event: any) => void>();
   const terminalListeners = new Set<(event: any) => void>();
-  let domainResubscribe: (() => void) | undefined;
-
-  const getListingSnapshot = vi.fn(
-    options?.getListingSnapshot ??
-      (async () =>
-        ({
-          snapshotSequence: 1,
-          projects: [],
-          threads: [],
-        }) as any),
-  );
-  const replayEvents = vi.fn(options?.replayEvents ?? (async () => []));
+  const shellListeners = new Set<(event: any) => void>();
+  let shellResubscribe: (() => void) | undefined;
+  let autoEmitInitialSnapshot = true;
 
   const client = {
     dispose: vi.fn(async () => undefined),
-    reconnect: vi.fn(async () => undefined),
+    reconnect: vi.fn(async () => {
+      shellResubscribe?.();
+    }),
     server: {
       getConfig: vi.fn(async () => ({
         environment: {
@@ -49,19 +39,36 @@ function createTestClient(options?: {
     },
     orchestration: {
       getSnapshot: vi.fn(async () => undefined),
-      getListingSnapshot,
+      getThread: vi.fn(async () => undefined),
       dispatchCommand: vi.fn(async () => undefined),
       getTurnDiff: vi.fn(async () => undefined),
       getFullThreadDiff: vi.fn(async () => undefined),
-      replayEvents,
-      onDomainEvent: vi.fn((_: (event: any) => void, options?: { onResubscribe?: () => void }) => {
-        domainResubscribe = options?.onResubscribe;
-        return () => {
-          if (domainResubscribe === options?.onResubscribe) {
-            domainResubscribe = undefined;
+      subscribeShell: vi.fn(
+        (listener: (event: any) => void, options?: { onResubscribe?: () => void }) => {
+          shellListeners.add(listener);
+          shellResubscribe = options?.onResubscribe;
+          if (autoEmitInitialSnapshot) {
+            queueMicrotask(() => {
+              listener({
+                kind: "snapshot",
+                snapshot: {
+                  snapshotSequence: 1,
+                  projects: [],
+                  threads: [],
+                  updatedAt: "2026-04-12T00:00:00.000Z",
+                },
+              });
+            });
           }
-        };
-      }),
+          return () => {
+            shellListeners.delete(listener);
+            if (shellResubscribe === options?.onResubscribe) {
+              shellResubscribe = undefined;
+            }
+          };
+        },
+      ),
+      subscribeThread: vi.fn(() => () => undefined),
     },
     terminal: {
       open: vi.fn(async () => undefined),
@@ -100,8 +107,9 @@ function createTestClient(options?: {
 
   return {
     client,
-    getListingSnapshot,
-    replayEvents,
+    setAutoEmitInitialSnapshot: (value: boolean) => {
+      autoEmitInitialSnapshot = value;
+    },
     emitWelcome: (environmentId: EnvironmentId) => {
       for (const listener of lifecycleListeners) {
         listener({
@@ -126,17 +134,37 @@ function createTestClient(options?: {
         });
       }
     },
-    triggerDomainResubscribe: () => {
-      domainResubscribe?.();
+    emitShellSnapshot: (snapshotSequence: number) => {
+      for (const listener of shellListeners) {
+        listener({
+          kind: "snapshot",
+          snapshot: {
+            snapshotSequence,
+            projects: [],
+            threads: [],
+            updatedAt: "2026-04-12T00:00:00.000Z",
+          },
+        });
+      }
     },
   };
 }
 
+function baseHandlers() {
+  return {
+    applyEventBatch: vi.fn(),
+    syncListingSnapshot: vi.fn(),
+    applyShellEvent: vi.fn(),
+    syncShellSnapshot: vi.fn(),
+    applyTerminalEvent: vi.fn(),
+  };
+}
+
 describe("createEnvironmentConnection", () => {
-  it("bootstraps a listing snapshot immediately for a new connection", async () => {
+  it("resolves ensureBootstrapped once the shell snapshot arrives", async () => {
     const environmentId = EnvironmentId.make("env-1");
-    const { client, getListingSnapshot } = createTestClient();
-    const syncListingSnapshot = vi.fn();
+    const { client } = createTestClient();
+    const handlers = baseHandlers();
 
     const connection = createEnvironmentConnection({
       kind: "saved",
@@ -151,16 +179,12 @@ describe("createEnvironmentConnection", () => {
         environmentId,
       },
       client,
-      applyEventBatch: vi.fn(),
-      syncListingSnapshot,
-      applyTerminalEvent: vi.fn(),
+      ...handlers,
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await connection.ensureBootstrapped();
 
-    expect(getListingSnapshot).toHaveBeenCalledTimes(1);
-    expect(syncListingSnapshot).toHaveBeenCalledWith(
+    expect(handlers.syncShellSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ snapshotSequence: 1 }),
       environmentId,
     );
@@ -185,9 +209,7 @@ describe("createEnvironmentConnection", () => {
         environmentId,
       },
       client,
-      applyEventBatch: vi.fn(),
-      syncListingSnapshot: vi.fn(),
-      applyTerminalEvent: vi.fn(),
+      ...baseHandlers(),
     });
 
     expect(() => emitWelcome(EnvironmentId.make("env-2"))).toThrow(
@@ -197,14 +219,11 @@ describe("createEnvironmentConnection", () => {
     await connection.dispose();
   });
 
-  it("rejects ensureBootstrapped when snapshot recovery fails", async () => {
+  it("waits for a fresh shell snapshot after reconnect", async () => {
     const environmentId = EnvironmentId.make("env-1");
-    const snapshotError = new Error("snapshot failed");
-    const { client } = createTestClient({
-      getListingSnapshot: async () => {
-        throw snapshotError;
-      },
-    });
+    const { client, setAutoEmitInitialSnapshot, emitShellSnapshot } = createTestClient();
+    setAutoEmitInitialSnapshot(false);
+    const handlers = baseHandlers();
 
     const connection = createEnvironmentConnection({
       kind: "saved",
@@ -219,36 +238,32 @@ describe("createEnvironmentConnection", () => {
         environmentId,
       },
       client,
-      applyEventBatch: vi.fn(),
-      syncListingSnapshot: vi.fn(),
-      applyTerminalEvent: vi.fn(),
+      ...handlers,
     });
 
-    await expect(connection.ensureBootstrapped()).rejects.toThrow("snapshot failed");
+    let resolved = false;
+    const bootstrapPromise = connection.ensureBootstrapped().then(() => {
+      resolved = true;
+    });
+
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    emitShellSnapshot(2);
+    await bootstrapPromise;
+
+    expect(handlers.syncShellSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ snapshotSequence: 2 }),
+      environmentId,
+    );
 
     await connection.dispose();
   });
 
-  it("retries replay recovery after transport disconnects during resubscribe", async () => {
+  it("forwards shell stream events to applyShellEvent", async () => {
     const environmentId = EnvironmentId.make("env-1");
-    let replayAttempts = 0;
-    const applyEventBatch = vi.fn();
-    const { client, replayEvents, triggerDomainResubscribe } = createTestClient({
-      replayEvents: async () => {
-        replayAttempts += 1;
-        if (replayAttempts === 1) {
-          throw new Error("SocketCloseError: 1006");
-        }
-
-        return [
-          {
-            sequence: 2,
-            type: "thread.created",
-            payload: {},
-          },
-        ];
-      },
-    });
+    const { client, emitShellSnapshot } = createTestClient();
+    const handlers = baseHandlers();
 
     const connection = createEnvironmentConnection({
       kind: "saved",
@@ -263,85 +278,14 @@ describe("createEnvironmentConnection", () => {
         environmentId,
       },
       client,
-      applyEventBatch,
-      syncListingSnapshot: vi.fn(),
-      applyTerminalEvent: vi.fn(),
+      ...handlers,
     });
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await connection.ensureBootstrapped();
 
-    triggerDomainResubscribe();
+    emitShellSnapshot(5);
 
-    await vi.waitFor(() => {
-      expect(replayEvents).toHaveBeenCalledTimes(2);
-      expect(applyEventBatch).toHaveBeenCalledWith(
-        [
-          expect.objectContaining({
-            sequence: 2,
-          }),
-        ],
-        environmentId,
-      );
-    });
-
-    await connection.dispose();
-  });
-  it("swallows replay recovery failures triggered by resubscribe", async () => {
-    const environmentId = EnvironmentId.make("env-1");
-    const snapshotError = new Error("snapshot failed");
-    let snapshotCalls = 0;
-    const { client, triggerDomainResubscribe } = createTestClient({
-      getListingSnapshot: async () => {
-        snapshotCalls += 1;
-        if (snapshotCalls === 1) {
-          return {
-            snapshotSequence: 1,
-            projects: [],
-            threads: [],
-          } as any;
-        }
-
-        throw snapshotError;
-      },
-      replayEvents: async () => {
-        throw new Error("SocketCloseError: 1006");
-      },
-    });
-
-    const connection = createEnvironmentConnection({
-      kind: "saved",
-      knownEnvironment: {
-        id: "env-1",
-        label: "Remote env",
-        source: "manual",
-        target: {
-          httpBaseUrl: "http://example.test",
-          wsBaseUrl: "ws://example.test",
-        },
-        environmentId,
-      },
-      client,
-      applyEventBatch: vi.fn(),
-      syncListingSnapshot: vi.fn(),
-      applyTerminalEvent: vi.fn(),
-    });
-
-    await Promise.resolve();
-    await Promise.resolve();
-
-    const onUnhandledRejection = vi.fn();
-    process.on("unhandledRejection", onUnhandledRejection);
-
-    try {
-      triggerDomainResubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    } finally {
-      process.off("unhandledRejection", onUnhandledRejection);
-    }
-
-    expect(onUnhandledRejection).not.toHaveBeenCalled();
+    expect(handlers.syncShellSnapshot).toHaveBeenCalledTimes(2);
 
     await connection.dispose();
   });

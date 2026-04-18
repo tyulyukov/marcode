@@ -1,9 +1,4 @@
-import {
-  type ContextMenuItem,
-  type LocalApi,
-  type EnvironmentApi,
-  type OrchestrationEvent,
-} from "@marcode/contracts";
+import { type ContextMenuItem, type LocalApi, type EnvironmentApi } from "@marcode/contracts";
 
 import { resetGitStatusStateForTests } from "./lib/gitStatusState";
 import { showContextMenuFallback } from "./contextMenuFallback";
@@ -68,6 +63,9 @@ export function createWsNativeApi(): MarCodeNativeApi {
       searchEntries: rpcClient.projects.searchEntries,
       browseDirectories: rpcClient.projects.browseDirectories,
       writeFile: rpcClient.projects.writeFile,
+    },
+    filesystem: {
+      browse: rpcClient.filesystem.browse,
     },
     shell: {
       openInEditor: (cwd, editor) => rpcClient.shell.openInEditor({ cwd, editor }),
@@ -166,12 +164,10 @@ export function createWsNativeApi(): MarCodeNativeApi {
       dispatchCommand: rpcClient.orchestration.dispatchCommand,
       getTurnDiff: rpcClient.orchestration.getTurnDiff,
       getFullThreadDiff: rpcClient.orchestration.getFullThreadDiff,
-      replayEvents: (fromSequenceExclusive) =>
-        rpcClient.orchestration
-          .replayEvents({ fromSequenceExclusive })
-          .then((events: readonly OrchestrationEvent[]) => [...events]),
-      onDomainEvent: (callback, options) =>
-        rpcClient.orchestration.onDomainEvent(callback, options),
+      subscribeShell: (callback, options) =>
+        rpcClient.orchestration.subscribeShell(callback, options),
+      subscribeThread: (input, callback, options) =>
+        rpcClient.orchestration.subscribeThread(input, callback, options),
     },
     jira: {
       getConnectionStatus: rpcClient.jira.getConnectionStatus,

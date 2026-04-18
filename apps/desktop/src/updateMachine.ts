@@ -1,14 +1,20 @@
-import type { DesktopRuntimeInfo, DesktopUpdateState } from "@marcode/contracts";
+import type {
+  DesktopRuntimeInfo,
+  DesktopUpdateChannel,
+  DesktopUpdateState,
+} from "@marcode/contracts";
 
-import { getCanRetryAfterDownloadFailure, nextStatusAfterDownloadFailure } from "./updateState";
+import { getCanRetryAfterDownloadFailure, nextStatusAfterDownloadFailure } from "./updateState.ts";
 
 export function createInitialDesktopUpdateState(
   currentVersion: string,
   runtimeInfo: DesktopRuntimeInfo,
+  channel: DesktopUpdateChannel,
 ): DesktopUpdateState {
   return {
     enabled: false,
     status: "disabled",
+    channel,
     currentVersion,
     hostArch: runtimeInfo.hostArch,
     appArch: runtimeInfo.appArch,

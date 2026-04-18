@@ -3,10 +3,9 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type DesktopBridge,
   EnvironmentId,
-  EventId,
   type GitStatusResult,
   ProjectId,
-  type OrchestrationEvent,
+  type OrchestrationShellStreamItem,
   type ServerConfig,
   type ServerProvider,
   type TerminalEvent,
@@ -32,7 +31,7 @@ function registerListener<T>(listeners: Set<(event: T) => void>, listener: (even
 }
 
 const terminalEventListeners = new Set<(event: TerminalEvent) => void>();
-const orchestrationEventListeners = new Set<(event: OrchestrationEvent) => void>();
+const shellStreamListeners = new Set<(event: OrchestrationShellStreamItem) => void>();
 const gitStatusListeners = new Set<(event: GitStatusResult) => void>();
 
 const rpcClientMock = {
@@ -52,6 +51,9 @@ const rpcClientMock = {
     searchEntries: vi.fn(),
     browseDirectories: vi.fn(),
     writeFile: vi.fn(),
+  },
+  filesystem: {
+    browse: vi.fn(),
   },
   shell: {
     openInEditor: vi.fn(),
@@ -95,14 +97,13 @@ const rpcClientMock = {
     onConnectionStatusChanged: vi.fn(),
   },
   orchestration: {
-    getSnapshot: vi.fn(),
     dispatchCommand: vi.fn(),
     getTurnDiff: vi.fn(),
     getFullThreadDiff: vi.fn(),
-    replayEvents: vi.fn(),
-    onDomainEvent: vi.fn((listener: (event: OrchestrationEvent) => void) =>
-      registerListener(orchestrationEventListeners, listener),
+    subscribeShell: vi.fn((listener: (event: OrchestrationShellStreamItem) => void) =>
+      registerListener(shellStreamListeners, listener),
     ),
+    subscribeThread: vi.fn(() => () => undefined),
   },
 };
 
@@ -172,6 +173,7 @@ function createLocalStorageStub(): Storage {
 
 function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
   return {
+    getAppBranding: () => null,
     getLocalEnvironmentBootstrap: () => null,
     getClientSettings: async () => null,
     setClientSettings: async () => undefined,
@@ -198,6 +200,9 @@ function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridg
     onMenuAction: () => () => undefined,
     getUpdateState: async () => {
       throw new Error("getUpdateState not implemented in test");
+    },
+    setUpdateChannel: async () => {
+      throw new Error("setUpdateChannel not implemented in test");
     },
     checkForUpdate: async () => {
       throw new Error("checkForUpdate not implemented in test");
@@ -283,7 +288,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   showContextMenuFallbackMock.mockReset();
   terminalEventListeners.clear();
-  orchestrationEventListeners.clear();
+  shellStreamListeners.clear();
   gitStatusListeners.clear();
   const testWindow = getWindowForTest();
   Reflect.deleteProperty(testWindow, "desktopBridge");
@@ -310,15 +315,15 @@ describe("wsApi", () => {
     expect(rpcClientMock.server.subscribeLifecycle).not.toHaveBeenCalled();
   });
 
-  it("forwards terminal and orchestration stream events", async () => {
+  it("forwards terminal and shell stream events", async () => {
     const { createEnvironmentApi } = await import("./environmentApi");
 
     const api = createEnvironmentApi(rpcClientMock as never);
     const onTerminalEvent = vi.fn();
-    const onDomainEvent = vi.fn();
+    const onShellEvent = vi.fn();
 
     api.terminal.onEvent(onTerminalEvent);
-    api.orchestration.onDomainEvent(onDomainEvent);
+    api.orchestration.subscribeShell(onShellEvent);
 
     const terminalEvent = {
       threadId: "thread-1",
@@ -329,19 +334,11 @@ describe("wsApi", () => {
     } as const;
     emitEvent(terminalEventListeners, terminalEvent);
 
-    const orchestrationEvent = {
+    const shellEvent = {
+      kind: "project-upserted" as const,
       sequence: 1,
-      eventId: EventId.make("event-1"),
-      aggregateKind: "project",
-      aggregateId: ProjectId.make("project-1"),
-      occurredAt: "2026-02-24T00:00:00.000Z",
-      commandId: null,
-      causationEventId: null,
-      correlationId: null,
-      metadata: {},
-      type: "project.created",
-      payload: {
-        projectId: ProjectId.make("project-1"),
+      project: {
+        id: ProjectId.make("project-1"),
         title: "Project",
         workspaceRoot: "/tmp/workspace",
         defaultModelSelection: {
@@ -349,15 +346,14 @@ describe("wsApi", () => {
           model: "gpt-5-codex",
         },
         scripts: [],
-        jiraBoard: null,
         createdAt: "2026-02-24T00:00:00.000Z",
         updatedAt: "2026-02-24T00:00:00.000Z",
       },
-    } satisfies Extract<OrchestrationEvent, { type: "project.created" }>;
-    emitEvent(orchestrationEventListeners, orchestrationEvent);
+    } satisfies OrchestrationShellStreamItem;
+    emitEvent(shellStreamListeners, shellEvent);
 
     expect(onTerminalEvent).toHaveBeenCalledWith(terminalEvent);
-    expect(onDomainEvent).toHaveBeenCalledWith(orchestrationEvent);
+    expect(onShellEvent).toHaveBeenCalledWith(shellEvent);
   });
 
   it("forwards git status stream events", async () => {
@@ -386,16 +382,16 @@ describe("wsApi", () => {
     expect(rpcClientMock.git.refreshStatus).toHaveBeenCalledWith({ cwd: "/repo" });
   });
 
-  it("forwards orchestration stream subscription options to the RPC client", async () => {
+  it("forwards shell stream subscription options to the RPC client", async () => {
     const { createEnvironmentApi } = await import("./environmentApi");
 
     const api = createEnvironmentApi(rpcClientMock as never);
-    const onDomainEvent = vi.fn();
+    const onShellEvent = vi.fn();
     const onResubscribe = vi.fn();
 
-    api.orchestration.onDomainEvent(onDomainEvent, { onResubscribe });
+    api.orchestration.subscribeShell(onShellEvent, { onResubscribe });
 
-    expect(rpcClientMock.orchestration.onDomainEvent).toHaveBeenCalledWith(onDomainEvent, {
+    expect(rpcClientMock.orchestration.subscribeShell).toHaveBeenCalledWith(onShellEvent, {
       onResubscribe,
     });
   });
@@ -437,6 +433,25 @@ describe("wsApi", () => {
       cwd: "/tmp/project",
       relativePath: "plan.md",
       contents: "# Plan\n",
+    });
+  });
+
+  it("forwards filesystem browse requests to the RPC client", async () => {
+    rpcClientMock.filesystem.browse.mockResolvedValue({
+      parentPath: "/tmp/project/",
+      entries: [],
+    });
+    const { createEnvironmentApi } = await import("./environmentApi");
+
+    const api = createEnvironmentApi(rpcClientMock as never);
+    await api.filesystem.browse({
+      partialPath: "/tmp/project/",
+      cwd: "/tmp/project",
+    });
+
+    expect(rpcClientMock.filesystem.browse).toHaveBeenCalledWith({
+      partialPath: "/tmp/project/",
+      cwd: "/tmp/project",
     });
   });
 
@@ -502,6 +517,19 @@ describe("wsApi", () => {
     expect(showContextMenu).toHaveBeenCalledWith(items, undefined);
   });
 
+  it("forwards folder picker options to the desktop bridge", async () => {
+    const pickFolder = vi.fn().mockResolvedValue("/tmp/project");
+    getWindowForTest().desktopBridge = makeDesktopBridge({ pickFolder });
+
+    const { createLocalApi } = await import("./localApi");
+    const api = createLocalApi(rpcClientMock as never);
+
+    await expect(api.dialogs.pickFolder({ initialPath: "/tmp/workspace" })).resolves.toBe(
+      "/tmp/project",
+    );
+    expect(pickFolder).toHaveBeenCalledWith({ initialPath: "/tmp/workspace" });
+  });
+
   it("falls back to the browser context menu helper when the desktop bridge is missing", async () => {
     showContextMenuFallbackMock.mockResolvedValue("rename");
     const { createLocalApi } = await import("./localApi");
@@ -514,13 +542,20 @@ describe("wsApi", () => {
   });
 
   it("reads and writes persistence through the desktop bridge when available", async () => {
-    const getClientSettings = vi.fn().mockResolvedValue({
+    const clientSettings = {
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
-      sidebarProjectSortOrder: "manual",
-      sidebarThreadSortOrder: "created_at",
-      timestampFormat: "24-hour",
+      sidebarProjectGroupingMode: "repository_path" as const,
+      sidebarProjectGroupingOverrides: {
+        "environment-local:/tmp/project": "separate" as const,
+      },
+      sidebarProjectSortOrder: "manual" as const,
+      sidebarThreadSortOrder: "created_at" as const,
+      timestampFormat: "24-hour" as const,
+    };
+    const getClientSettings = vi.fn().mockResolvedValue({
+      ...clientSettings,
     });
     const setClientSettings = vi.fn().mockResolvedValue(undefined);
     const getSavedEnvironmentRegistry = vi.fn().mockResolvedValue([]);
@@ -546,10 +581,11 @@ describe("wsApi", () => {
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
+      sidebarProjectGroupingMode: "repository",
+      sidebarProjectGroupingOverrides: {},
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
       timestampFormat: "24-hour",
-      showTodosInComposer: true,
       turnNotificationMode: "off",
       turnNotificationSoundId: "default",
       turnNotificationCustomSounds: [],
@@ -574,10 +610,11 @@ describe("wsApi", () => {
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
+      sidebarProjectGroupingMode: "repository",
+      sidebarProjectGroupingOverrides: {},
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
       timestampFormat: "24-hour",
-      showTodosInComposer: true,
       turnNotificationMode: "off",
       turnNotificationSoundId: "default",
       turnNotificationCustomSounds: [],
@@ -603,10 +640,11 @@ describe("wsApi", () => {
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
+      sidebarProjectGroupingMode: "repository",
+      sidebarProjectGroupingOverrides: {},
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
       timestampFormat: "24-hour",
-      showTodosInComposer: true,
       turnNotificationMode: "off",
       turnNotificationSoundId: "default",
       turnNotificationCustomSounds: [],
@@ -636,7 +674,8 @@ describe("wsApi", () => {
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
-      showTodosInComposer: true,
+      sidebarProjectGroupingMode: "repository",
+      sidebarProjectGroupingOverrides: {},
       sidebarProjectSortOrder: "manual",
       sidebarThreadSortOrder: "created_at",
       timestampFormat: "24-hour",

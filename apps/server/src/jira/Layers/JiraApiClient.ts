@@ -1,5 +1,5 @@
 import { Effect, Layer, Option } from "effect";
-import { ServerConfig } from "../../config";
+import { ServerConfig } from "../../config.ts";
 import type {
   JiraConnectionStatus,
   JiraGetAttachmentResult,
@@ -10,9 +10,9 @@ import type {
   JiraSite,
   JiraUser,
 } from "@marcode/contracts";
-import { JiraApiClient, type JiraApiClientShape } from "../Services/JiraApiClient";
-import { JiraTokenService } from "../Services/JiraTokenService";
-import { JiraApiError } from "../Errors";
+import { JiraApiClient, type JiraApiClientShape } from "../Services/JiraApiClient.ts";
+import { JiraTokenService } from "../Services/JiraTokenService.ts";
+import { JiraApiError } from "../Errors.ts";
 
 const ATLASSIAN_API_BASE = "https://api.atlassian.com";
 

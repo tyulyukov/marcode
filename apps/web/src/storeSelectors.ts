@@ -23,15 +23,6 @@ export function createProjectSelectorByRef(
     ref ? selectEnvironmentState(state, ref.environmentId).projectById[ref.projectId] : undefined;
 }
 
-export function createSidebarThreadSummarySelectorByRef(
-  ref: ScopedThreadRef | null | undefined,
-): (state: AppState) => SidebarThreadSummary | undefined {
-  return (state) =>
-    ref
-      ? selectEnvironmentState(state, ref.environmentId).sidebarThreadSummaryById[ref.threadId]
-      : undefined;
-}
-
 function createScopedThreadSelector(
   resolveRef: (state: AppState) => ScopedThreadRef | null | undefined,
 ): (state: AppState) => Thread | undefined {

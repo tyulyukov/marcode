@@ -22,10 +22,53 @@ import {
   selectThreadExistsByRef,
   setThreadBranch,
   selectThreadsAcrossEnvironments,
-  syncServerReadModel,
+  syncListingSnapshot,
+  syncServerThreadDetail,
   type AppState,
   type EnvironmentState,
 } from "./store";
+
+function syncServerReadModel(
+  state: AppState,
+  readModel: OrchestrationReadModel,
+  environmentId: EnvironmentId,
+): AppState {
+  const listingThreads = readModel.threads.map((thread) => ({
+    id: thread.id,
+    projectId: thread.projectId,
+    title: thread.title,
+    modelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
+    branch: thread.branch,
+    worktreePath: thread.worktreePath,
+    additionalDirectories: thread.additionalDirectories,
+    latestTurn: thread.latestTurn,
+    session: thread.session,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    archivedAt: thread.archivedAt,
+    deletedAt: thread.deletedAt,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  }));
+  let next = syncListingSnapshot(
+    state,
+    {
+      snapshotSequence: readModel.snapshotSequence,
+      projects: readModel.projects,
+      threads: listingThreads,
+      updatedAt: readModel.updatedAt,
+    },
+    environmentId,
+  );
+  for (const thread of readModel.threads) {
+    next = syncServerThreadDetail(next, thread, environmentId);
+  }
+  return next;
+}
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
