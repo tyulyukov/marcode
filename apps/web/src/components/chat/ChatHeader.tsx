@@ -35,7 +35,6 @@ interface ChatHeaderProps {
   diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
   diffOpen: boolean;
-  hasPlan: boolean;
   planSidebarOpen: boolean;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
@@ -64,7 +63,6 @@ export const ChatHeader = memo(function ChatHeader({
   diffToggleShortcutLabel,
   gitCwd,
   diffOpen,
-  hasPlan,
   planSidebarOpen,
   onRunProjectScript,
   onAddProjectScript,
@@ -188,18 +186,13 @@ export const ChatHeader = memo(function ChatHeader({
                 aria-label="Toggle plan sidebar"
                 variant="outline"
                 size="xs"
-                disabled={!hasPlan}
               >
                 <ListTodoIcon className="size-3" />
               </Toggle>
             }
           />
           <TooltipPopup side="bottom">
-            {!hasPlan
-              ? "No plan available"
-              : planSidebarOpen
-                ? "Hide plan sidebar"
-                : "Show plan sidebar"}
+            {planSidebarOpen ? "Hide plan sidebar" : "Show plan sidebar"}
           </TooltipPopup>
         </Tooltip>
       </div>

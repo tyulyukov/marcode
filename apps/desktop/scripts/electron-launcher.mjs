@@ -1,4 +1,7 @@
-// This file mostly exists because we want dev mode to say "MarCode (Dev)" instead of "electron"
+// This file renames the packaged app bundle on macOS to "MarCode (Alpha)".
+// Dev mode intentionally skips the rename because renaming the Electron.app
+// bundle in-place breaks Electron helper resource lookup (e.g. icudtl.dat) on
+// newer Electron versions — the Dock shows "Electron" in dev, which is fine.
 
 import { spawnSync } from "node:child_process";
 import {
@@ -171,7 +174,8 @@ export function resolveElectronPath() {
   }
 
   // Dev launches do not need a renamed app bundle badly enough to risk breaking
-  // Electron helper resource lookup on macOS.
+  // Electron helper resource lookup (icudtl.dat) on macOS. The Dock will show
+  // "Electron" in dev; this is the intentional upstream tradeoff.
   if (isDevelopment) {
     return electronBinaryPath;
   }

@@ -76,7 +76,6 @@ import {
   findSidebarProposedPlan,
   findLatestProposedPlan,
   deriveWorkLogEntries,
-  deriveTodoItems,
   hasActionableProposedPlan,
   hasToolActivityForTurn,
   isLatestTurnSettled,
@@ -237,7 +236,6 @@ import { ComposerPrimaryActions } from "./chat/ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./chat/ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./chat/ComposerPlanFollowUpBanner";
-import { ComposerTodoListPanel } from "./chat/ComposerActiveTasksPanel";
 import { SubagentDetailDrawer } from "./chat/SubagentDetailDrawer";
 import {
   getComposerProviderState,
@@ -776,7 +774,6 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
-  const showTodosInComposer = settings.showTodosInComposer;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const rawSearch = useSearch({
@@ -1419,20 +1416,13 @@ export default function ChatView(props: ChatViewProps) {
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const timelineThreadActivities = timelineThread?.activities ?? EMPTY_ACTIVITIES;
-  const activeTodoItems = useMemo(
-    () =>
-      showTodosInComposer
-        ? deriveTodoItems(threadActivities, activeLatestTurn?.turnId ?? undefined)
-        : [],
-    [showTodosInComposer, threadActivities, activeLatestTurn?.turnId],
-  );
   const workLogEntries = useMemo(
     () =>
       deriveWorkLogEntries(timelineThreadActivities, timelineLatestTurn?.turnId ?? undefined, {
-        excludeTodoToolCalls: showTodosInComposer,
+        excludeTodoToolCalls: true,
         isSessionRunning: phase === "running",
       }),
-    [timelineLatestTurn?.turnId, timelineThreadActivities, showTodosInComposer, phase],
+    [timelineLatestTurn?.turnId, timelineThreadActivities, phase],
   );
   const timelineLatestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(timelineThreadActivities, timelineLatestTurn?.turnId),
@@ -1539,8 +1529,7 @@ export default function ChatView(props: ChatViewProps) {
   const hasComposerHeader =
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
-    (showPlanFollowUpPrompt && activeProposedPlan !== null) ||
-    activeTodoItems.length > 0;
+    (showPlanFollowUpPrompt && activeProposedPlan !== null);
   const composerFooterHasWideActions = showPlanFollowUpPrompt || activePendingProgress !== null;
   const composerFooterActionLayoutKey = useMemo(() => {
     if (activePendingProgress) {
@@ -4995,7 +4984,6 @@ export default function ChatView(props: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
-          hasPlan={Boolean(activePlan || sidebarProposedPlan)}
           planSidebarOpen={planSidebarOpen}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
@@ -5143,10 +5131,6 @@ export default function ChatView(props: ChatViewProps) {
                         key={activeProposedPlan.id}
                         planTitle={proposedPlanTitle(activeProposedPlan.planMarkdown) ?? null}
                       />
-                    </div>
-                  ) : activeTodoItems.length > 0 ? (
-                    <div className="rounded-t-[19px] border-b border-border/65 bg-muted/20">
-                      <ComposerTodoListPanel items={activeTodoItems} />
                     </div>
                   ) : null}
                   <div
@@ -5339,6 +5323,7 @@ export default function ChatView(props: ChatViewProps) {
                           onRuntimeModeChange={handleRuntimeModeChange}
                           onAttachImages={addComposerImages}
                           disabled={isConnecting}
+                          projectCwd={activeProject?.cwd ?? null}
                         />
 
                         <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
@@ -5362,13 +5347,9 @@ export default function ChatView(props: ChatViewProps) {
 
                         {isComposerFooterCompact ? (
                           <CompactComposerControlsMenu
-                            activePlan={activePlan !== null}
                             interactionMode={interactionMode}
-                            planSidebarLabel={planSidebarLabel}
-                            planSidebarOpen={planSidebarOpen}
                             traitsMenuContent={providerTraitsMenuContent}
                             onToggleInteractionMode={toggleInteractionMode}
-                            onTogglePlanSidebar={togglePlanSidebar}
                           />
                         ) : (
                           <>

@@ -713,12 +713,21 @@ function writeThreadShellState(
     previousShell?.projectId,
   );
 
-  if (!threadShellsEqual(previousShell, nextThread.shell)) {
+  // The shell stream does not know whether detail data has been loaded; it
+  // always emits hydrated:false. If the detail stream has already hydrated
+  // this thread, preserve that so mid-turn shell updates (e.g. updatedAt
+  // ticks) don't reset the chat view to the hydration skeleton.
+  const mergedShell: ThreadShell =
+    previousShell?.hydrated && !nextThread.shell.hydrated
+      ? { ...nextThread.shell, hydrated: true }
+      : nextThread.shell;
+
+  if (!threadShellsEqual(previousShell, mergedShell)) {
     nextState = {
       ...nextState,
       threadShellById: {
         ...nextState.threadShellById,
-        [nextThread.shell.id]: nextThread.shell,
+        [nextThread.shell.id]: mergedShell,
       },
     };
   }

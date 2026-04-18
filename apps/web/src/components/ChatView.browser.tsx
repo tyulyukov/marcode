@@ -1820,6 +1820,7 @@ describe("ChatView timeline estimator parity (full app)", () => {
     useCommandPaletteStore.setState({
       open: false,
       openIntent: null,
+      addFolderResult: null,
     });
     useStore.setState({
       activeEnvironmentId: null,

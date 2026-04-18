@@ -207,6 +207,7 @@ function OpenCommandPaletteDialog() {
   const setOpen = useCommandPaletteStore((store) => store.setOpen);
   const openIntent = useCommandPaletteStore((store) => store.openIntent);
   const clearOpenIntent = useCommandPaletteStore((store) => store.clearOpenIntent);
+  const reportAddFolderResult = useCommandPaletteStore((store) => store.reportAddFolderResult);
   const composerHandleRef = useComposerHandleContext();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -225,6 +226,8 @@ function OpenCommandPaletteDialog() {
   const [addProjectEnvironmentId, setAddProjectEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
+  const [addFolderRequestId, setAddFolderRequestId] = useState<number | null>(null);
+  const isAddingFolder = addFolderRequestId !== null;
   const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const primaryEnvironmentLabel = readPrimaryEnvironmentDescriptor()?.label ?? null;
@@ -542,6 +545,7 @@ function OpenCommandPaletteDialog() {
   function popView(): void {
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
+      setAddFolderRequestId(null);
     }
     setViewStack((previousViews) => previousViews.slice(0, -1));
     setHighlightedItemValue(null);
@@ -621,13 +625,36 @@ function OpenCommandPaletteDialog() {
     startAddProjectBrowse,
   ]);
 
+  const startAddFolderBrowse = useCallback(
+    (requestId: number, initialPath: string): void => {
+      setAddFolderRequestId(requestId);
+      if (defaultAddProjectEnvironmentId) {
+        setAddProjectEnvironmentId(defaultAddProjectEnvironmentId);
+      }
+      pushPaletteView({
+        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+        groups: [],
+        initialQuery: ensureBrowseDirectoryPath(initialPath),
+      });
+    },
+    [defaultAddProjectEnvironmentId],
+  );
+
   useEffect(() => {
-    if (openIntent?.kind !== "add-project") {
+    if (!openIntent) {
       return;
     }
-    clearOpenIntent();
-    openAddProjectFlow();
-  }, [clearOpenIntent, openAddProjectFlow, openIntent]);
+    if (openIntent.kind === "add-project") {
+      clearOpenIntent();
+      openAddProjectFlow();
+      return;
+    }
+    if (openIntent.kind === "add-folder") {
+      const { requestId, initialPath } = openIntent;
+      clearOpenIntent();
+      startAddFolderBrowse(requestId, initialPath);
+    }
+  }, [clearOpenIntent, openAddProjectFlow, openIntent, startAddFolderBrowse]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
@@ -811,6 +838,31 @@ function OpenCommandPaletteDialog() {
     ],
   );
 
+  const handleAddFolderSubmit = useCallback(
+    (rawPath: string): void => {
+      if (addFolderRequestId === null) return;
+      const trimmed = rawPath.trim();
+      if (trimmed.length === 0) return;
+      const resolved = resolveProjectPathForDispatch(trimmed, currentProjectCwdForBrowse);
+      if (resolved.length === 0) return;
+      reportAddFolderResult(addFolderRequestId, resolved);
+      setAddFolderRequestId(null);
+      setOpen(false);
+    },
+    [addFolderRequestId, currentProjectCwdForBrowse, reportAddFolderResult, setOpen],
+  );
+
+  const handleBrowseSubmit = useCallback(
+    async (rawPath: string): Promise<void> => {
+      if (isAddingFolder) {
+        handleAddFolderSubmit(rawPath);
+        return;
+      }
+      await handleAddProject(rawPath);
+    },
+    [handleAddFolderSubmit, handleAddProject, isAddingFolder],
+  );
+
   function browseTo(name: string): void {
     const nextQuery = appendBrowsePathSegment(query, name);
     setHighlightedItemValue(null);
@@ -859,15 +911,22 @@ function OpenCommandPaletteDialog() {
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canSubmitBrowsePath = isBrowsing && !relativePathNeedsActiveProject;
-  const willCreateProjectPath =
+  const pathWouldBeCreated =
     canSubmitBrowsePath &&
     !isBrowsePending &&
     query.trim().length > 0 &&
     !hasHighlightedBrowseItem &&
     (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
+  const willCreateProjectPath = pathWouldBeCreated && !isAddingFolder;
+  const addFolderPathMissing = pathWouldBeCreated && isAddingFolder;
+  const submitDisabled = relativePathNeedsActiveProject || addFolderPathMissing;
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
-  const submitActionLabel = willCreateProjectPath ? "Create & Add" : "Add";
+  const submitActionLabel = isAddingFolder
+    ? "Add folder"
+    : willCreateProjectPath
+      ? "Create & Add"
+      : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
   const fileManagerName = getLocalFileManagerName(navigator.platform);
   const canOpenProjectFromFileManager =
@@ -908,12 +967,13 @@ function OpenCommandPaletteDialog() {
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     const shouldSubmitBrowsePath =
       canSubmitBrowsePath &&
+      !submitDisabled &&
       event.key === "Enter" &&
       (!hasHighlightedBrowseItem || isPrimaryModifierPressed(event));
 
     if (shouldSubmitBrowsePath) {
       event.preventDefault();
-      void handleAddProject(resolvedAddProjectPath);
+      void handleBrowseSubmit(resolvedAddProjectPath);
       return;
     }
 
@@ -966,11 +1026,11 @@ function OpenCommandPaletteDialog() {
     if (!pickedPath) {
       return;
     }
-    await handleAddProject(pickedPath);
+    await handleBrowseSubmit(pickedPath);
   }, [
     canOpenProjectFromFileManager,
     fileManagerInitialPath,
-    handleAddProject,
+    handleBrowseSubmit,
     isPickingProjectFolder,
   ]);
 
@@ -1032,15 +1092,15 @@ function OpenCommandPaletteDialog() {
                 hasHighlightedBrowseItem ? "gap-1" : "gap-1.5",
               )}
               aria-label={`${submitActionLabel} (${addShortcutLabel})`}
-              disabled={relativePathNeedsActiveProject}
+              disabled={submitDisabled}
               onMouseDown={(event) => {
                 event.preventDefault();
               }}
               onClick={() => {
-                if (relativePathNeedsActiveProject) {
+                if (submitDisabled) {
                   return;
                 }
-                void handleAddProject(resolvedAddProjectPath);
+                void handleBrowseSubmit(resolvedAddProjectPath);
               }}
               title={`${submitActionLabel} (${addShortcutLabel})`}
             >
@@ -1060,11 +1120,14 @@ function OpenCommandPaletteDialog() {
             onExecuteItem={executeItem}
             {...(relativePathNeedsActiveProject
               ? { emptyStateMessage: "Relative paths require an active project." }
-              : willCreateProjectPath
-                ? {
-                    emptyStateMessage: "Press Enter to create this folder and add it as a project.",
-                  }
-                : {})}
+              : addFolderPathMissing
+                ? { emptyStateMessage: "Folder not found. Pick an existing folder to add." }
+                : willCreateProjectPath
+                  ? {
+                      emptyStateMessage:
+                        "Press Enter to create this folder and add it as a project.",
+                    }
+                  : {})}
           />
         </CommandPanel>
         <CommandFooter className="gap-3 max-sm:flex-col max-sm:items-start">

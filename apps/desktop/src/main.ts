@@ -462,6 +462,11 @@ async function waitForBackendHttpReady(
 
   try {
     await waitForHttpReady(baseUrl, {
+      // `/` redirects to the Vite dev server in development (302) which
+      // fails the default `response.ok` readiness predicate. Probe the auth
+      // session endpoint instead — it returns 200 in both dev and packaged
+      // builds once the backend is accepting requests.
+      path: "/api/auth/session",
       ...options,
       signal: controller.signal,
     });

@@ -2,7 +2,7 @@ import type { DesktopAppBranding, DesktopAppStageLabel } from "@marcode/contract
 
 import { isNightlyDesktopVersion } from "./updateChannels.ts";
 
-const APP_BASE_NAME = "T3 Code";
+const APP_BASE_NAME = "MarCode";
 
 export function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;

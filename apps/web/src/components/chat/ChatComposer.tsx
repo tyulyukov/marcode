@@ -1931,13 +1931,9 @@ export const ChatComposer = memo(
 
                   {isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
-                      activePlan={showPlanSidebarToggle}
                       interactionMode={interactionMode}
-                      planSidebarLabel={planSidebarLabel}
-                      planSidebarOpen={planSidebarOpen}
                       traitsMenuContent={providerTraitsMenuContent}
                       onToggleInteractionMode={toggleInteractionMode}
-                      onTogglePlanSidebar={togglePlanSidebar}
                     />
                   ) : (
                     <>
