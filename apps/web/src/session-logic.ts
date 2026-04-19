@@ -578,6 +578,7 @@ export function deriveWorkLogEntries(
         (activityHasItemType(activity, "command_execution") && activityHasItemId(activity)),
     )
     .filter((activity) => activity.kind !== "context-window.updated")
+    .filter((activity) => activity.kind !== "account.rate-limits.updated")
     .filter((activity) => activity.summary !== "Checkpoint captured")
     .filter((activity) => !isPlanBoundaryToolActivity(activity))
     .filter((activity) => !isSubagentToolActivity(activity))
