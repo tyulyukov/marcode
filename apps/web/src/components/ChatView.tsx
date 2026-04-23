@@ -4857,7 +4857,7 @@ export default function ChatView({
             <form
               ref={composerFormRef}
               onSubmit={onSend}
-              className="mx-auto w-full min-w-0 max-w-208"
+              className="mx-auto w-full min-w-0 max-w-(--chat-column-max-width)"
               data-chat-composer-form="true"
             >
               <div

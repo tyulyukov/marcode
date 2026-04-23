@@ -19,7 +19,6 @@ import {
 import {
   type ClientSettingsPatch,
   type ClientSettings,
-  ClientSettingsSchema,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_UNIFIED_SETTINGS,
   SidebarProjectSortOrder,

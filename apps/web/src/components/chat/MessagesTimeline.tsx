@@ -132,7 +132,7 @@ const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
 
 function TimelineSkeleton() {
   return (
-    <div className="mx-auto w-full min-w-0 max-w-3xl px-1">
+    <div className="mx-auto w-full min-w-0 max-w-(--chat-column-max-width) px-1">
       <div className="flex flex-col gap-6 py-4">
         <div className="flex items-start gap-3">
           <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />
@@ -510,7 +510,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
       <div
-        className="mx-auto w-full min-w-0 max-w-3xl overflow-x-hidden"
+        className="mx-auto w-full min-w-0 max-w-(--chat-column-max-width) overflow-x-hidden"
         data-timeline-root="true"
         {...(item.kind === "message" ? { "data-row-message-id": item.message.id } : undefined)}
       >

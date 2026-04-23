@@ -11,6 +11,7 @@ import {
   type LocalApi,
   type ServerConfig,
 } from "@marcode/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@marcode/contracts/settings";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { DateTime } from "effect";
 import { page } from "vitest/browser";
@@ -18,9 +19,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
 import { __resetLocalApiForTests } from "../../localApi";
+import { __resetClientSettingsPersistenceForTests } from "../../hooks/useSettings";
 import { AppAtomRegistryProvider } from "../../rpc/atomRegistry";
 import { resetServerStateForTests, setServerConfigSnapshot } from "../../rpc/serverState";
 import { ConnectionsSettings } from "./ConnectionsSettings";
+import { AppearanceSettingsPanel } from "./AppearanceSettingsPanel";
 import { GeneralSettingsPanel } from "./SettingsPanels";
 
 const authAccessHarness = vi.hoisted(() => {
@@ -387,6 +390,7 @@ describe("GeneralSettingsPanel observability", () => {
 
   beforeEach(async () => {
     resetServerStateForTests();
+    __resetClientSettingsPersistenceForTests();
     await __resetLocalApiForTests();
     localStorage.clear();
     authAccessHarness.reset();
@@ -403,6 +407,7 @@ describe("GeneralSettingsPanel observability", () => {
     Reflect.deleteProperty(window, "nativeApi");
     document.body.innerHTML = "";
     resetServerStateForTests();
+    __resetClientSettingsPersistenceForTests();
     await __resetLocalApiForTests();
     authAccessHarness.reset();
   });
@@ -750,5 +755,34 @@ describe("GeneralSettingsPanel observability", () => {
     await openLogsButton.click();
 
     expect(openInEditor).toHaveBeenCalledWith("/repo/project/.marcode/logs", "cursor");
+  });
+
+  it("shows theme previews and persists appearance settings locally", async () => {
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <AppearanceSettingsPanel />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect.element(page.getByText("Themes")).toBeInTheDocument();
+    await expect.element(page.getByText("Conversation width")).toBeInTheDocument();
+
+    await page.getByRole("button", { name: "Use Catppuccin Mocha theme" }).click();
+    await page.getByRole("button", { name: "Use wide conversation width" }).click();
+    await page.getByLabelText("Reduce motion").click();
+    await page.getByLabelText("Ambient grain").click();
+
+    await vi.waitFor(() => {
+      expect(localStorage.getItem("marcode:theme")).toBe("catppuccin-mocha");
+
+      const storedSettings = JSON.parse(
+        localStorage.getItem("marcode:client-settings:v1") ?? "null",
+      ) as typeof DEFAULT_CLIENT_SETTINGS | null;
+
+      expect(storedSettings).not.toBeNull();
+      expect(storedSettings?.conversationWidth).toBe("wide");
+      expect(storedSettings?.reduceMotion).toBe(true);
+      expect(storedSettings?.ambientGrain).toBe(false);
+    });
   });
 });

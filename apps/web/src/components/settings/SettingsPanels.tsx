@@ -8,7 +8,6 @@ import {
   PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
-  Undo2Icon,
   UploadIcon,
   XIcon,
 } from "lucide-react";
@@ -20,7 +19,6 @@ import {
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
-  ThreadId,
 } from "@marcode/contracts";
 import { scopeThreadRef } from "@marcode/client-runtime";
 import {
@@ -43,7 +41,6 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
 import { isElectron } from "../../env";
-import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import {
@@ -97,19 +94,12 @@ import {
   requestNotificationPermission,
 } from "../../turnNotificationDispatcher";
 import { JiraSettingsSection } from "./JiraSettingsSection";
-import { ThemePicker } from "./ThemePicker";
 import {
   useServerAvailableEditors,
   useServerKeybindingsConfigPath,
   useServerObservability,
   useServerProviders,
 } from "../../rpc/serverState";
-
-const TIMESTAMP_FORMAT_LABELS = {
-  locale: "System default",
-  "12-hour": "12-hour",
-  "24-hour": "24-hour",
-} as const;
 
 type InstallProviderSettings = {
   provider: ProviderKind;
@@ -358,84 +348,6 @@ function AboutVersionSection() {
       }
     />
   );
-}
-
-export function useSettingsRestore(onRestored?: () => void) {
-  const { theme, setTheme } = useTheme();
-  const settings = useSettings();
-  const { resetSettings } = useUpdateSettings();
-
-  const isGitWritingModelDirty = !Equal.equals(
-    settings.textGenerationModelSelection ?? null,
-    DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
-  );
-  const areProviderSettingsDirty = PROVIDER_SETTINGS.some((providerSettings) => {
-    const currentSettings = settings.providers[providerSettings.provider];
-    const defaultSettings = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
-    return !Equal.equals(currentSettings, defaultSettings);
-  });
-
-  const changedSettingLabels = useMemo(
-    () => [
-      ...(theme !== "system" ? ["Theme"] : []),
-      ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
-        ? ["Time format"]
-        : []),
-      ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
-        ? ["Diff line wrapping"]
-        : []),
-      ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
-        ? ["Assistant output"]
-        : []),
-      ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
-        ? ["New thread mode"]
-        : []),
-      ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
-        ? ["Add project base directory"]
-        : []),
-      ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
-        ? ["Archive confirmation"]
-        : []),
-      ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
-        ? ["Delete confirmation"]
-        : []),
-      ...(isGitWritingModelDirty ? ["Git writing model"] : []),
-      ...(areProviderSettingsDirty ? ["Providers"] : []),
-    ],
-    [
-      areProviderSettingsDirty,
-      isGitWritingModelDirty,
-      settings.addProjectBaseDirectory,
-      settings.confirmThreadArchive,
-      settings.confirmThreadDelete,
-      settings.addProjectBaseDirectory,
-      settings.defaultThreadEnvMode,
-      settings.diffWordWrap,
-      settings.enableAssistantStreaming,
-      settings.timestampFormat,
-      theme,
-    ],
-  );
-
-  const restoreDefaults = useCallback(async () => {
-    if (changedSettingLabels.length === 0) return;
-    const api = readLocalApi();
-    const confirmed = await (api ?? ensureLocalApi()).dialogs.confirm(
-      ["Restore default settings?", `This will reset: ${changedSettingLabels.join(", ")}.`].join(
-        "\n",
-      ),
-    );
-    if (!confirmed) return;
-
-    setTheme("system");
-    resetSettings();
-    onRestored?.();
-  }, [changedSettingLabels, onRestored, resetSettings, setTheme]);
-
-  return {
-    changedSettingLabels,
-    restoreDefaults,
-  };
 }
 
 const NOTIFICATION_MODE_LABELS: Record<TurnNotificationMode, string> = {
@@ -921,7 +833,6 @@ function TurnNotificationSettingsSection({
 }
 
 export function GeneralSettingsPanel() {
-  const { theme, setTheme } = useTheme();
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
   const [openingPathByTarget, setOpeningPathByTarget] = useState({
@@ -1186,83 +1097,6 @@ export function GeneralSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
-        <SettingsRow
-          title="Theme"
-          description="Choose how MarCode looks across the app."
-          resetAction={
-            theme !== "system" ? (
-              <SettingResetButton label="theme" onClick={() => setTheme("system")} />
-            ) : null
-          }
-          control={<ThemePicker />}
-        />
-
-        <SettingsRow
-          title="Time format"
-          description="System default follows your browser or OS clock preference."
-          resetAction={
-            settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
-              <SettingResetButton
-                label="time format"
-                onClick={() =>
-                  updateSettings({
-                    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.timestampFormat}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "12-hour" || value === "24-hour") {
-                  updateSettings({ timestampFormat: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Timestamp format">
-                <SelectValue>{TIMESTAMP_FORMAT_LABELS[settings.timestampFormat]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {TIMESTAMP_FORMAT_LABELS.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="12-hour">
-                  {TIMESTAMP_FORMAT_LABELS["12-hour"]}
-                </SelectItem>
-                <SelectItem hideIndicator value="24-hour">
-                  {TIMESTAMP_FORMAT_LABELS["24-hour"]}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          title="Diff line wrapping"
-          description="Set the default wrap state when the diff panel opens."
-          resetAction={
-            settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap ? (
-              <SettingResetButton
-                label="diff line wrapping"
-                onClick={() =>
-                  updateSettings({
-                    diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.diffWordWrap}
-              onCheckedChange={(checked) => updateSettings({ diffWordWrap: Boolean(checked) })}
-              aria-label="Wrap diff lines by default"
-            />
-          }
-        />
-
         <SettingsRow
           title="Assistant output"
           description="Show token-by-token output while a response is in progress."

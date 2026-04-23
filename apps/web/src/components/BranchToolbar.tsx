@@ -80,7 +80,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   if (!hasActiveThread || !activeProject) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-208 items-center justify-between px-2.5 pb-3 pt-1 sm:px-3">
+    <div className="mx-auto flex w-full max-w-(--chat-column-max-width) items-center justify-between px-2.5 pb-3 pt-1 sm:px-3">
       <div className="flex items-center gap-1">
         {showEnvironmentPicker && (
           <>

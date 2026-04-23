@@ -227,7 +227,9 @@ Architecture:
 - `apply.ts` — `applyThemeToDOM()` sets CSS variables via inline overrides (highest specificity)
 - `types.ts` — `ThemeDefinition`, `ThemeGroup` types
 - `apps/web/src/hooks/useTheme.ts` — `useTheme()` hook
-- `apps/web/src/components/settings/ThemePicker.tsx` — UI picker
+- `apps/web/src/components/settings/AppearanceSettingsPanel.tsx` — visual appearance gallery with live theme previews
+
+The settings UI uses a dedicated Appearance tab with Telegram-style theme previews, plus MarCode-specific display controls for conversation width, reduced motion, and ambient grain.
 
 ---
 

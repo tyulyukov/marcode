@@ -72,6 +72,12 @@ describe("MarCode feature guards", () => {
     expect(fileExists("components/settings/JiraSettingsSection.tsx")).toBe(true);
   });
 
+  it("appearance settings panel exists", () => {
+    expect(fileExists("components/settings/AppearanceSettingsPanel.tsx")).toBe(true);
+    const source = readSrc("components/settings/AppearanceSettingsPanel.tsx");
+    expect(source).toContain("AppearanceSettingsPanel");
+  });
+
   it("no PostHog/telemetry imports in web app", () => {
     const files = fs.globSync("**/*.{ts,tsx}", {
       cwd: SRC_DIR,

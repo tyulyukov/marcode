@@ -37,7 +37,7 @@ export function ChatViewSkeleton() {
           </div>
         </header>
         <div className="min-h-0 flex-1 overflow-hidden px-3 py-3 sm:px-5 sm:py-4">
-          <div className="mx-auto w-full min-w-0 max-w-3xl px-1">
+          <div className="mx-auto w-full min-w-0 max-w-(--chat-column-max-width) px-1">
             <div className="flex flex-col gap-6 py-4">
               <div className="flex items-start gap-3">
                 <Skeleton className="mt-0.5 size-6 shrink-0 rounded-full" />

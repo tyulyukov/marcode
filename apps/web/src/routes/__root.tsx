@@ -12,6 +12,7 @@ import { useEffect, useEffectEvent, useRef, type ReactNode } from "react";
 import { QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import { APP_DISPLAY_NAME } from "../branding";
+import { applyAppearanceSettingsToDOM } from "../appearance";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import {
@@ -113,6 +114,7 @@ function RootRouteView() {
     <ToastProvider>
       <AnchoredToastProvider>
         <AuthenticatedTracingBootstrap />
+        <AppearanceSettingsBootstrap />
         <ServerStateBootstrap />
         <EnvironmentConnectionManagerBootstrap />
         <EventRouter />
@@ -213,6 +215,18 @@ function AuthenticatedTracingBootstrap() {
   useEffect(() => {
     void configureClientTracing();
   }, []);
+
+  return null;
+}
+
+function AppearanceSettingsBootstrap() {
+  const ambientGrain = useSettings((settings) => settings.ambientGrain);
+  const conversationWidth = useSettings((settings) => settings.conversationWidth);
+  const reduceMotion = useSettings((settings) => settings.reduceMotion);
+
+  useEffect(() => {
+    applyAppearanceSettingsToDOM({ ambientGrain, conversationWidth, reduceMotion });
+  }, [ambientGrain, conversationWidth, reduceMotion]);
 
   return null;
 }

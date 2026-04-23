@@ -1,5 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
+import { useSettings } from "./useSettings";
+
 const MS_PER_WORD = 30;
 const MIN_DURATION_MS = 600;
 const MAX_DURATION_MS = 5000;
@@ -146,9 +148,9 @@ export function useSmoothReveal(
   isRevealing: boolean;
   finish: () => void;
 } {
-  const [active] = useState(
-    () => enabled && textLength >= MIN_TEXT_LENGTH && !prefersReducedMotion(),
-  );
+  const reduceMotion = useSettings((settings) => settings.reduceMotion);
+  const active =
+    enabled && textLength >= MIN_TEXT_LENGTH && !prefersReducedMotion() && !reduceMotion;
   const [isRevealing, setIsRevealing] = useState(active);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef(0);
@@ -171,7 +173,12 @@ export function useSmoothReveal(
   }, []);
 
   useLayoutEffect(() => {
-    if (!active) return;
+    if (!active) {
+      setIsRevealing(false);
+      return;
+    }
+
+    setIsRevealing(true);
     const el = containerRef.current;
     if (!el) {
       setIsRevealing(false);

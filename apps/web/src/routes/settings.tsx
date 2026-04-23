@@ -2,14 +2,21 @@ import { RotateCcwIcon } from "lucide-react";
 import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import { useSettingsRestore } from "../components/settings/SettingsPanels";
+import {
+  useAppearanceSettingsRestore,
+  useGeneralSettingsRestore,
+} from "../components/settings/settingsRestore";
 import { Button } from "../components/ui/button";
 import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
 import { isElectron } from "../env";
 
-function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
-  const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
-
+function RestoreDefaultsButton({
+  changedSettingLabels,
+  restoreDefaults,
+}: {
+  changedSettingLabels: string[];
+  restoreDefaults: () => Promise<void>;
+}) {
   return (
     <Button
       size="xs"
@@ -26,8 +33,15 @@ function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
 function SettingsContentLayout() {
   const location = useLocation();
   const [restoreSignal, setRestoreSignal] = useState(0);
-  const showRestoreDefaults = location.pathname === "/settings/general";
   const handleRestored = () => setRestoreSignal((value) => value + 1);
+  const generalRestore = useGeneralSettingsRestore(handleRestored);
+  const appearanceRestore = useAppearanceSettingsRestore(handleRestored);
+  const activeRestore =
+    location.pathname === "/settings/general"
+      ? generalRestore
+      : location.pathname === "/settings/appearance"
+        ? appearanceRestore
+        : null;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -52,9 +66,9 @@ function SettingsContentLayout() {
             <div className="flex min-h-7 items-center gap-2 sm:min-h-6">
               <SidebarTrigger className="size-7 shrink-0 md:hidden" />
               <span className="text-sm font-medium text-foreground">Settings</span>
-              {showRestoreDefaults ? (
+              {activeRestore ? (
                 <div className="ms-auto flex items-center gap-2">
-                  <RestoreDefaultsButton onRestored={handleRestored} />
+                  <RestoreDefaultsButton {...activeRestore} />
                 </div>
               ) : null}
             </div>
@@ -66,9 +80,9 @@ function SettingsContentLayout() {
             <span className="text-xs font-medium tracking-wide text-muted-foreground/70">
               Settings
             </span>
-            {showRestoreDefaults ? (
+            {activeRestore ? (
               <div className="ms-auto flex items-center gap-2">
-                <RestoreDefaultsButton onRestored={handleRestored} />
+                <RestoreDefaultsButton {...activeRestore} />
               </div>
             ) : null}
           </div>

@@ -545,10 +545,13 @@ describe("wsApi", () => {
 
   it("reads and writes persistence through the desktop bridge when available", async () => {
     const clientSettings = {
+      ambientGrain: true,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      conversationWidth: "comfortable" as const,
       diffWordWrap: true,
       favorites: [],
+      reduceMotion: false,
       sidebarProjectGroupingMode: "repository_path" as const,
       sidebarProjectGroupingOverrides: {
         "environment-local:/tmp/project": "separate" as const,
@@ -612,10 +615,13 @@ describe("wsApi", () => {
     const { createLocalApi } = await import("./localApi");
     const api = createLocalApi(rpcClientMock as never);
     const clientSettings = {
+      ambientGrain: true,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      conversationWidth: "comfortable" as const,
       diffWordWrap: true,
       favorites: [],
+      reduceMotion: false,
       sidebarProjectGroupingMode: "repository_path" as const,
       sidebarProjectGroupingOverrides: {
         "environment-local:/tmp/project": "separate" as const,
