@@ -24,12 +24,6 @@ import { Schema } from "effect";
 import { resolveModelSlugForProvider } from "@marcode/shared/model";
 import { create } from "zustand";
 import {
-  derivePendingApprovals,
-  derivePendingUserInputs,
-  findLatestProposedPlan,
-  hasActionableProposedPlan,
-} from "./session-logic";
-import {
   type ChatMessage,
   type Project,
   type ProposedPlan,
@@ -309,42 +303,6 @@ function toThreadTurnState(thread: Thread): ThreadTurnState {
   };
 }
 
-function getLatestUserMessageAt(messages: ReadonlyArray<ChatMessage>): string | null {
-  let latestUserMessageAt: string | null = null;
-  for (const message of messages) {
-    if (message.role !== "user") {
-      continue;
-    }
-    if (latestUserMessageAt === null || message.createdAt > latestUserMessageAt) {
-      latestUserMessageAt = message.createdAt;
-    }
-  }
-  return latestUserMessageAt;
-}
-
-function buildSidebarThreadSummary(thread: Thread): SidebarThreadSummary {
-  return {
-    id: thread.id,
-    environmentId: thread.environmentId,
-    projectId: thread.projectId,
-    title: thread.title,
-    interactionMode: thread.interactionMode,
-    session: thread.session,
-    createdAt: thread.createdAt,
-    archivedAt: thread.archivedAt,
-    updatedAt: thread.updatedAt,
-    latestTurn: thread.latestTurn,
-    branch: thread.branch,
-    worktreePath: thread.worktreePath,
-    latestUserMessageAt: getLatestUserMessageAt(thread.messages),
-    hasPendingApprovals: derivePendingApprovals(thread.activities).length > 0,
-    hasPendingUserInput: derivePendingUserInputs(thread.activities).length > 0,
-    hasActionableProposedPlan: hasActionableProposedPlan(
-      findLatestProposedPlan(thread.proposedPlans, thread.latestTurn?.turnId ?? null),
-    ),
-  };
-}
-
 function sidebarThreadSummariesEqual(
   left: SidebarThreadSummary | undefined,
   right: SidebarThreadSummary,
@@ -486,6 +444,22 @@ function getThreads(state: EnvironmentState): Thread[] {
   });
 }
 
+/**
+ * Write thread state from the **detail stream** (single-thread subscription).
+ *
+ * Owns: messages, activities, proposedPlans, turn diff summaries.
+ * Also writes threadShellById / threadSessionById / threadTurnStateById so the
+ * active thread has up-to-date state even if the shell event hasn't arrived yet;
+ * structural equality checks below keep those writes from triggering re-renders
+ * when both streams deliver equivalent data.
+ *
+ * Does NOT write sidebarThreadSummaryById — that is shell-stream-only. The
+ * shell stream carries server-computed hasPendingApprovals / hasPendingUserInput /
+ * hasActionableProposedPlan / latestUserMessageAt fields; re-deriving them from
+ * `thread.activities` / `thread.messages` here would overwrite authoritative
+ * values and cause ghost "Pending Approval" badges on resolved threads (see
+ * MEMORY.md and upstream #1996).
+ */
 function writeThreadState(
   state: EnvironmentState,
   nextThread: Thread,
@@ -495,8 +469,6 @@ function writeThreadState(
   const nextTurnState = toThreadTurnState(nextThread);
   const previousShell = state.threadShellById[nextThread.id];
   const previousTurnState = state.threadTurnStateById[nextThread.id];
-  const previousSummary = state.sidebarThreadSummaryById[nextThread.id];
-  const nextSummary = buildSidebarThreadSummary(nextThread);
 
   let nextState = state;
 
@@ -630,16 +602,6 @@ function writeThreadState(
     };
   }
 
-  if (!sidebarThreadSummariesEqual(previousSummary, nextSummary)) {
-    nextState = {
-      ...nextState,
-      sidebarThreadSummaryById: {
-        ...nextState.sidebarThreadSummaryById,
-        [nextThread.id]: nextSummary,
-      },
-    };
-  }
-
   return nextState;
 }
 
@@ -747,6 +709,23 @@ function ensureThreadRegistered(
   return nextState;
 }
 
+/**
+ * Write thread state from the **shell stream** (all-threads subscription).
+ *
+ * Owns: sidebarThreadSummaryById (pre-computed server-side: hasPendingApprovals
+ * / hasPendingUserInput / hasActionableProposedPlan / latestUserMessageAt). This
+ * is the single source of truth for sidebar data. The detail stream MUST NOT
+ * write here — re-deriving the summary fields from detail state would cause
+ * ghost "Pending Approval" badges on resolved threads (MEMORY.md, upstream #1996).
+ *
+ * Also writes threadShellById / threadSessionById / threadTurnStateById as the
+ * authoritative source for those fields (the detail stream may also write them
+ * as fallback while shell events are in flight; structural equality checks in
+ * both writers prevent unnecessary re-renders).
+ *
+ * Does NOT write message/activity/proposedPlan/turnDiff content — that is
+ * detail-stream-only.
+ */
 function writeThreadShellState(
   state: EnvironmentState,
   nextThread: {
@@ -1041,6 +1020,19 @@ function buildProjectState(
   };
 }
 
+/**
+ * Build detail-stream state slice for a batch of threads (legacy read-model path).
+ *
+ * Owns: messages, activities, proposedPlans, turn diff summaries, plus
+ * threadShellById / threadSessionById / threadTurnStateById as fallback state
+ * (the shell stream is the authoritative writer for those three).
+ *
+ * Does NOT populate sidebarThreadSummaryById — the `Thread` type carries detail
+ * data (messages/activities/proposedPlans), not the server-computed summary
+ * fields (hasPendingApprovals / hasPendingUserInput / hasActionableProposedPlan
+ * / latestUserMessageAt) that live on OrchestrationThreadShell. The shell
+ * stream is the single source of truth for sidebar data.
+ */
 function buildThreadState(
   threads: ReadonlyArray<Thread>,
 ): Pick<
@@ -1058,7 +1050,6 @@ function buildThreadState(
   | "proposedPlanByThreadId"
   | "turnDiffIdsByThreadId"
   | "turnDiffSummaryByThreadId"
-  | "sidebarThreadSummaryById"
 > {
   const threadIds: ThreadId[] = [];
   const threadIdsByProjectId: Record<ProjectId, ThreadId[]> = {};
@@ -1073,7 +1064,6 @@ function buildThreadState(
   const proposedPlanByThreadId: Record<ThreadId, Record<string, ProposedPlan>> = {};
   const turnDiffIdsByThreadId: Record<ThreadId, TurnId[]> = {};
   const turnDiffSummaryByThreadId: Record<ThreadId, Record<TurnId, TurnDiffSummary>> = {};
-  const sidebarThreadSummaryById: Record<ThreadId, SidebarThreadSummary> = {};
 
   for (const thread of threads) {
     threadIds.push(thread.id);
@@ -1096,7 +1086,6 @@ function buildThreadState(
     const turnDiffSlice = buildTurnDiffSlice(thread);
     turnDiffIdsByThreadId[thread.id] = turnDiffSlice.ids;
     turnDiffSummaryByThreadId[thread.id] = turnDiffSlice.byId;
-    sidebarThreadSummaryById[thread.id] = buildSidebarThreadSummary(thread);
   }
 
   return {
@@ -1113,7 +1102,6 @@ function buildThreadState(
     proposedPlanByThreadId,
     turnDiffIdsByThreadId,
     turnDiffSummaryByThreadId,
-    sidebarThreadSummaryById,
   };
 }
 
