@@ -37,7 +37,7 @@ Sections are ordered by action:
 
 ## Ported in the current cycle
 
-**Cycle:** 2026-04-24 · Baseline before cycle: `7c430aece` · Baseline after cycle: `9f6411d17`
+**Cycle:** 2026-04-24 · Baseline before cycle: `7c430aece` · Baseline after cycle: `ececcdcb1`
 
 ### Direct-to-main (no PR, user-approved)
 
@@ -81,6 +81,41 @@ Sections are ordered by action:
 
 - `toast.tsx` — took upstream's version wholesale (492 → 719 lines). Upstream already bundled `CopyErrorButton` at line 93, so no manual re-integration needed.
 - `Sidebar.tsx` — preserved MarCode's "Delete anyway" warning toast flow (action button → deferred close → `api.dialogs.confirm` with thread-count messaging → `removeProject({ force: true })` → inline error toast). Wrapped all toast calls via the new `stackedThreadToast(...)` helper for layout consistency.
+
+### PR #68 — cycle ledger bootstrap
+
+Introduced this doc. No upstream PR; meta-work that codifies the "Already equivalent" / "Intentionally skipped" sets so future cycles don't re-derive them.
+
+New SHA: `ee646a654`.
+
+### PR #69 — sidebar thread-row timestamp
+
+| Upstream                                               | Subject                                            | New SHA     |
+| ------------------------------------------------------ | -------------------------------------------------- | ----------- |
+| [#1996](https://github.com/pingdotgg/t3code/pull/1996) | Use latest user message time for thread timestamps | `524e93afd` |
+
+Narrow port — persisted `latestUserMessageAt` drives `getThreadSortTimestamp` without rewriting `store.ts`. Preserves MarCode's structural-sharing event handling ([FEATURES.md §"Incremental Event Handling"](./FEATURES.md#incremental-event-handling--structural-sharing)).
+
+### PR #71 — provider model selection option arrays (upstream #2246)
+
+| Upstream                                               | Subject                                             | New SHA                                                                                     |
+| ------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [#2246](https://github.com/pingdotgg/t3code/pull/2246) | Refactor provider model selections to option arrays | `d776a9d12` + `62fd6ea4b` + `b7f903e7e` + `e2601893d` + `5f75e700d` + `c1bce4fb7` + `9bb54da84` (A→E + formatter + test-alignment follow-up) |
+
+**Why ported:** forward compatibility with upstream's `provider-instance-registry` branch (`ceddb40 / 7a466f / 8a82b53 / 84b0d74`), which extends the new option-array shape. Any future sync that touches provider identity assumes #2246 is in.
+
+**Key deviations from upstream:**
+
+- Migration id renumbered `026 → 030` because MarCode already uses `26_AuthSessionLastConnectedAt`. Current head after port: `030_CanonicalizeModelSelectionOptions`.
+- `RoutingTextGeneration.ts` — kept MarCode's Claude→Codex fallback branching intact (FEATURES.md §"Claude-Powered Text Generation"); only the option access was retrofitted with `getModelSelectionStringOptionValue` / `getModelSelectionBooleanOptionValue` helpers.
+- `ClaudeTextGeneration.ts` — preserved MarCode's fork-exclusive progressive generation code path.
+- `composerProviderRegistry.tsx` (deleted upstream) — local additions hand-ported into the new `composerProviderState.tsx` rather than deleted.
+- `ProviderModelPicker.browser.tsx` + `composerDraftStore.ts` — near-total hand-rebuild since upstream ±399 LoC collides with MarCode's +397 LoC delta.
+- All new test layers routed through `AnalyticsServiceNoopLive` (no upstream `AnalyticsService.layerTest`).
+
+**Post-merge hotfix** (on main, direct commits): `composerDraftStore.ts` gained `normalizeModelSelectionByProviderMap` to coerce legacy object-shape `options` blobs in pre-existing v5 localStorage (migration 030 only touches SQLite — persisted drafts in the browser store needed a separate runtime normalizer). Regression guard in `composerDraftStore.test.ts` under `describe("composerDraftStore legacy modelSelection options migration")`.
+
+**Phase 4 smoke** (real dev DB, 2026-04-24): migration 030 applied cleanly — 155 `projection_threads` rows canonicalized, 0 legacy-shape survivors across `projection_threads`, `projection_projects`, and `orchestration_events` (`project.{created,meta-updated}`, `thread.{created,meta-updated,turn-start-requested}`).
 
 ---
 
@@ -142,10 +177,7 @@ MarCode ships semver alphas (`1.0.0-alpha.*`), not nightly builds. Adopting nigh
 
 ## Pending real work
 
-| Upstream                                               | Subject                                             | Risk   | Notes                                                                                                                                                                                                                                                                                                                |
-| ------------------------------------------------------ | --------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [#1996](https://github.com/pingdotgg/t3code/pull/1996) | Use latest user message time for thread timestamps  | Medium | Touches `store.ts` / `storeSelectors.ts` (FEATURES.md §"Incremental Event Handling & Structural Sharing"). 240-line test conflict on `store.test.ts`.                                                                                                                                                                |
-| [#2246](https://github.com/pingdotgg/t3code/pull/2246) | Refactor provider model selections to option arrays | High   | Adds migration `026_CanonicalizeModelSelectionOptions`. Touches every `*TextGeneration.ts` (collides with FEATURES.md §"Claude-Powered Text Generation") and collides with MarCode's provider instance registry work (`0e71e3023`, `42b428826`, `4da47be23`). Needs a dedicated branch + regression-guard test runs. |
+_None as of 2026-04-24._ Both previously-listed rows (#1996 and #2246) landed in this cycle (see PR #69 and PR #71 above). Re-run the `git cherry origin/main upstream/main` workflow at the top of this doc when starting a new cycle to populate this section.
 
 ---
 
