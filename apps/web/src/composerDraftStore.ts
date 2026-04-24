@@ -685,6 +685,33 @@ function normalizeModelSelection(
   return createModelSelection(provider, model, options);
 }
 
+/**
+ * Normalize a persisted `modelSelectionByProvider` map. Each entry is routed
+ * through `normalizeModelSelection` so legacy object-shaped `options` payloads
+ * (pre-#2246) are coerced to the canonical `ReadonlyArray<ProviderOptionSelection>`
+ * shape before reaching `cloneSelections` / `createModelSelection`. Without
+ * this, stored v5 blobs that still hold the old shape trigger
+ * `selections.map is not a function` when the user picks a model.
+ */
+function normalizeModelSelectionByProviderMap(
+  value: unknown,
+): Partial<Record<ProviderKind, ModelSelection>> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const candidate = value as Record<string, unknown>;
+  const result: Partial<Record<ProviderKind, ModelSelection>> = {};
+  for (const [providerKey, rawSelection] of Object.entries(candidate)) {
+    const provider = normalizeProviderKind(providerKey);
+    if (provider === null) continue;
+    const normalized = normalizeModelSelection(rawSelection);
+    if (normalized && normalized.provider === provider) {
+      result[provider] = normalized;
+    }
+  }
+  return result;
+}
+
 // ── Legacy sync helpers (used only during migration from v2 storage) ──
 
 function legacySyncModelSelectionOptions(
@@ -1377,9 +1404,9 @@ function normalizePersistedDraftsByThreadId(
       typeof draftCandidate.modelSelectionByProvider === "object"
     ) {
       // v3 format
-      modelSelectionByProvider = draftCandidate.modelSelectionByProvider as Partial<
-        Record<ProviderKind, ModelSelection>
-      >;
+      modelSelectionByProvider = normalizeModelSelectionByProviderMap(
+        draftCandidate.modelSelectionByProvider,
+      );
       activeProvider = normalizeProviderKind(draftCandidate.activeProvider);
     } else {
       // v2 or legacy format: migrate
@@ -1586,10 +1613,9 @@ function normalizeCurrentPersistedComposerDraftStoreState(
     normalizedPersistedState.stickyModelSelectionByProvider &&
     typeof normalizedPersistedState.stickyModelSelectionByProvider === "object"
   ) {
-    stickyModelSelectionByProvider =
-      normalizedPersistedState.stickyModelSelectionByProvider as Partial<
-        Record<ProviderKind, ModelSelection>
-      >;
+    stickyModelSelectionByProvider = normalizeModelSelectionByProviderMap(
+      normalizedPersistedState.stickyModelSelectionByProvider,
+    );
     stickyActiveProvider = normalizeProviderKind(normalizedPersistedState.stickyActiveProvider);
   } else {
     // Legacy migration path

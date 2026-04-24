@@ -1,7 +1,7 @@
 import { type ProviderKind, type ServerProvider } from "@marcode/contracts";
 import { memo } from "react";
 import { Clock3Icon, SparklesIcon, StarIcon } from "lucide-react";
-import { CursorIcon, Gemini, GithubCopilotIcon, OpenCodeIcon } from "../Icons";
+import { Gemini, GithubCopilotIcon } from "../Icons";
 import { AVAILABLE_PROVIDER_OPTIONS, PROVIDER_ICON_BY_PROVIDER } from "./providerIconUtils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
@@ -156,58 +156,6 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
         );
       })}
 
-      {/* OpenCode button (coming soon) */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className="relative block w-full">
-              <button
-                className={cn(
-                  "relative isolate flex w-full aspect-square items-center justify-center rounded opacity-50 cursor-not-allowed transition-colors hover:bg-transparent",
-                )}
-                disabled
-                type="button"
-                data-model-picker-provider="opencode-coming-soon"
-                aria-label="OpenCode — coming soon"
-              >
-                <OpenCodeIcon className="size-5 text-muted-foreground/85" aria-hidden />
-                <span className={SOON_BADGE_CLASS} aria-hidden>
-                  <Clock3Icon className="size-2" />
-                </span>
-              </button>
-            </span>
-          }
-        />
-        <TooltipPopup side={PICKER_TOOLTIP_SIDE} align="center" className={PICKER_TOOLTIP_CLASS}>
-          OpenCode — Coming soon
-        </TooltipPopup>
-      </Tooltip>
-      {/* Cursor button (coming soon) */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className="relative block w-full">
-              <button
-                className={cn(
-                  "relative isolate flex w-full aspect-square items-center justify-center rounded opacity-50 cursor-not-allowed transition-colors hover:bg-transparent",
-                )}
-                disabled
-                type="button"
-                data-model-picker-provider="cursor-coming-soon"
-                aria-label="Cursor — coming soon"
-              >
-                <CursorIcon className="size-5 text-muted-foreground/85" aria-hidden />
-                <span className={SOON_BADGE_CLASS} aria-hidden>
-                  <Clock3Icon className="size-2" />
-                </span>
-              </button>
-            </span>
-          }
-        />
-        <TooltipPopup side={PICKER_TOOLTIP_SIDE} align="center" className={PICKER_TOOLTIP_CLASS}>
-          Cursor — Coming soon
-        </TooltipPopup>
-      </Tooltip>
       {/* Gemini button (coming soon) */}
       <Tooltip>
         <TooltipTrigger
