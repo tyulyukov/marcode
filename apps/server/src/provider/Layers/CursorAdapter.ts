@@ -16,6 +16,7 @@ import {
   type ProviderUserInputAnswers,
   RuntimeRequestId,
   type RuntimeMode,
+  RuntimeTaskId,
   type ThreadId,
   TurnId,
 } from "@marcode/contracts";
@@ -35,7 +36,8 @@ import {
   Stream,
   SynchronizedRef,
 } from "effect";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
@@ -68,6 +70,7 @@ import { applyCursorAcpModelSelection, makeCursorAcpRuntime } from "../acp/Curso
 import {
   CursorAskQuestionRequest,
   CursorCreatePlanRequest,
+  CursorTaskNotification,
   CursorUpdateTodosRequest,
   extractAskQuestions,
   extractPlanMarkdown,
@@ -97,6 +100,26 @@ interface PendingUserInput {
   readonly answers: Deferred.Deferred<ProviderUserInputAnswers>;
 }
 
+// Tracks a terminal spawned via Cursor's `terminal/create` request. The
+// `command` field is the primary reason we opt into Cursor's terminal
+// capability: it's the only shape where we're guaranteed to see the actual
+// shell command text, which we then merge into the tool_call event so the
+// CommandExecutionCard renders something other than a blank "Ran command".
+interface CursorTerminalEntry {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly cwd: string;
+  readonly outputByteLimit: number | undefined;
+  readonly exitDeferred: Deferred.Deferred<{
+    readonly exitCode: number | null;
+    readonly signal: string | null;
+  }>;
+  readonly kill: Effect.Effect<void>;
+  output: string;
+  released: boolean;
+  exited: boolean;
+}
+
 interface CursorSessionContext {
   readonly threadId: ThreadId;
   session: ProviderSession;
@@ -113,6 +136,11 @@ interface CursorSessionContext {
   // keyed by `toolCallId`, so we can re-inject it into the tool_call event
   // and show the user the actual command that ran.
   readonly toolCallHints: Map<string, { readonly command?: string; readonly title?: string }>;
+  // Terminals spawned via Cursor's `terminal/create` request, keyed by
+  // terminalId. Cursor later references these in `session/update` tool_call
+  // events via `content: [{ type: "terminal", terminalId }]`, and we pull the
+  // command text from here to populate the hint for the tool call.
+  readonly terminals: Map<string, CursorTerminalEntry>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
   stopped: boolean;
@@ -153,6 +181,38 @@ function parseCursorResume(raw: unknown): { sessionId: string } | undefined {
   if (raw.schemaVersion !== CURSOR_RESUME_VERSION) return undefined;
   if (typeof raw.sessionId !== "string" || !raw.sessionId.trim()) return undefined;
   return { sessionId: raw.sessionId.trim() };
+}
+
+// Join a command + args list into a readable, single-line shell form suitable
+// for display in the CommandExecutionCard. Not a full POSIX quoter — just
+// enough to disambiguate args that contain whitespace or shell metachars.
+function formatShellCommand(command: string, args: ReadonlyArray<string>): string {
+  const quote = (segment: string): string => {
+    if (segment.length > 0 && /^[\w@%+=:,./-]+$/u.test(segment)) {
+      return segment;
+    }
+    return `'${segment.replace(/'/gu, `'\\''`)}'`;
+  };
+  return [command, ...args].map(quote).join(" ");
+}
+
+// Resolve a turnId for extension-notification events that may fire outside a
+// turn boundary. Prefers the currently-active turn, falls back to the most
+// recent known turn so late notifications (e.g. `cursor/task`, which Cursor
+// fires post-completion) still attach to a real turn instead of being dropped
+// by the session-logic filter that requires `activity.turnId === latestTurnId`.
+export function resolveEffectiveTurnId(
+  ctx:
+    | {
+        readonly activeTurnId: TurnId | undefined;
+        readonly turns: ReadonlyArray<{ readonly id: TurnId }>;
+      }
+    | undefined,
+): TurnId | undefined {
+  if (!ctx) return undefined;
+  if (ctx.activeTurnId) return ctx.activeTurnId;
+  const lastTurn = ctx.turns[ctx.turns.length - 1];
+  return lastTurn?.id;
 }
 
 function normalizeModeSearchText(mode: AcpSessionMode): string {
@@ -298,6 +358,34 @@ export function applyToolCallHint(
     command: hint.command,
     data: { ...state.data, command: hint.command },
   };
+}
+
+/**
+ * Derive a tool_call hint from a matching `terminal/create` entry when the
+ * tool_call's `content[]` references a terminal we own (via a `{ type:
+ * "terminal", terminalId }` block). This is the primary channel for the
+ * command text once we advertise `terminal: true` to Cursor — the
+ * `session/request_permission` stash in `toolCallHints` is the fallback for
+ * Cursor versions that skip `terminal/create`.
+ */
+export function resolveTerminalHintFromToolCall(
+  toolCall: AcpToolCallState,
+  terminals: ReadonlyMap<string, { readonly command: string }>,
+): { readonly command: string } | undefined {
+  const content = toolCall.data.content;
+  if (!Array.isArray(content)) return undefined;
+  for (const entry of content) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "terminal") continue;
+    const terminalId = record.terminalId;
+    if (typeof terminalId !== "string" || terminalId.length === 0) continue;
+    const terminal = terminals.get(terminalId);
+    if (terminal?.command) {
+      return { command: terminal.command };
+    }
+  }
+  return undefined;
 }
 
 function selectAutoApprovedPermissionOption(
@@ -548,7 +636,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                   ...(yield* makeEventStamp()),
                   provider: PROVIDER,
                   threadId: input.threadId,
-                  turnId: ctx?.activeTurnId,
+                  turnId: resolveEffectiveTurnId(ctx),
                   requestId: runtimeRequestId,
                   payload: { questions: extractAskQuestions(params) },
                   raw: {
@@ -564,7 +652,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                   ...(yield* makeEventStamp()),
                   provider: PROVIDER,
                   threadId: input.threadId,
-                  turnId: ctx?.activeTurnId,
+                  turnId: resolveEffectiveTurnId(ctx),
                   requestId: runtimeRequestId,
                   payload: { answers: resolved },
                 });
@@ -584,7 +672,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                   ...(yield* makeEventStamp()),
                   provider: PROVIDER,
                   threadId: input.threadId,
-                  turnId: ctx?.activeTurnId,
+                  turnId: resolveEffectiveTurnId(ctx),
                   payload: { planMarkdown: extractPlanMarkdown(params) },
                   raw: {
                     source: "acp.cursor.extension",
@@ -616,6 +704,220 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                     );
                   }
                 }),
+            );
+            yield* acp.handleExtNotification("cursor/task", CursorTaskNotification, (params) =>
+              Effect.gen(function* () {
+                yield* logNative(input.threadId, "cursor/task", params, "acp.cursor.extension");
+                const taskId = RuntimeTaskId.make(params.toolCallId);
+                const effectiveTurnId = resolveEffectiveTurnId(ctx);
+                const description = params.description?.trim();
+                const agentType = params.subagentType?.trim();
+                const prompt = params.prompt ?? undefined;
+                const model = params.model?.trim();
+                const baseRawPayload = {
+                  source: "acp.cursor.extension" as const,
+                  method: "cursor/task" as const,
+                  payload: params,
+                };
+                yield* offerRuntimeEvent({
+                  type: "task.started",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId: effectiveTurnId,
+                  payload: {
+                    taskId,
+                    ...(description ? { description } : {}),
+                    ...(agentType ? { agentType } : {}),
+                    ...(params.toolCallId ? { toolUseId: params.toolCallId } : {}),
+                    ...(prompt ? { prompt } : {}),
+                    ...(model ? { model } : {}),
+                  },
+                  raw: baseRawPayload,
+                });
+                // Yield so the task.completed event gets a strictly later
+                // createdAt timestamp — otherwise compareActivitiesByOrder
+                // in session-logic can flake on same-millisecond ordering.
+                yield* Effect.yieldNow;
+                yield* offerRuntimeEvent({
+                  type: "task.completed",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId: effectiveTurnId,
+                  payload: {
+                    taskId,
+                    status: "completed",
+                    ...(description ? { summary: description } : {}),
+                  },
+                  raw: baseRawPayload,
+                });
+              }),
+            );
+            yield* acp.handleCreateTerminal((request) =>
+              Effect.gen(function* () {
+                yield* logNative(input.threadId, "terminal/create", request, "acp.jsonrpc");
+                if (!ctx) {
+                  return yield* EffectAcpErrors.AcpRequestError.internalError(
+                    "Cursor ACP session is not initialized",
+                  );
+                }
+                const argsArray = request.args ? [...request.args] : [];
+                const requestedCwd = request.cwd ?? cwd;
+                const envVars: Record<string, string> | undefined = request.env
+                  ? Object.fromEntries(request.env.map((entry) => [entry.name, entry.value]))
+                  : undefined;
+                const outputByteLimit =
+                  typeof request.outputByteLimit === "number" ? request.outputByteLimit : undefined;
+
+                const handle = yield* childProcessSpawner
+                  .spawn(
+                    ChildProcess.make(request.command, argsArray, {
+                      cwd: requestedCwd,
+                      ...(envVars ? { env: envVars, extendEnv: true } : {}),
+                    }),
+                  )
+                  .pipe(
+                    Effect.provideService(Scope.Scope, sessionScope),
+                    Effect.mapError((cause) =>
+                      EffectAcpErrors.AcpRequestError.internalError(
+                        `Failed to spawn terminal command: ${cause.message}`,
+                      ),
+                    ),
+                  );
+
+                const terminalId = crypto.randomUUID();
+                const exitDeferred = yield* Deferred.make<{
+                  readonly exitCode: number | null;
+                  readonly signal: string | null;
+                }>();
+                const entry: CursorTerminalEntry = {
+                  command: formatShellCommand(request.command, argsArray),
+                  args: argsArray,
+                  cwd: requestedCwd,
+                  outputByteLimit,
+                  exitDeferred,
+                  kill: handle.kill({ killSignal: "SIGTERM" }).pipe(Effect.ignore),
+                  output: "",
+                  released: false,
+                  exited: false,
+                };
+                ctx.terminals.set(terminalId, entry);
+
+                const decoder = new TextDecoder();
+                const appendOutput = (chunk: Uint8Array) =>
+                  Effect.sync(() => {
+                    const text = decoder.decode(chunk, { stream: true });
+                    if (text.length === 0) return;
+                    entry.output = entry.output + text;
+                    if (
+                      entry.outputByteLimit !== undefined &&
+                      entry.output.length > entry.outputByteLimit
+                    ) {
+                      entry.output = entry.output.slice(-entry.outputByteLimit);
+                    }
+                  });
+                yield* Effect.forkIn(
+                  Stream.runForEach(handle.stdout, appendOutput).pipe(Effect.ignore),
+                  sessionScope,
+                );
+                yield* Effect.forkIn(
+                  Stream.runForEach(handle.stderr, appendOutput).pipe(Effect.ignore),
+                  sessionScope,
+                );
+                const markExited = Effect.sync(() => {
+                  entry.exited = true;
+                });
+                const resolveExit = (exitCode: number | null) =>
+                  markExited.pipe(
+                    Effect.andThen(
+                      Deferred.succeed(exitDeferred, { exitCode, signal: null }).pipe(
+                        Effect.ignore,
+                      ),
+                    ),
+                  );
+                yield* Effect.forkIn(
+                  handle.exitCode.pipe(
+                    Effect.matchEffect({
+                      onFailure: () => resolveExit(null),
+                      onSuccess: (code) => resolveExit(Number(code)),
+                    }),
+                  ),
+                  sessionScope,
+                );
+
+                return { terminalId };
+              }),
+            );
+            yield* acp.handleTerminalOutput((request) =>
+              Effect.gen(function* () {
+                if (!ctx) {
+                  return yield* EffectAcpErrors.AcpRequestError.internalError(
+                    "Cursor ACP session is not initialized",
+                  );
+                }
+                const entry = ctx.terminals.get(request.terminalId);
+                if (!entry) {
+                  return yield* EffectAcpErrors.AcpRequestError.resourceNotFound(
+                    `Unknown terminal id: ${request.terminalId}`,
+                  );
+                }
+                const isExited = Deferred.isDoneUnsafe(entry.exitDeferred);
+                const exitStatus = isExited ? yield* Deferred.await(entry.exitDeferred) : undefined;
+                return {
+                  output: entry.output,
+                  truncated:
+                    entry.outputByteLimit !== undefined &&
+                    entry.output.length >= entry.outputByteLimit,
+                  ...(exitStatus
+                    ? {
+                        exitStatus: {
+                          exitCode: exitStatus.exitCode,
+                          signal: exitStatus.signal,
+                        },
+                      }
+                    : {}),
+                };
+              }),
+            );
+            yield* acp.handleTerminalWaitForExit((request) =>
+              Effect.gen(function* () {
+                if (!ctx) {
+                  return yield* EffectAcpErrors.AcpRequestError.internalError(
+                    "Cursor ACP session is not initialized",
+                  );
+                }
+                const entry = ctx.terminals.get(request.terminalId);
+                if (!entry) {
+                  return yield* EffectAcpErrors.AcpRequestError.resourceNotFound(
+                    `Unknown terminal id: ${request.terminalId}`,
+                  );
+                }
+                const status = yield* Deferred.await(entry.exitDeferred);
+                return {
+                  exitCode: status.exitCode,
+                  signal: status.signal,
+                };
+              }),
+            );
+            yield* acp.handleTerminalKill((request) =>
+              Effect.gen(function* () {
+                if (!ctx) return;
+                const entry = ctx.terminals.get(request.terminalId);
+                if (!entry) return;
+                yield* entry.kill;
+              }),
+            );
+            yield* acp.handleTerminalRelease((request) =>
+              Effect.gen(function* () {
+                if (!ctx) return;
+                const entry = ctx.terminals.get(request.terminalId);
+                if (!entry) return;
+                entry.released = true;
+                if (entry.exited) {
+                  ctx.terminals.delete(request.terminalId);
+                }
+              }),
             );
             yield* acp.handleRequestPermission((params) =>
               Effect.gen(function* () {
@@ -739,6 +1041,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
             pendingUserInputs,
             turns: [],
             toolCallHints: new Map(),
+            terminals: new Map(),
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             stopped: false,
@@ -804,7 +1107,8 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                         turnId: ctx.activeTurnId,
                         toolCall: applyToolCallHint(
                           event.toolCall,
-                          ctx.toolCallHints.get(event.toolCall.toolCallId),
+                          resolveTerminalHintFromToolCall(event.toolCall, ctx.terminals) ??
+                            ctx.toolCallHints.get(event.toolCall.toolCallId),
                         ),
                         rawPayload: event.rawPayload,
                       }),

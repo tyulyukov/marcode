@@ -17,6 +17,8 @@ const emitInterleavedAssistantToolCalls =
   process.env.T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
 const emitGenericToolPlaceholders = process.env.T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitAskQuestion = process.env.T3_ACP_EMIT_ASK_QUESTION === "1";
+const emitTerminalCreate = process.env.MARCODE_ACP_EMIT_TERMINAL_CREATE === "1";
+const emitCursorTask = process.env.MARCODE_ACP_EMIT_CURSOR_TASK === "1";
 const failSetConfigOption = process.env.T3_ACP_FAIL_SET_CONFIG_OPTION === "1";
 const exitOnSetConfigOption = process.env.T3_ACP_EXIT_ON_SET_CONFIG_OPTION === "1";
 const promptResponseText = process.env.T3_ACP_PROMPT_RESPONSE_TEXT;
@@ -481,6 +483,52 @@ const program = Effect.gen(function* () {
           ],
         });
 
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitTerminalCreate) {
+        // Mirror the terminal/create → session/update flow Cursor uses when
+        // the client advertises `terminal: true`: spawn a terminal, then emit
+        // a tool_call whose content[] references it by terminalId.
+        const createResponse = yield* agent.client.createTerminal({
+          sessionId: requestedSessionId,
+          command: "cc",
+          args: ["--version"],
+        });
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-call-terminal-1",
+            title: "Terminal",
+            kind: "execute",
+            status: "pending",
+            rawInput: {},
+            content: [{ type: "terminal", terminalId: createResponse.terminalId }],
+          },
+        });
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-call-terminal-1",
+            status: "completed",
+          },
+        });
+        return { stopReason: "end_turn" };
+      }
+
+      if (emitCursorTask) {
+        // Cursor fires `cursor/task` post-completion as a fire-and-forget
+        // notification — the sole observable signal for subagent work.
+        yield* agent.client.extNotification("cursor/task", {
+          toolCallId: "task-subagent-1",
+          description: "Explored BullMQ usages",
+          prompt: "find all bullmq usages",
+          subagentType: "explore",
+          model: "default",
+          durationMs: 1234,
+        });
         return { stopReason: "end_turn" };
       }
 

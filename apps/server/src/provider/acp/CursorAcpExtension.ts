@@ -53,6 +53,21 @@ export const CursorUpdateTodosRequest = Schema.Struct({
   merge: Schema.Boolean,
 });
 
+// Cursor emits `cursor/task` as a fire-and-forget JSON-RPC notification once
+// a subagent task completes — it's our only observable signal for subagent
+// work (there's no paired `session/update` stream for it). We project it into
+// both a `task.started` and a `task.completed` runtime event so the web
+// timeline's subagent-task grouping logic can render the agent-group card.
+export const CursorTaskNotification = Schema.Struct({
+  toolCallId: Schema.String,
+  description: Schema.optional(Schema.String),
+  prompt: Schema.optional(Schema.String),
+  subagentType: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  agentId: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number),
+});
+
 export function extractAskQuestions(
   params: typeof CursorAskQuestionRequest.Type,
 ): ReadonlyArray<UserInputQuestion> {

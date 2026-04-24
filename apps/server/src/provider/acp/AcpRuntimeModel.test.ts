@@ -302,6 +302,134 @@ describe("AcpRuntimeModel", () => {
     expect(event.toolCall.kind).toBe("other");
   });
 
+  // `extractToolCallCommand` is an internal helper; assert via the
+  // `parseSessionUpdateEvent` / `parsePermissionRequest` entry points so the
+  // new fallbacks compose correctly with the surrounding `makeToolCallState`
+  // pipeline (presentation, detail, alias setup).
+
+  it("extracts a command from a content-block shell-command text when rawInput is empty", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-cc",
+        title: "Terminal",
+        kind: "execute",
+        status: "pending",
+        rawInput: {},
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "cc --version",
+            },
+          },
+        ],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const [event] = result.events;
+    expect(event?._tag).toBe("ToolCallUpdated");
+    if (event?._tag !== "ToolCallUpdated") return;
+    expect(event.toolCall.command).toBe("cc --version");
+  });
+
+  it("extracts a command from `_meta.command` when rawInput and title are not informative", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-meta",
+        title: "Terminal",
+        kind: "execute",
+        status: "pending",
+        rawInput: {},
+        _meta: { command: "git status" },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const [event] = result.events;
+    expect(event?._tag).toBe("ToolCallUpdated");
+    if (event?._tag !== "ToolCallUpdated") return;
+    expect(event.toolCall.command).toBe("git status");
+  });
+
+  it("extracts a command from `rawInput.cmd` / `rawInput.shellCommand` / `rawInput.commandLine`", () => {
+    for (const key of ["cmd", "shellCommand", "commandLine"] as const) {
+      const result = parseSessionUpdateEvent({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: `tool-${key}`,
+          title: "Terminal",
+          kind: "execute",
+          status: "pending",
+          rawInput: { [key]: "ls -la" },
+        },
+      } satisfies EffectAcpSchema.SessionNotification);
+
+      const [event] = result.events;
+      expect(event?._tag).toBe("ToolCallUpdated");
+      if (event?._tag !== "ToolCallUpdated") return;
+      expect(event.toolCall.command).toBe("ls -la");
+    }
+  });
+
+  it("rejects content-block text that doesn't look like a shell command", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-noisy",
+        title: "Terminal",
+        kind: "execute",
+        status: "pending",
+        rawInput: {},
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "text",
+              text: "Not in allowlist — requesting approval...\nmultiline prose",
+            },
+          },
+        ],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const [event] = result.events;
+    expect(event?._tag).toBe("ToolCallUpdated");
+    if (event?._tag !== "ToolCallUpdated") return;
+    expect(event.toolCall.command).toBeUndefined();
+  });
+
+  it("prefers `rawInput.command` over the new content/meta fallbacks", () => {
+    const result = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-priority",
+        title: "Terminal",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "primary --command" },
+        _meta: { command: "meta --should-lose" },
+        content: [
+          {
+            type: "content",
+            content: { type: "text", text: "fallback --should-lose" },
+          },
+        ],
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    const [event] = result.events;
+    expect(event?._tag).toBe("ToolCallUpdated");
+    if (event?._tag !== "ToolCallUpdated") return;
+    expect(event.toolCall.command).toBe("primary --command");
+  });
+
   it("keeps permission request parsing compatible with loose extension payloads", () => {
     const request = parsePermissionRequest({
       sessionId: "session-1",

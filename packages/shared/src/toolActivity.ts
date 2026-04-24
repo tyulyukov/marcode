@@ -46,6 +46,37 @@ function extractCommandFromTitle(title: string | undefined): string | undefined 
   return backtickMatch?.[1]?.trim() || undefined;
 }
 
+// Mirrors server-side AcpRuntimeModel.looksLikeShellCommand: matches a single
+// line that either starts with a shell prompt marker or with a word-like token,
+// capped at a reasonable command length.
+function looksLikeShellCommand(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.length > 500) return false;
+  if (trimmed.includes("\n")) return false;
+  if (trimmed.startsWith("$ ") || trimmed.startsWith("> ")) return true;
+  return /^[\w./-]+(\s|$)/u.test(trimmed);
+}
+
+function extractCommandFromContent(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  for (const entry of value) {
+    const outer = asRecord(entry);
+    if (!outer || outer.type !== "content") continue;
+    const inner = asRecord(outer.content);
+    if (!inner || inner.type !== "text") continue;
+    const text = asTrimmedString(inner.text);
+    if (!text || !looksLikeShellCommand(text)) continue;
+    return text.replace(/^[$>]\s+/u, "");
+  }
+  return undefined;
+}
+
+function extractCommandFromMeta(meta: unknown): string | undefined {
+  const record = asRecord(meta);
+  if (!record) return undefined;
+  return normalizeCommandValue(record.command) ?? normalizeCommandValue(record.cmd);
+}
+
 function extractToolCommand(data: Record<string, unknown> | undefined, title: string | undefined) {
   const item = asRecord(data?.item);
   const itemInput = asRecord(item?.input);
@@ -62,15 +93,31 @@ function extractToolCommand(data: Record<string, unknown> | undefined, title: st
   if (direct) {
     return direct;
   }
-  const executable = asTrimmedString(rawInput?.executable);
+  const binary = asTrimmedString(rawInput?.executable);
   const args = normalizeCommandValue(rawInput?.args);
-  if (executable && args) {
-    return `${executable} ${args}`;
+  if (binary && args) {
+    return `${binary} ${args}`;
   }
-  if (executable) {
-    return executable;
+  if (binary) {
+    return binary;
   }
-  return extractCommandFromTitle(title);
+  // Broader rawInput key variants Cursor/other ACP agents sometimes use.
+  const altCommand =
+    normalizeCommandValue(rawInput?.cmd) ??
+    normalizeCommandValue(rawInput?.shellCommand) ??
+    normalizeCommandValue(rawInput?.commandLine);
+  if (altCommand) {
+    return altCommand;
+  }
+  const titleCommand = extractCommandFromTitle(title);
+  if (titleCommand) {
+    return titleCommand;
+  }
+  const metaCommand = extractCommandFromMeta(data?._meta);
+  if (metaCommand) {
+    return metaCommand;
+  }
+  return extractCommandFromContent(data?.content);
 }
 
 function maybePathLike(value: string | undefined): string | undefined {

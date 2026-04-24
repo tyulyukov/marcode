@@ -51,6 +51,7 @@ const CURSOR_ACP_MODEL_DISCOVERY_CONCURRENCY = 4;
 const CURSOR_REFRESH_INTERVAL = "1 hour";
 const CURSOR_PARAMETERIZED_MODEL_PICKER_MIN_VERSION_DATE = 2026_04_08;
 export const CURSOR_PARAMETERIZED_MODEL_PICKER_CAPABILITIES = {
+  terminal: true,
   _meta: {
     parameterizedModelPicker: true,
   },

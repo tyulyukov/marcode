@@ -229,22 +229,75 @@ function extractCommandFromTitle(title: string | undefined): string | undefined 
   return match?.[1]?.trim() || undefined;
 }
 
-function extractToolCallCommand(rawInput: unknown, title: string | undefined): string | undefined {
+// Cursor sometimes puts the shell command in a free-form text block inside
+// `content[]` rather than on `rawInput`. Heuristic matches a single-line
+// command that starts with a word-like token, a shell prompt marker (`$ ` /
+// `> `), and is a reasonable command length.
+function looksLikeShellCommand(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || trimmed.length > 500) return false;
+  if (trimmed.includes("\n")) return false;
+  if (trimmed.startsWith("$ ") || trimmed.startsWith("> ")) return true;
+  return /^[\w./-]+(\s|$)/.test(trimmed);
+}
+
+function extractCommandFromToolCallContent(
+  content: ReadonlyArray<EffectAcpSchema.ToolCallContent> | null | undefined,
+): string | undefined {
+  if (!content) return undefined;
+  for (const entry of content) {
+    if (entry.type !== "content") continue;
+    if (entry.content.type !== "text") continue;
+    const text = entry.content.text;
+    if (!text || !looksLikeShellCommand(text)) continue;
+    return text.trim().replace(/^[$>]\s+/, "");
+  }
+  return undefined;
+}
+
+function extractCommandFromMeta(meta: unknown): string | undefined {
+  if (!isRecord(meta)) return undefined;
+  return normalizeCommandValue(meta.command) ?? normalizeCommandValue(meta.cmd);
+}
+
+function extractToolCallCommand(input: {
+  readonly rawInput: unknown;
+  readonly title?: string | undefined;
+  readonly content?: ReadonlyArray<EffectAcpSchema.ToolCallContent> | null | undefined;
+  readonly meta?: unknown;
+}): string | undefined {
+  const rawInput = input.rawInput;
   if (isRecord(rawInput)) {
     const directCommand = normalizeCommandValue(rawInput.command);
     if (directCommand) {
       return directCommand;
     }
-    const executable = typeof rawInput.executable === "string" ? rawInput.executable.trim() : "";
+    const binary = typeof rawInput.executable === "string" ? rawInput.executable.trim() : "";
     const args = normalizeCommandValue(rawInput.args);
-    if (executable && args) {
-      return `${executable} ${args}`;
+    if (binary && args) {
+      return `${binary} ${args}`;
     }
-    if (executable) {
-      return executable;
+    if (binary) {
+      return binary;
+    }
+    // Broader rawInput key variants Cursor/other ACP agents sometimes use.
+    const altCommand =
+      normalizeCommandValue(rawInput.cmd) ??
+      normalizeCommandValue(rawInput.shellCommand) ??
+      normalizeCommandValue(rawInput.commandLine);
+    if (altCommand) {
+      return altCommand;
     }
   }
-  return extractCommandFromTitle(title);
+  const titleCommand = extractCommandFromTitle(input.title);
+  if (titleCommand) {
+    return titleCommand;
+  }
+  const metaCommand = extractCommandFromMeta(input.meta);
+  if (metaCommand) {
+    return metaCommand;
+  }
+  return extractCommandFromToolCallContent(input.content);
 }
 
 function extractTextContentFromToolCallContent(
@@ -287,6 +340,7 @@ function makeToolCallState(
     readonly rawOutput?: unknown;
     readonly content?: ReadonlyArray<EffectAcpSchema.ToolCallContent> | null | undefined;
     readonly locations?: ReadonlyArray<EffectAcpSchema.ToolCallLocation> | null | undefined;
+    readonly meta?: unknown;
   },
   options?: {
     readonly fallbackStatus?: "pending" | "inProgress" | "completed" | "failed";
@@ -297,7 +351,12 @@ function makeToolCallState(
     return undefined;
   }
   const title = input.title?.trim() || undefined;
-  const command = extractToolCallCommand(input.rawInput, title);
+  const command = extractToolCallCommand({
+    rawInput: input.rawInput,
+    title,
+    content: input.content,
+    meta: input.meta,
+  });
   const textContent = extractTextContentFromToolCallContent(input.content);
   const normalizedTitle =
     title && title.toLowerCase() !== "terminal" && title.toLowerCase() !== "tool call"
@@ -376,6 +435,7 @@ function parseTypedToolCallState(
       rawOutput: event.rawOutput,
       content: event.content,
       locations: event.locations,
+      meta: event._meta,
     },
     options,
   );
@@ -418,6 +478,7 @@ export function parsePermissionRequest(
       rawOutput: params.toolCall.rawOutput,
       content: params.toolCall.content,
       locations: params.toolCall.locations,
+      meta: params.toolCall._meta,
     },
     { fallbackStatus: "pending" },
   );

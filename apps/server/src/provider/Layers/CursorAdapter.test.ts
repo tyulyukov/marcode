@@ -1174,4 +1174,144 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
       yield* adapter.stopSession(threadId);
     }),
   );
+
+  // When the client advertises `terminal: true`, Cursor issues a
+  // `terminal/create` request to run the command, then references the
+  // returned terminalId from the `session/update` tool_call via
+  // `content: [{ type: "terminal", terminalId }]`. The adapter merges the
+  // captured command onto the tool_call event so the CommandExecutionCard
+  // can render the command text instead of a blank "Ran command" pill.
+  it.effect("resolves command text from `terminal/create` into tool_call events", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-terminal-create-probe");
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const itemCompletedReady = yield* Deferred.make<void>();
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ MARCODE_ACP_EMIT_TERMINAL_CREATE: "1" }),
+      );
+      yield* serverSettings.updateSettings({
+        providers: { cursor: { binaryPath: wrapperPath } },
+      });
+
+      yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.gen(function* () {
+          runtimeEvents.push(event);
+          if (String(event.threadId) !== String(threadId)) return;
+          if (event.type === "item.completed" && event.payload.itemType === "command_execution") {
+            yield* Deferred.succeed(itemCompletedReady, undefined).pipe(Effect.ignore);
+          }
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "cursor",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { provider: "cursor", model: "default" },
+      });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "run cc --version",
+        attachments: [],
+      });
+
+      yield* Deferred.await(itemCompletedReady);
+
+      const threadEvents = runtimeEvents.filter(
+        (event) => String(event.threadId) === String(threadId),
+      );
+      const commandEvent = threadEvents.find(
+        (event) =>
+          (event.type === "item.updated" || event.type === "item.completed") &&
+          event.payload.itemType === "command_execution",
+      );
+      assert.isDefined(commandEvent);
+      if (
+        (commandEvent?.type === "item.updated" || commandEvent?.type === "item.completed") &&
+        commandEvent.payload.itemType === "command_execution"
+      ) {
+        const data = commandEvent.payload.data as Record<string, unknown> | undefined;
+        assert.equal(data?.command, "cc --version");
+      }
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  // `cursor/task` is a fire-and-forget notification Cursor fires post-
+  // completion, so `ctx.activeTurnId` may be stale. `resolveEffectiveTurnId`
+  // falls back to `ctx.turns.at(-1).id` so the session-logic latest-turn
+  // filter doesn't drop the resulting subagent activity.
+  it.effect("emits task.started/task.completed runtime events for cursor/task", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-task-probe");
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+      const taskCompletedReady = yield* Deferred.make<void>();
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ MARCODE_ACP_EMIT_CURSOR_TASK: "1" }),
+      );
+      yield* serverSettings.updateSettings({
+        providers: { cursor: { binaryPath: wrapperPath } },
+      });
+
+      yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.gen(function* () {
+          runtimeEvents.push(event);
+          if (String(event.threadId) !== String(threadId)) return;
+          if (event.type === "task.completed") {
+            yield* Deferred.succeed(taskCompletedReady, undefined).pipe(Effect.ignore);
+          }
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "cursor",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { provider: "cursor", model: "default" },
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId,
+        input: "use the explore subagent",
+        attachments: [],
+      });
+
+      yield* Deferred.await(taskCompletedReady);
+
+      const threadEvents = runtimeEvents.filter(
+        (event) => String(event.threadId) === String(threadId),
+      );
+      const taskStartedIndex = threadEvents.findIndex((event) => event.type === "task.started");
+      const taskCompletedIndex = threadEvents.findIndex((event) => event.type === "task.completed");
+      assert.isAtLeast(taskStartedIndex, 0);
+      assert.isAtLeast(taskCompletedIndex, 0);
+      // Effect.yieldNow between the two emissions guarantees the handler
+      // interleaves before offerRuntimeEvent#2 runs — which shows up as
+      // emission-order ordering on the PubSub stream.
+      assert.isBelow(taskStartedIndex, taskCompletedIndex);
+
+      const taskStarted = threadEvents[taskStartedIndex];
+      const taskCompleted = threadEvents[taskCompletedIndex];
+      if (taskStarted?.type === "task.started" && taskCompleted?.type === "task.completed") {
+        assert.equal(String(taskStarted.turnId), String(turn.turnId));
+        assert.equal(String(taskCompleted.turnId), String(turn.turnId));
+        assert.equal(taskStarted.payload.agentType, "explore");
+        assert.equal(taskStarted.payload.toolUseId, "task-subagent-1");
+        assert.equal(taskStarted.payload.prompt, "find all bullmq usages");
+        assert.equal(taskCompleted.payload.status, "completed");
+      }
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
 });
