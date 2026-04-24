@@ -1386,9 +1386,10 @@ describe("shell events are authoritative for sidebar summary flags", () => {
     };
   }
 
-  it("clears hasPendingUserInput when a later shell event reports the projection resolved it", () => {
+  it("detail-stream activity-appended event does not populate hasPendingUserInput; shell stream is the sole writer", () => {
     const thread = makeThread();
     const state = makeState(thread);
+    const ref = scopeThreadRef(thread.environmentId, thread.id);
 
     const afterActivity = applyOrchestrationEvent(
       state,
@@ -1423,23 +1424,31 @@ describe("shell events are authoritative for sidebar summary flags", () => {
       localEnvironmentId,
     );
 
-    const ref = scopeThreadRef(thread.environmentId, thread.id);
-    const afterActivitySummary = selectSidebarThreadSummaryByRef(afterActivity, ref);
-    expect(afterActivitySummary?.hasPendingUserInput).toBe(true);
-    expect(resolveThreadStatusPill({ thread: afterActivitySummary! })?.label).toBe(
-      "Awaiting Input",
-    );
+    // Detail stream must NOT write sidebarThreadSummaryById — shell stream owns it.
+    expect(selectSidebarThreadSummaryByRef(afterActivity, ref)).toBeUndefined();
 
-    const afterShell = applyShellEvent(
+    // A shell event that reports the server-computed flag as TRUE populates the summary.
+    const afterShellWithPending = applyShellEvent(
       afterActivity,
-      makeThreadUpsertedShellEvent(thread),
+      makeThreadUpsertedShellEvent(thread, { hasPendingUserInput: true }),
       localEnvironmentId,
     );
-    const afterShellSummary = selectSidebarThreadSummaryByRef(afterShell, ref);
-    expect(afterShellSummary?.hasPendingUserInput).toBe(false);
+    const pendingSummary = selectSidebarThreadSummaryByRef(afterShellWithPending, ref);
+    expect(pendingSummary?.hasPendingUserInput).toBe(true);
+    expect(resolveThreadStatusPill({ thread: pendingSummary! })?.label).toBe("Awaiting Input");
+
+    // A later shell event with the flag cleared wins authoritatively.
+    const afterShellResolved = applyShellEvent(
+      afterShellWithPending,
+      makeThreadUpsertedShellEvent(thread, { hasPendingUserInput: false }),
+      localEnvironmentId,
+    );
+    expect(selectSidebarThreadSummaryByRef(afterShellResolved, ref)?.hasPendingUserInput).toBe(
+      false,
+    );
   });
 
-  it("clears hasActionableProposedPlan when a later shell event reports the projection resolved it", () => {
+  it("detail-stream proposed-plan-upserted event does not populate hasActionableProposedPlan; shell stream is the sole writer", () => {
     const thread = makeThread({
       interactionMode: "plan",
       latestTurn: {
@@ -1452,6 +1461,7 @@ describe("shell events are authoritative for sidebar summary flags", () => {
       },
     });
     const state = makeState(thread);
+    const ref = scopeThreadRef(thread.environmentId, thread.id);
 
     const afterPlan = applyOrchestrationEvent(
       state,
@@ -1470,17 +1480,27 @@ describe("shell events are authoritative for sidebar summary flags", () => {
       localEnvironmentId,
     );
 
-    const ref = scopeThreadRef(thread.environmentId, thread.id);
-    const afterPlanSummary = selectSidebarThreadSummaryByRef(afterPlan, ref);
-    expect(afterPlanSummary?.hasActionableProposedPlan).toBe(true);
-    expect(resolveThreadStatusPill({ thread: afterPlanSummary! })?.label).toBe("Plan Ready");
+    // Detail stream must NOT write sidebarThreadSummaryById — shell stream owns it.
+    expect(selectSidebarThreadSummaryByRef(afterPlan, ref)).toBeUndefined();
 
-    const afterShell = applyShellEvent(
+    // A shell event that reports the server-computed flag as TRUE populates the summary.
+    const afterShellWithPlan = applyShellEvent(
       afterPlan,
-      makeThreadUpsertedShellEvent(thread),
+      makeThreadUpsertedShellEvent(thread, { hasActionableProposedPlan: true }),
       localEnvironmentId,
     );
-    const afterShellSummary = selectSidebarThreadSummaryByRef(afterShell, ref);
-    expect(afterShellSummary?.hasActionableProposedPlan).toBe(false);
+    const planSummary = selectSidebarThreadSummaryByRef(afterShellWithPlan, ref);
+    expect(planSummary?.hasActionableProposedPlan).toBe(true);
+    expect(resolveThreadStatusPill({ thread: planSummary! })?.label).toBe("Plan Ready");
+
+    // A later shell event with the flag cleared wins authoritatively.
+    const afterShellResolved = applyShellEvent(
+      afterShellWithPlan,
+      makeThreadUpsertedShellEvent(thread, { hasActionableProposedPlan: false }),
+      localEnvironmentId,
+    );
+    expect(
+      selectSidebarThreadSummaryByRef(afterShellResolved, ref)?.hasActionableProposedPlan,
+    ).toBe(false);
   });
 });
