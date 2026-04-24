@@ -98,8 +98,8 @@ Narrow port — persisted `latestUserMessageAt` drives `getThreadSortTimestamp` 
 
 ### PR #71 — provider model selection option arrays (upstream #2246)
 
-| Upstream                                               | Subject                                             | New SHA                                                                                     |
-| ------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Upstream                                               | Subject                                             | New SHA                                                                                                                                      |
+| ------------------------------------------------------ | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | [#2246](https://github.com/pingdotgg/t3code/pull/2246) | Refactor provider model selections to option arrays | `d776a9d12` + `62fd6ea4b` + `b7f903e7e` + `e2601893d` + `5f75e700d` + `c1bce4fb7` + `9bb54da84` (A→E + formatter + test-alignment follow-up) |
 
 **Why ported:** forward compatibility with upstream's `provider-instance-registry` branch (`ceddb40 / 7a466f / 8a82b53 / 84b0d74`), which extends the new option-array shape. Any future sync that touches provider identity assumes #2246 is in.
