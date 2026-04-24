@@ -406,7 +406,9 @@ function providerModelOptionsFromSelection(
     return null;
   }
 
-  return { [modelSelection.provider]: modelSelection.options } as ProviderOptionSelectionsByProvider;
+  return {
+    [modelSelection.provider]: modelSelection.options,
+  } as ProviderOptionSelectionsByProvider;
 }
 
 function modelSelectionByProviderToOptions(

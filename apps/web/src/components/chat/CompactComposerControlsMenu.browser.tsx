@@ -84,9 +84,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
             name: "Haiku 4.5",
             isCustom: false,
             capabilities: {
-              optionDescriptors: [
-                { id: "thinking", label: "Thinking", type: "boolean" as const },
-              ],
+              optionDescriptors: [{ id: "thinking", label: "Thinking", type: "boolean" as const }],
             },
           },
           {

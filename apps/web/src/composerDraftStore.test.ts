@@ -1164,7 +1164,9 @@ describe("composerDraftStore modelSelection", () => {
     expect(draft?.modelSelectionByProvider.claudeAgent).toEqual(
       modelSelection("claudeAgent", "claude-opus-4-6", { effort: "max" }),
     );
-    expect(draft?.modelSelectionByProvider.codex?.options).toEqual(toSelections({ fastMode: true }));
+    expect(draft?.modelSelectionByProvider.codex?.options).toEqual(
+      toSelections({ fastMode: true }),
+    );
     expect(draft?.activeProvider).toBe("claudeAgent");
   });
 

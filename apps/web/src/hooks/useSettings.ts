@@ -230,10 +230,9 @@ export function buildLegacyServerSettingsMigrationPatch(legacySettings: Record<s
   }
 
   if (Schema.is(ModelSelection)(legacySettings.textGenerationModelSelection)) {
-    patch.textGenerationModelSelection =
-      legacySettings.textGenerationModelSelection as NonNullable<
-        (typeof patch)["textGenerationModelSelection"]
-      >;
+    patch.textGenerationModelSelection = legacySettings.textGenerationModelSelection as NonNullable<
+      (typeof patch)["textGenerationModelSelection"]
+    >;
   }
 
   if (typeof legacySettings.codexBinaryPath === "string") {
