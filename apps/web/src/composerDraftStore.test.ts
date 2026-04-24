@@ -1375,6 +1375,85 @@ describe("composerDraftStore runtime and interaction settings", () => {
   });
 });
 
+describe("composerDraftStore legacy modelSelection options migration", () => {
+  const threadId = ThreadId.make("thread-legacy-options");
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  function mergeWithPersisted(persistedState: unknown) {
+    const persistApi = useComposerDraftStore.persist as unknown as {
+      getOptions: () => {
+        merge: (
+          persistedState: unknown,
+          currentState: ReturnType<typeof useComposerDraftStore.getState>,
+        ) => ReturnType<typeof useComposerDraftStore.getState>;
+      };
+    };
+    return persistApi.getOptions().merge(persistedState, useComposerDraftStore.getInitialState());
+  }
+
+  it("coerces pre-#2246 object-shape modelSelectionByProvider options to array shape during merge", () => {
+    const mergedState = mergeWithPersisted({
+      draftsByThreadKey: {
+        [threadId]: {
+          prompt: "",
+          attachments: [],
+          terminalContexts: [],
+          modelSelectionByProvider: {
+            claudeAgent: {
+              provider: "claudeAgent",
+              model: "claude-opus-4-6",
+              options: { effort: "max", fastMode: true },
+            },
+            codex: {
+              provider: "codex",
+              model: "gpt-5.4",
+              options: { reasoningEffort: "medium" },
+            },
+          },
+          activeProvider: "claudeAgent",
+        },
+      },
+      draftThreadsByThreadKey: {},
+      logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+      stickyModelSelectionByProvider: {},
+      stickyActiveProvider: null,
+    });
+
+    const merged = mergedState.draftsByThreadKey[threadKeyFor(threadId)];
+    expect(merged?.modelSelectionByProvider.claudeAgent?.options).toEqual(
+      toSelections({ effort: "max", fastMode: true }),
+    );
+    expect(merged?.modelSelectionByProvider.codex?.options).toEqual(
+      toSelections({ reasoningEffort: "medium" }),
+    );
+    expect(merged?.activeProvider).toBe("claudeAgent");
+  });
+
+  it("coerces pre-#2246 object-shape stickyModelSelectionByProvider options to array shape during merge", () => {
+    const mergedState = mergeWithPersisted({
+      draftsByThreadKey: {},
+      draftThreadsByThreadKey: {},
+      logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+      stickyModelSelectionByProvider: {
+        claudeAgent: {
+          provider: "claudeAgent",
+          model: "claude-opus-4-6",
+          options: { effort: "max" },
+        },
+      },
+      stickyActiveProvider: "claudeAgent",
+    });
+
+    expect(mergedState.stickyModelSelectionByProvider.claudeAgent?.options).toEqual(
+      toSelections({ effort: "max" }),
+    );
+    expect(mergedState.stickyActiveProvider).toBe("claudeAgent");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // createDebouncedStorage
 // ---------------------------------------------------------------------------
