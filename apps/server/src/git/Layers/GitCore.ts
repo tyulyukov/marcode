@@ -2192,17 +2192,59 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         ? ["diff", "HEAD", "--patch", "--minimal", "--no-color"]
         : ["diff", "--cached", "--patch", "--minimal", "--no-color"];
 
-      const result = yield* executeGit("GitCore.readWorkingTreeDiff", cwd, diffArgs, {
+      const trackedResult = yield* executeGit("GitCore.readWorkingTreeDiff", cwd, diffArgs, {
         maxOutputBytes: WORKING_TREE_DIFF_MAX_OUTPUT_BYTES,
         truncateOutputAtMaxBytes: true,
         fallbackErrorMessage: "git diff failed",
       });
 
-      const diff = result.stdoutTruncated
-        ? `${result.stdout}${OUTPUT_TRUNCATED_MARKER}`
-        : result.stdout;
+      let combined = trackedResult.stdout;
+      let truncated = trackedResult.stdoutTruncated;
 
-      return { diff, truncated: result.stdoutTruncated };
+      if (!truncated) {
+        const untrackedList = yield* executeGit(
+          "GitCore.readWorkingTreeDiff.untrackedList",
+          cwd,
+          ["ls-files", "--others", "--exclude-standard", "-z"],
+          {
+            maxOutputBytes: WORKING_TREE_DIFF_MAX_OUTPUT_BYTES,
+            truncateOutputAtMaxBytes: true,
+            fallbackErrorMessage: "git ls-files failed",
+          },
+        );
+        const untrackedFiles = untrackedList.stdout.split("\0").filter((name) => name.length > 0);
+
+        for (const file of untrackedFiles) {
+          const remainingBudget = WORKING_TREE_DIFF_MAX_OUTPUT_BYTES - combined.length;
+          if (remainingBudget <= 0) {
+            truncated = true;
+            break;
+          }
+          const entry = yield* executeGit(
+            "GitCore.readWorkingTreeDiff.untrackedEntry",
+            cwd,
+            ["diff", "--no-index", "--patch", "--minimal", "--no-color", "--", "/dev/null", file],
+            {
+              allowNonZeroExit: true,
+              maxOutputBytes: remainingBudget,
+              truncateOutputAtMaxBytes: true,
+            },
+          );
+          combined += entry.stdout;
+          if (entry.stdoutTruncated) {
+            truncated = true;
+            break;
+          }
+        }
+
+        if (untrackedList.stdoutTruncated) {
+          truncated = true;
+        }
+      }
+
+      const diff = truncated ? `${combined}${OUTPUT_TRUNCATED_MARKER}` : combined;
+
+      return { diff, truncated };
     });
 
   return {

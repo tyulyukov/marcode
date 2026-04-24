@@ -2285,6 +2285,80 @@ it.layer(TestLayer)("git integration", (it) => {
       }),
     );
 
+    describe("readWorkingTreeDiff", () => {
+      it.effect("includes unstaged modifications to tracked files", () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          const core = yield* GitCore;
+
+          yield* writeTextFile(path.join(tmp, "README.md"), "# test\nunstaged change\n");
+
+          const result = yield* core.readWorkingTreeDiff(tmp);
+
+          expect(result.truncated).toBe(false);
+          expect(result.diff).toContain("diff --git a/README.md b/README.md");
+          expect(result.diff).toContain("+unstaged change");
+        }),
+      );
+
+      it.effect("includes untracked files as new-file diffs", () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          const core = yield* GitCore;
+
+          yield* writeTextFile(path.join(tmp, "new-file.txt"), "brand new line\n");
+
+          const result = yield* core.readWorkingTreeDiff(tmp);
+
+          expect(result.truncated).toBe(false);
+          expect(result.diff).toContain("new-file.txt");
+          expect(result.diff).toContain("new file mode");
+          expect(result.diff).toContain("+brand new line");
+        }),
+      );
+
+      it.effect("includes both tracked-unstaged changes and untracked files in one diff", () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          const core = yield* GitCore;
+
+          yield* writeTextFile(path.join(tmp, "README.md"), "# test\nmodified line\n");
+          yield* writeTextFile(path.join(tmp, "fresh.txt"), "untracked content\n");
+
+          const result = yield* core.readWorkingTreeDiff(tmp);
+
+          expect(result.diff).toContain("README.md");
+          expect(result.diff).toContain("+modified line");
+          expect(result.diff).toContain("fresh.txt");
+          expect(result.diff).toContain("+untracked content");
+        }),
+      );
+
+      it.effect("respects .gitignore when enumerating untracked files", () =>
+        Effect.gen(function* () {
+          const tmp = yield* makeTmpDir();
+          yield* initRepoWithCommit(tmp);
+          const core = yield* GitCore;
+
+          yield* writeTextFile(path.join(tmp, ".gitignore"), "ignored.txt\n");
+          yield* git(tmp, ["add", ".gitignore"]);
+          yield* git(tmp, ["commit", "-m", "add gitignore"]);
+          yield* writeTextFile(path.join(tmp, "ignored.txt"), "should be hidden\n");
+          yield* writeTextFile(path.join(tmp, "visible.txt"), "should appear\n");
+
+          const result = yield* core.readWorkingTreeDiff(tmp);
+
+          expect(result.diff).toContain("visible.txt");
+          expect(result.diff).toContain("+should appear");
+          expect(result.diff).not.toContain("ignored.txt");
+          expect(result.diff).not.toContain("should be hidden");
+        }),
+      );
+    });
+
     it.effect("falls back to empty remote branch data when remote lookups fail", () =>
       Effect.gen(function* () {
         const tmp = yield* makeTmpDir();
