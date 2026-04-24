@@ -168,6 +168,20 @@ The same applies to `py-*` vs `pt-*`/`pb-*`.
 
 Use these as implementation references when designing protocol handling, UX flows, and operational safeguards.
 
+## Upstream Merge: Divergence Ledger
+
+Before starting any upstream sync, read [`UPSTREAM_DIVERGENCE.md`](./UPSTREAM_DIVERGENCE.md). It is the audit trail of which upstream PRs are already ported (under possibly-different MarCode SHAs), which are already behaviorally equivalent and must NOT be re-ported, which are intentionally skipped, and what is genuinely pending. Its sister doc [`FEATURES.md`](./FEATURES.md) lists MarCode-exclusive features that must be preserved through any merge.
+
+The ledger's own preamble describes the exact `git cherry origin/main upstream/main` workflow for computing real pending work. Always subtract the "Already equivalent" and "Intentionally skipped" sets before scoping a cycle — re-porting an already-equivalent PR creates pointless conflicts on FEATURES.md-protected files.
+
+**After a cycle:**
+
+1. Add new rows to the "Ported in the current cycle" section (upstream PR number + new MarCode SHA + conflict-resolution notes, especially any FEATURES.md-protected substitutions like `AnalyticsServiceNoopLive` in place of upstream `AnalyticsService.layerTest`).
+2. Move finished rows out of "Pending real work".
+3. Advance "Baseline after cycle" to the last merge SHA of the cycle.
+4. Record any data-migration smoke results (real DB rows migrated, legacy shapes surviving / none).
+5. Run `bun run fmt` — CI enforces `oxfmt --check` on markdown, so unformatted table column widths will fail the Format step.
+
 ## Upstream Merge: Migration Ordering
 
 MarCode has its own database migrations that were added at specific IDs. When merging upstream changes that introduce NEW migrations, **never renumber existing MarCode migrations** — existing users already have them applied at their original IDs. The Effect SQL migrator tracks migrations by numeric ID in the `effect_sql_migrations` table; renumbering causes it to skip the new upstream tables (thinking those IDs are done) and attempt to re-create existing tables at the new IDs.
