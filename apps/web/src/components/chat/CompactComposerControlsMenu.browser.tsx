@@ -75,7 +75,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
                   ],
                   promptInjectedValues: ["ultrathink"],
                 },
-                { id: "fastMode", label: "Fast mode", type: "boolean" as const },
+                { id: "fastMode", label: "Fast Mode", type: "boolean" as const },
               ],
             },
           },
@@ -125,7 +125,7 @@ async function mountMenu(props?: { modelSelection?: ModelSelection; prompt?: str
                     { id: "high", label: "High", isDefault: true },
                   ],
                 },
-                { id: "fastMode", label: "Fast mode", type: "boolean" as const },
+                { id: "fastMode", label: "Fast Mode", type: "boolean" as const },
               ],
             },
           },
@@ -185,8 +185,8 @@ describe("CompactComposerControlsMenu", () => {
     await vi.waitFor(() => {
       const text = document.body.textContent ?? "";
       expect(text).toContain("Fast Mode");
-      expect(text).toContain("off");
-      expect(text).toContain("on");
+      expect(text).toContain("On");
+      expect(text).toContain("Off");
     });
   });
 
@@ -233,7 +233,7 @@ describe("CompactComposerControlsMenu", () => {
     await vi.waitFor(() => {
       const text = document.body.textContent ?? "";
       expect(text).toContain("Thinking");
-      expect(text).toContain("On (default)");
+      expect(text).toContain("On");
       expect(text).toContain("Off");
     });
   });
@@ -272,7 +272,7 @@ describe("CompactComposerControlsMenu", () => {
     await vi.waitFor(() => {
       const text = document.body.textContent ?? "";
       expect(text).toContain(
-        'Your prompt contains "ultrathink" in the text. Remove it to change effort.',
+        'Your prompt contains "ultrathink" in the text. Remove it to change this option.',
       );
     });
   });

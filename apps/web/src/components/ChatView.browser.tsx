@@ -4193,10 +4193,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
           codex: {
             provider: "codex",
             model: "gpt-5.4",
-            options: {
-              reasoningEffort: "low",
-              fastMode: true,
-            },
+            options: [
+              { id: "reasoningEffort", value: "low" },
+              { id: "fastMode", value: true },
+            ],
           },
         },
         activeProvider: "codex",
