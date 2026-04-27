@@ -135,6 +135,7 @@ function buildLineKeys(lines: ReadonlyArray<DiffLine>): string[] {
 export const OPERATION_LABELS: Record<InlineDiffHunk["operation"], string> = {
   edit: "Edit",
   write: "Write",
+  delete: "Deleted",
 };
 
 export function DiffStatSummary(props: { additions: number; deletions: number }) {

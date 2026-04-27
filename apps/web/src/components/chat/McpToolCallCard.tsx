@@ -37,18 +37,35 @@ interface ParsedMcpToolName {
 const MCP_TOOL_NAME_RE = /^mcp__(.+?)__(.+)$/;
 const CLAUDE_AI_PREFIX_RE = /^claude_ai_/;
 
-function parseMcpToolName(toolName: string | undefined): ParsedMcpToolName {
+function humanizeMcpSegment(value: string, stripClaudePrefix: boolean): string {
+  const base = stripClaudePrefix ? value.replace(CLAUDE_AI_PREFIX_RE, "") : value;
+  return base.replace(/_/g, " ");
+}
+
+function parseMcpToolName(entry: WorkLogEntry): ParsedMcpToolName {
+  // Codex populates `toolInput.server` / `toolInput.tool` with the original
+  // (unsanitized) server and tool names. Prefer those over the flattened
+  // `mcp__server__tool` toolName so Codex MCP calls display with full fidelity
+  // even when server/tool names contain `__`.
+  const input = entry.toolInput;
+  const structuredServer = input && typeof input.server === "string" ? input.server.trim() : null;
+  const structuredTool = input && typeof input.tool === "string" ? input.tool.trim() : null;
+  if (structuredServer && structuredTool) {
+    return {
+      serverName: humanizeMcpSegment(structuredServer, CLAUDE_AI_PREFIX_RE.test(structuredServer)),
+      functionName: humanizeMcpSegment(structuredTool, false),
+    };
+  }
+
+  const toolName = entry.toolName;
   if (!toolName) return { serverName: null, functionName: "Unknown" };
-  const match = MCP_TOOL_NAME_RE.exec(toolName);
+  const match = toolName.match(MCP_TOOL_NAME_RE);
   if (match) {
     const rawServer = match[1]!;
     const rawFunction = match[2]!;
-    const serverDisplay = CLAUDE_AI_PREFIX_RE.test(rawServer)
-      ? rawServer.replace(CLAUDE_AI_PREFIX_RE, "").replace(/_/g, " ")
-      : rawServer.replace(/_/g, " ");
     return {
-      serverName: serverDisplay,
-      functionName: rawFunction.replace(/_/g, " "),
+      serverName: humanizeMcpSegment(rawServer, CLAUDE_AI_PREFIX_RE.test(rawServer)),
+      functionName: humanizeMcpSegment(rawFunction, false),
     };
   }
   return { serverName: null, functionName: toolName };
@@ -111,7 +128,11 @@ export const McpToolCallCard = memo(function McpToolCallCard(props: McpToolCallC
   const previewRef = useRef<HTMLDivElement>(null);
 
   const status = deriveToolStatus(entry);
-  const parsed = useMemo(() => parseMcpToolName(entry.toolName), [entry.toolName]);
+  const parsed = useMemo(
+    () => parseMcpToolName(entry),
+    // toolInput carries structured {server, tool} for Codex, toolName carries the flattened form for Claude.
+    [entry.toolName, entry.toolInput],
+  );
   const inputSummary = useMemo(() => summarizeInput(entry.toolInput), [entry.toolInput]);
   const renderedOutput = useMemo(
     () => (entry.detail ? ansiToSpans(entry.detail) : null),

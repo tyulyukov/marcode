@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { explorationEntryHeading } from "./ExplorationCard";
+import { ExplorationCard, explorationEntryHeading } from "./ExplorationCard";
 import type { WorkLogEntry } from "../../session-logic";
 
 function makeEntry(overrides: Partial<WorkLogEntry>): WorkLogEntry {
@@ -82,5 +84,44 @@ describe("explorationEntryHeading", () => {
       }),
     );
     expect(heading).toBe("Read file");
+  });
+});
+
+describe("ExplorationCard", () => {
+  const entries = [
+    makeEntry({
+      id: "read-1",
+      toolName: "read",
+      toolInput: { file_path: "/Users/dev/marcode/apps/web/src/App.tsx" },
+    }),
+  ];
+
+  it("keeps the default exploration card expandable", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ExplorationCard, {
+        entries,
+        isLive: false,
+      }),
+    );
+
+    expect(markup).toContain("<button");
+    expect(markup).toContain("lucide-chevron-right");
+    expect(markup).toContain("Explored 1 file");
+  });
+
+  it("renders summary-only exploration without expand controls or detail rows", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ExplorationCard, {
+        entries,
+        isLive: true,
+        summaryOnly: true,
+      }),
+    );
+
+    expect(markup).not.toContain("<button");
+    expect(markup).not.toContain("lucide-chevron-right");
+    expect(markup).not.toContain("lucide-chevron-down");
+    expect(markup).toContain("Exploring 1 file");
+    expect(markup).not.toContain("Read apps/web/src/App.tsx");
   });
 });

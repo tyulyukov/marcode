@@ -457,4 +457,187 @@ describe("extractDiffPreviews for apply_patch", () => {
       }),
     ).toEqual([]);
   });
+
+  it("preserves delete as its own operation (not collapsed to edit)", () => {
+    const deletePatch = [
+      "*** Begin Patch",
+      "*** Delete File: apps/web/src/obsolete.ts",
+      "-const gone = 1;",
+      "-const alsoGone = 2;",
+      "*** End Patch",
+    ].join("\n");
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "apply_patch",
+        input: { patchText: deletePatch },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("apps/web/src/obsolete.ts");
+    expect(result[0]!.operation).toBe("delete");
+    expect(result[0]!.stats).toEqual({ additions: 0, deletions: 2 });
+  });
+});
+
+// Codex `fileChange` items ship per-file diffs on `data.input.changes` as
+// `[{ path, kind: { type: "add" | "update" | "delete" }, diff }]`. The `diff`
+// format depends on `kind.type`:
+//  - "update" -> unified diff (with `@@` headers and `+`/`-`/` ` prefixes)
+//  - "add"    -> raw new-file content (no prefixes)
+//  - "delete" -> raw old-file content (no prefixes)
+// These tests lock in the `extractCodexChangesHunks` dispatch + per-kind parsing.
+describe("extractDiffPreviews — Codex fileChange changes[]", () => {
+  const updateDiff = ["@@ -1,2 +1,2 @@", " context", "-old", "+new"].join("\n");
+  const addRawContent = "line 1\nline 2\n";
+  const deleteRawContent = "line 1\nline 2\n";
+
+  it("maps kind.type=add to operation=write and parses raw file content", () => {
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [{ path: "src/new.ts", kind: { type: "add" }, diff: addRawContent }],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/new.ts");
+    expect(result[0]!.operation).toBe("write");
+    expect(result[0]!.stats).toEqual({ additions: 2, deletions: 0 });
+    expect(result[0]!.fullLines.map((line) => line.content)).toEqual(["line 1", "line 2"]);
+  });
+
+  it("maps kind.type=update to operation=edit and parses unified diff", () => {
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [{ path: "src/a.ts", kind: { type: "update" }, diff: updateDiff }],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/a.ts");
+    expect(result[0]!.operation).toBe("edit");
+    expect(result[0]!.stats).toEqual({ additions: 1, deletions: 1 });
+  });
+
+  it("maps kind.type=delete to operation=delete and parses raw file content", () => {
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [{ path: "src/gone.ts", kind: { type: "delete" }, diff: deleteRawContent }],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/gone.ts");
+    expect(result[0]!.operation).toBe("delete");
+    expect(result[0]!.stats).toEqual({ additions: 0, deletions: 2 });
+  });
+
+  it("emits one hunk per file across mixed kinds", () => {
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [
+            { path: "src/a.ts", kind: { type: "update" }, diff: updateDiff },
+            { path: "src/b.ts", kind: { type: "add" }, diff: addRawContent },
+            { path: "src/c.ts", kind: { type: "delete" }, diff: deleteRawContent },
+          ],
+        },
+      },
+    });
+    expect(result.map((h) => ({ path: h.filePath, operation: h.operation }))).toEqual([
+      { path: "src/a.ts", operation: "edit" },
+      { path: "src/b.ts", operation: "write" },
+      { path: "src/c.ts", operation: "delete" },
+    ]);
+  });
+
+  it("runs before toolName-based extractors — takes precedence when changes[] is present", () => {
+    // toolName "Edit" would normally route to `extractEditHunk` and need
+    // `old_string`/`new_string`. Codex's shape wins because `changes` is set.
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "Edit",
+        input: {
+          changes: [{ path: "src/z.ts", kind: { type: "add" }, diff: addRawContent }],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/z.ts");
+    expect(result[0]!.operation).toBe("write");
+  });
+
+  it("skips malformed entries without failing the batch", () => {
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [
+            { path: "src/ok.ts", kind: { type: "update" }, diff: updateDiff },
+            { path: "src/bad.ts", kind: { type: "update" }, diff: "" },
+            { kind: { type: "add" }, diff: addRawContent },
+          ],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.filePath).toBe("src/ok.ts");
+  });
+
+  it("truncates large Codex diffs", () => {
+    const bigDiff = [
+      "@@ -1,60 +1,60 @@",
+      ...Array.from({ length: 60 }, (_, i) => `-old-${i}`),
+      ...Array.from({ length: 60 }, (_, i) => `+new-${i}`),
+    ].join("\n");
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [{ path: "big.ts", kind: { type: "update" }, diff: bigDiff }],
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.lines.length).toBeLessThanOrEqual(40);
+    expect(result[0]!.fullLines.length).toBeGreaterThan(40);
+    expect(result[0]!.truncated).toBe(true);
+  });
+
+  // Regression guard: a real Codex `item/completed` payload for 3 new markdown
+  // files. Before the raw-content parser, every hunk was dropped (the raw
+  // content has no `+`/`-` prefixes) and the entry fell back to the work-log
+  // "File change +N more" row.
+  it("parses real Codex add-kind payload (raw content without unified-diff prefixes)", () => {
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "ApplyPatch",
+        input: {
+          changes: [
+            {
+              path: "/tmp/random-note-1.md",
+              kind: { type: "add" },
+              diff: "# Random Note 1\n\nThe orange cart rolled slowly past the quiet kiosk.\n",
+            },
+            {
+              path: "/tmp/random-note-2.md",
+              kind: { type: "add" },
+              diff: "# Random Note 2\n\nThe clock in the hallway ticked louder than expected.\n",
+            },
+          ],
+        },
+      },
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]!.operation).toBe("write");
+    expect(result[0]!.stats.additions).toBeGreaterThan(0);
+    expect(result[1]!.operation).toBe("write");
+    expect(result[1]!.stats.additions).toBeGreaterThan(0);
+  });
 });

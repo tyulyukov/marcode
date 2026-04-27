@@ -894,6 +894,603 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       });
     }),
   );
+
+  it.effect("normalizes commandExecution item to Shell toolName + input.command", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-cmd-started"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/started",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("cmd_1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "commandExecution",
+            id: "cmd_1",
+            command: "ls -la",
+            commandActions: [],
+            cwd: "/workspace",
+            status: "inProgress",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.started");
+      if (firstEvent.value.type !== "item.started") return;
+      assert.equal(firstEvent.value.itemId, "cmd_1");
+      assert.equal(firstEvent.value.payload.itemType, "command_execution");
+      assert.equal(firstEvent.value.payload.detail, "ls -la");
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolName, "Shell");
+      assert.deepEqual(data.input, { command: "ls -la" });
+      assert.equal(data.status, "inProgress");
+    }),
+  );
+
+  it.effect(
+    "populates completed commandExecution detail from aggregatedOutput and preserves itemId",
+    () =>
+      Effect.gen(function* () {
+        const { adapter, runtime } = yield* startLifecycleRuntime();
+        const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+        yield* runtime.emit({
+          id: asEventId("evt-cmd-completed"),
+          kind: "notification",
+          provider: "codex",
+          createdAt: new Date().toISOString(),
+          method: "item/completed",
+          threadId: asThreadId("thread-1"),
+          turnId: asTurnId("turn-1"),
+          itemId: asItemId("cmd_1"),
+          payload: {
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: {
+              type: "commandExecution",
+              id: "cmd_1",
+              command: "ls -la",
+              commandActions: [],
+              cwd: "/workspace",
+              status: "completed",
+              aggregatedOutput: "file1.txt\nfile2.txt\n",
+              exitCode: 0,
+            },
+          },
+        } satisfies ProviderEvent);
+
+        const firstEvent = yield* Fiber.join(firstEventFiber);
+        assert.equal(firstEvent._tag, "Some");
+        if (firstEvent._tag !== "Some") return;
+        assert.equal(firstEvent.value.type, "item.completed");
+        if (firstEvent.value.type !== "item.completed") return;
+        assert.equal(firstEvent.value.itemId, "cmd_1");
+        assert.equal(firstEvent.value.payload.detail, "file1.txt\nfile2.txt");
+        const data = firstEvent.value.payload.data as Record<string, unknown>;
+        assert.equal(data.toolName, "Shell");
+        assert.equal(data.aggregatedOutput, "file1.txt\nfile2.txt\n");
+        assert.equal(data.exitCode, 0);
+      }),
+  );
+
+  it.effect("normalizes fileChange item to ApplyPatch toolName + input.changes", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      const changes = [
+        { path: "src/a.ts", kind: { type: "update" }, diff: "@@ -1,1 +1,1 @@\n-old\n+new\n" },
+        { path: "src/b.ts", kind: { type: "add" }, diff: "@@ -0,0 +1,1 @@\n+added\n" },
+        { path: "src/c.ts", kind: { type: "delete" }, diff: "@@ -1,1 +0,0 @@\n-removed\n" },
+      ];
+      yield* runtime.emit({
+        id: asEventId("evt-file-change-completed"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("file_1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "fileChange",
+            id: "file_1",
+            status: "completed",
+            changes,
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.completed");
+      if (firstEvent.value.type !== "item.completed") return;
+      assert.equal(firstEvent.value.payload.itemType, "file_change");
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolName, "ApplyPatch");
+      const input = data.input as { changes: unknown };
+      assert.deepEqual(input.changes, changes);
+    }),
+  );
+
+  it.effect("normalizes webSearch item to WebSearch toolName + input.query + detail", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-websearch-started"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/started",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("ws_1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "webSearch",
+            id: "ws_1",
+            query: "effect-ts 4 release notes",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.started");
+      if (firstEvent.value.type !== "item.started") return;
+      assert.equal(firstEvent.value.payload.itemType, "web_search");
+      assert.equal(firstEvent.value.payload.detail, "effect-ts 4 release notes");
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolName, "WebSearch");
+      assert.deepEqual(data.input, { query: "effect-ts 4 release notes" });
+    }),
+  );
+
+  it.effect("normalizes mcpToolCall item to mcp__server__tool toolName + arguments", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-completed"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("mcp_1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "mcpToolCall",
+            id: "mcp_1",
+            server: "github",
+            tool: "search_repositories",
+            arguments: { query: "typescript" },
+            status: "completed",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.completed");
+      if (firstEvent.value.type !== "item.completed") return;
+      assert.equal(firstEvent.value.payload.itemType, "mcp_tool_call");
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolName, "mcp__github__search_repositories");
+      assert.equal(data.server, "github");
+      assert.equal(data.tool, "search_repositories");
+      assert.deepEqual(data.input, { query: "typescript" });
+    }),
+  );
+
+  it.effect("sanitizes mcpToolCall server and tool names containing double underscores", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-mcp-sanitize"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/started",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("mcp_2"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "mcpToolCall",
+            id: "mcp_2",
+            server: "my__server",
+            tool: "my__tool",
+            arguments: {},
+            status: "inProgress",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.started");
+      if (firstEvent.value.type !== "item.started") return;
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolName, "mcp__my_server__my_tool");
+      // Unsanitized originals are preserved for McpToolCallCard to consume.
+      assert.equal(data.server, "my__server");
+      assert.equal(data.tool, "my__tool");
+    }),
+  );
+
+  it.effect("normalizes dynamicToolCall item to tool-named toolName + arguments", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-dynamic-completed"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("dyn_1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "dynamicToolCall",
+            id: "dyn_1",
+            tool: "jira.get-issue",
+            arguments: { issueId: "ABC-123" },
+            namespace: "jira",
+            status: "completed",
+            success: true,
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.completed");
+      if (firstEvent.value.type !== "item.completed") return;
+      assert.equal(firstEvent.value.payload.itemType, "dynamic_tool_call");
+      const data = firstEvent.value.payload.data as Record<string, unknown>;
+      assert.equal(data.toolName, "jira.get-issue");
+      assert.equal(data.namespace, "jira");
+      assert.deepEqual(data.input, { issueId: "ABC-123" });
+    }),
+  );
+
+  it.effect("enriches item/tool/call request args with toolName + input", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-tool-call-request"),
+        kind: "request",
+        provider: "codex",
+        threadId: asThreadId("thread-1"),
+        createdAt: new Date().toISOString(),
+        method: "item/tool/call",
+        requestId: ApprovalRequestId.make("req-tool-1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "call-1",
+          tool: "read_file",
+          arguments: { path: "/etc/hosts" },
+          namespace: "fs",
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "request.opened");
+      if (firstEvent.value.type !== "request.opened") return;
+      const args = firstEvent.value.payload.args as Record<string, unknown>;
+      assert.equal(args.toolName, "read_file");
+      assert.deepEqual(args.input, { path: "/etc/hosts" });
+      assert.equal(args.namespace, "fs");
+    }),
+  );
+
+  // Codex exposes subagents through `collabAgentToolCall` items. The adapter
+  // translates these into provider-agnostic `task.*` events so AgentGroupCard
+  // renders Codex subagents the same as Claude/Cursor subagents.
+  it.effect("emits task.started on successful spawnAgent item/completed", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-spawn-agent"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_1"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_1",
+            tool: "spawnAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-1"],
+            agentsStates: { "subagent-thread-1": { status: "running" } },
+            prompt: "Research the ffmpeg integration\nLook at every processor.",
+            model: "gpt-5.4",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      assert.equal(events.length, 2);
+      // First event is the raw item.completed for the tool timeline.
+      assert.equal(events[0]?.type, "item.completed");
+      // Second event is the synthesized task.started for AgentGroupCard.
+      const taskEvent = events[1];
+      assert.equal(taskEvent?.type, "task.started");
+      if (taskEvent?.type !== "task.started") return;
+      assert.equal(taskEvent.payload.taskId, "subagent-thread-1");
+      assert.equal(taskEvent.payload.taskType, "subagent");
+      assert.equal(taskEvent.payload.toolUseId, "collab_1");
+      assert.equal(taskEvent.payload.model, "gpt-5.4");
+      assert.equal(taskEvent.payload.description, "Research the ffmpeg integration");
+      assert.equal(
+        taskEvent.payload.prompt,
+        "Research the ffmpeg integration\nLook at every processor.",
+      );
+    }),
+  );
+
+  it.effect("emits task.completed when agentsStates shows a terminal status", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 4)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-spawn-agent-2"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_spawn"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_spawn",
+            tool: "spawnAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-2"],
+            agentsStates: { "subagent-thread-2": { status: "running" } },
+            prompt: "Do research.",
+            model: "gpt-5.4",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      yield* runtime.emit({
+        id: asEventId("evt-wait-agent-2"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_wait"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_wait",
+            tool: "wait",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-2"],
+            agentsStates: {
+              "subagent-thread-2": { status: "completed", message: "done" },
+            },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const taskEvents = events.filter(
+        (e) => e.type === "task.started" || e.type === "task.completed",
+      );
+      assert.equal(taskEvents.length, 2);
+      assert.equal(taskEvents[0]?.type, "task.started");
+      const completed = taskEvents[1];
+      assert.equal(completed?.type, "task.completed");
+      if (completed?.type !== "task.completed") return;
+      assert.equal(completed.payload.taskId, "subagent-thread-2");
+      assert.equal(completed.payload.status, "completed");
+      assert.equal(completed.payload.summary, "done");
+    }),
+  );
+
+  it.effect("does not re-emit task.completed for a subagent that already terminated", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 5)).pipe(
+        Effect.forkChild,
+      );
+
+      // Spawn → wait(completed) → closeAgent(shutdown). Only the first terminal
+      // status should produce a task.completed; subsequent terminal states are
+      // ignored so the card doesn't flip from "completed" to "stopped".
+      yield* runtime.emit({
+        id: asEventId("evt-idem-spawn"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_spawn3"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_spawn3",
+            tool: "spawnAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-3"],
+            agentsStates: { "subagent-thread-3": { status: "running" } },
+            prompt: "Hello",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      yield* runtime.emit({
+        id: asEventId("evt-idem-wait"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_wait3"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_wait3",
+            tool: "wait",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-3"],
+            agentsStates: { "subagent-thread-3": { status: "completed" } },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      yield* runtime.emit({
+        id: asEventId("evt-idem-close"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_close3"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_close3",
+            tool: "closeAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-3"],
+            agentsStates: { "subagent-thread-3": { status: "shutdown" } },
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const taskCompletedCount = events.filter((e) => e.type === "task.completed").length;
+      const taskStartedCount = events.filter((e) => e.type === "task.started").length;
+      assert.equal(taskStartedCount, 1);
+      assert.equal(taskCompletedCount, 1);
+      // The single task.completed reflects the actual completion, not the close.
+      const completed = events.find((e) => e.type === "task.completed");
+      assert.equal(
+        completed?.type === "task.completed" ? completed.payload.status : null,
+        "completed",
+      );
+    }),
+  );
+
+  it.effect("does not emit task events when spawnAgent itself failed", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 1)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-spawn-failed"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_fail"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_fail",
+            tool: "spawnAgent",
+            status: "failed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["subagent-thread-fail"],
+            agentsStates: { "subagent-thread-fail": { status: "errored" } },
+            prompt: "Will never start",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      // Only the raw item.completed flows through; no task events.
+      assert.equal(events.length, 1);
+      assert.equal(events[0]?.type, "item.completed");
+    }),
+  );
 });
 
 const scopedLifecycleRuntimeFactory = makeScopedRuntimeFactory();

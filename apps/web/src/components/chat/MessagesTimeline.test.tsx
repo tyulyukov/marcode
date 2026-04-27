@@ -83,6 +83,7 @@ describe("MessagesTimeline", () => {
     const listRef = createRef<LegendListRef | null>();
     const markup = renderToStaticMarkup(
       <MessagesTimeline
+        provider="claudeAgent"
         threadId="test-thread"
         hasMessages
         isHydrating={false}
@@ -157,6 +158,7 @@ describe("MessagesTimeline", () => {
     const listRef = createRef<LegendListRef | null>();
     const markup = renderToStaticMarkup(
       <MessagesTimeline
+        provider="claudeAgent"
         threadId="test-thread"
         hasMessages
         isHydrating={false}
@@ -221,6 +223,7 @@ describe("MessagesTimeline", () => {
     const listRef = createRef<LegendListRef | null>();
     const markup = renderToStaticMarkup(
       <MessagesTimeline
+        provider="claudeAgent"
         threadId="test-thread"
         hasMessages
         isHydrating={false}
@@ -279,5 +282,81 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("marcode/apps/web/src/session-logic.ts");
     expect(markup).not.toContain("C:/Users/mike/dev-stuff/marcode/apps/web/src/session-logic.ts");
+  });
+
+  it("keeps exploration expandable for Claude and summary-only for Cursor", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const listRef = createRef<LegendListRef | null>();
+    const timelineEntries = [
+      {
+        id: "entry-1",
+        kind: "work" as const,
+        createdAt: "2026-03-17T19:12:28.000Z",
+        entry: {
+          id: "work-1",
+          createdAt: "2026-03-17T19:12:28.000Z",
+          label: "Read file",
+          tone: "tool" as const,
+          itemType: "file_read" as const,
+          toolName: "read",
+          toolInput: { file_path: "/repo/project/apps/web/src/App.tsx" },
+        },
+      },
+    ];
+    const commonProps = {
+      threadId: "test-thread",
+      hasMessages: true,
+      isHydrating: false,
+      isWorking: false,
+      activeTurnInProgress: false,
+      activeTurnStartedAt: null,
+      listRef,
+      onIsAtEndChange: () => {},
+      timelineEntries,
+      completionDividerBeforeEntryId: null,
+      completionSummary: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      changedFilesExpandedByTurnId: {},
+      onSetChangedFilesExpanded: () => {},
+      onOpenTurnDiff: () => {},
+      revertTurnCountByUserMessageId: new Map(),
+      onRevertUserMessage: () => {},
+      isRevertingCheckpoint: false,
+      onImageExpand: () => {},
+      activeThreadEnvironmentId: ACTIVE_THREAD_ENVIRONMENT_ID,
+      markdownCwd: undefined,
+      resolvedTheme: "light" as const,
+      timestampFormat: "locale" as const,
+      workspaceRoot: "/repo/project",
+      isSendBusy: false,
+      isSessionStarting: false,
+      hasPendingAssistantResponse: false,
+      isPreparingWorktree: false,
+      isCompacting: false,
+      onSubagentSelect: () => {},
+      editingUserMessageId: null,
+      editingUserMessageText: "",
+      editingUserMessageImages: [],
+      onStartEditUserMessage: () => {},
+      onChangeEditingUserMessageText: () => {},
+      onAddEditingUserMessageImages: () => {},
+      onRemoveEditingUserMessageImage: () => {},
+      onCancelEditUserMessage: () => {},
+      onSubmitEditUserMessage: () => {},
+      onReplyToSelection: () => {},
+    };
+
+    const claudeMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...commonProps} provider="claudeAgent" />,
+    );
+    const cursorMarkup = renderToStaticMarkup(
+      <MessagesTimeline {...commonProps} provider="cursor" />,
+    );
+
+    expect(claudeMarkup).toContain("<button");
+    expect(claudeMarkup).toContain("lucide-chevron-right");
+    expect(cursorMarkup).not.toContain("<button");
+    expect(cursorMarkup).not.toContain("lucide-chevron-right");
+    expect(cursorMarkup).toContain("Explored 1 file");
   });
 });

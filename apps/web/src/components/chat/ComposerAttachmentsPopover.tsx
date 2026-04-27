@@ -1,6 +1,13 @@
 import { useCallback, useRef } from "react";
 import { FolderIcon, FolderPlusIcon, ImageIcon, PlusIcon, XIcon } from "lucide-react";
-import type { EnvironmentId, ThreadId, RuntimeMode } from "@marcode/contracts";
+import {
+  PROVIDER_CAPABILITIES,
+  PROVIDER_DISPLAY_NAMES,
+  type EnvironmentId,
+  type ProviderKind,
+  type RuntimeMode,
+  type ThreadId,
+} from "@marcode/contracts";
 import { Button } from "../ui/button";
 import {
   Menu,
@@ -14,6 +21,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readNativeApi } from "~/nativeApi";
 import { newCommandId } from "~/lib/utils";
 import { basenameOfPath } from "~/vscode-icons";
@@ -29,6 +37,7 @@ interface ComposerAttachmentsPopoverProps {
   runtimeMode: RuntimeMode;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onAttachImages: (files: File[]) => void;
+  provider: ProviderKind;
   disabled: boolean;
 }
 
@@ -41,8 +50,10 @@ export function ComposerAttachmentsPopover({
   runtimeMode,
   onRuntimeModeChange,
   onAttachImages,
+  provider,
   disabled,
 }: ComposerAttachmentsPopoverProps) {
+  const canAddFolder = PROVIDER_CAPABILITIES[provider].supportsAdditionalDirectories;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuHandleRef = useRef(MenuCreateHandle());
   const openAddFolder = useCommandPaletteStore((store) => store.openAddFolder);
@@ -159,10 +170,33 @@ export function ComposerAttachmentsPopover({
               <ImageIcon className="size-4" />
               Attach image
             </MenuItem>
-            <MenuItem closeOnClick={false} onClick={handleOpenAddFolder}>
-              <FolderPlusIcon className="size-4" />
-              Add folder
-            </MenuItem>
+            {canAddFolder ? (
+              <MenuItem closeOnClick={false} onClick={handleOpenAddFolder}>
+                <FolderPlusIcon className="size-4" />
+                Add folder
+              </MenuItem>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="block">
+                      <MenuItem disabled closeOnClick={false}>
+                        <FolderPlusIcon className="size-4" />
+                        Add folder
+                      </MenuItem>
+                    </span>
+                  }
+                />
+                <TooltipPopup
+                  side="right"
+                  align="center"
+                  className="max-w-64 whitespace-normal p-2 leading-tight"
+                >
+                  Additional folders aren't supported for {PROVIDER_DISPLAY_NAMES[provider]} yet —
+                  only Claude can access extra project roots beyond the current working directory.
+                </TooltipPopup>
+              </Tooltip>
+            )}
           </MenuGroup>
 
           {additionalDirectories.length > 0 && (

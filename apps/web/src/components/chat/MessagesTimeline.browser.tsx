@@ -106,6 +106,7 @@ async function mountTimeline(entries: TimelineEntry[]) {
     return (
       <div style={{ height: "420px", width: "720px", overflow: "hidden" }}>
         <MessagesTimeline
+          provider="claudeAgent"
           threadId={THREAD_ID}
           hasMessages
           isHydrating={false}

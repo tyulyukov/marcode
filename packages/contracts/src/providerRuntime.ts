@@ -480,6 +480,7 @@ const TaskCompletedPayload = Schema.Struct({
   status: Schema.Literals(["completed", "failed", "stopped"]),
   summary: Schema.optional(TrimmedNonEmptyStringSchema),
   usage: Schema.optional(Schema.Unknown),
+  durationMs: Schema.optional(NonNegativeInt),
 });
 export type TaskCompletedPayload = typeof TaskCompletedPayload.Type;
 

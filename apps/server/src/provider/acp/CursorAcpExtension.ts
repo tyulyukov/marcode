@@ -68,6 +68,30 @@ export const CursorTaskNotification = Schema.Struct({
   durationMs: Schema.optional(Schema.Number),
 });
 
+const CursorBuiltinSubagentType = Schema.Literals([
+  "unspecified",
+  "computer_use",
+  "explore",
+  "video_review",
+  "browser_use",
+  "shell",
+  "vm_setup_helper",
+]);
+
+const CursorCustomSubagentType = Schema.Struct({
+  custom: Schema.String,
+});
+
+export const CursorTaskRequest = Schema.Struct({
+  toolCallId: Schema.String,
+  description: Schema.String,
+  prompt: Schema.String,
+  subagentType: Schema.Union([CursorBuiltinSubagentType, CursorCustomSubagentType]),
+  model: Schema.optional(Schema.String),
+  agentId: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number),
+});
+
 export function extractAskQuestions(
   params: typeof CursorAskQuestionRequest.Type,
 ): ReadonlyArray<UserInputQuestion> {
@@ -111,4 +135,35 @@ export function extractTodosAsPlan(params: typeof CursorUpdateTodosRequest.Type)
     return [{ step, status }];
   });
   return { plan };
+}
+
+export function normalizeCursorTask(params: typeof CursorTaskRequest.Type): {
+  readonly taskId: string;
+  readonly toolUseId: string;
+  readonly description: string;
+  readonly prompt: string;
+  readonly agentType?: string;
+  readonly model?: string;
+  readonly durationMs?: number;
+} {
+  const toolUseId = params.toolCallId.trim();
+  const agentId = params.agentId?.trim();
+  const taskId = agentId && agentId.length > 0 ? agentId : toolUseId;
+  const rawAgentType =
+    typeof params.subagentType === "string" ? params.subagentType : params.subagentType.custom;
+  const agentType = rawAgentType.trim();
+  const model = params.model?.trim();
+  return {
+    taskId,
+    toolUseId,
+    description: params.description,
+    prompt: params.prompt,
+    ...(agentType.length > 0 && agentType !== "unspecified" ? { agentType } : {}),
+    ...(model && model.length > 0 ? { model } : {}),
+    ...(typeof params.durationMs === "number" &&
+    Number.isFinite(params.durationMs) &&
+    params.durationMs >= 0
+      ? { durationMs: params.durationMs }
+      : {}),
+  };
 }

@@ -1,4 +1,9 @@
-import { type EnvironmentId, type MessageId, type TurnId } from "@marcode/contracts";
+import {
+  type EnvironmentId,
+  type MessageId,
+  type ProviderKind,
+  type TurnId,
+} from "@marcode/contracts";
 import {
   createContext,
   memo,
@@ -91,6 +96,7 @@ const EMPTY_STRING_SET: Set<string> = new Set<string>();
 
 interface TimelineRowSharedState {
   threadId: string;
+  provider: ProviderKind;
   activeTurnInProgress: boolean;
   activeTurnId: TurnId | null | undefined;
   isWorking: boolean;
@@ -175,6 +181,7 @@ function TimelineSkeleton() {
 
 interface MessagesTimelineProps {
   threadId: string;
+  provider: ProviderKind;
   hasMessages: boolean;
   isHydrating: boolean;
   isWorking: boolean;
@@ -220,6 +227,7 @@ interface MessagesTimelineProps {
 
 export const MessagesTimeline = memo(function MessagesTimeline({
   threadId,
+  provider,
   hasMessages,
   isHydrating,
   isWorking,
@@ -431,6 +439,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
       threadId,
+      provider,
       activeTurnInProgress,
       activeTurnId: activeTurnId ?? null,
       isWorking,
@@ -469,6 +478,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }),
     [
       threadId,
+      provider,
       activeTurnInProgress,
       activeTurnId,
       isWorking,
@@ -675,6 +685,7 @@ function ExplorationRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "ex
       entries={row.entries}
       isLive={row.isLive}
       isPendingApproval={isPendingApproval}
+      summaryOnly={ctx.provider === "cursor"}
     />
   );
 }
@@ -687,6 +698,7 @@ function AgentGroupRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "age
       agentGroup={row.entry.agentGroup}
       label={row.entry.label}
       isLive={row.isLive}
+      provider={ctx.provider}
       onTaskSelect={ctx.onSubagentSelect}
     />
   );

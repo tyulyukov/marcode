@@ -688,7 +688,52 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
     expect(entries[0]!.agentGroup!.tasks[0]!.toolUses).toBe(8);
     expect(entries[0]!.agentGroup!.tasks[0]!.totalTokens).toBe(15000);
+    expect(entries[0]!.agentGroup!.tasks[0]!.durationMs).toBeNull();
     expect(entries[0]!.label).toBe("1 agent finished");
+  });
+
+  it("preserves Cursor task completion duration in agent task summaries", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "cursor-task-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        summary: "subagent task started",
+        tone: "info",
+        payload: {
+          taskId: "cursor-agent-1",
+          detail: "Explore Cursor integration",
+          taskType: "subagent",
+          agentType: "explore",
+          toolUseId: "cursor-task-tool-call-1",
+          prompt: "Find Cursor subagent events",
+          model: "composer-2",
+        },
+      }),
+      makeActivity({
+        id: "cursor-task-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.completed",
+        summary: "Task completed",
+        tone: "info",
+        payload: {
+          taskId: "cursor-agent-1",
+          status: "completed",
+          durationMs: 1234,
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    expect(entries).toHaveLength(1);
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+    expect(task.taskId).toBe("cursor-agent-1");
+    expect(task.description).toBe("Explore Cursor integration");
+    expect(task.agentType).toBe("explore");
+    expect(task.toolUseId).toBe("cursor-task-tool-call-1");
+    expect(task.prompt).toBe("Find Cursor subagent events");
+    expect(task.model).toBe("composer-2");
+    expect(task.durationMs).toBe(1234);
   });
 
   it("groups multiple tasks into a single agent group entry", () => {
@@ -2048,6 +2093,167 @@ describe("deriveWorkLogEntries", () => {
 
     expect(entries[1]!.agentGroup!.tasks).toHaveLength(1);
     expect(entries[1]!.agentGroup!.tasks[0]!.taskId).toBe("t2");
+  });
+
+  // These tests lock in the Claude-compatible `data: { toolName, input, ... }`
+  // shape that the Codex adapter now produces via `buildItemData`. Without it,
+  // web search queries / MCP server names / per-file diff previews are invisible
+  // to the session-logic extractors, and tool calls render in the work-log bucket.
+  describe("Codex-normalized payloads", () => {
+    it("extracts webSearch query into entry.toolInput.query", () => {
+      const activities: OrchestrationThreadActivity[] = [
+        makeActivity({
+          id: "ws-complete",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          kind: "tool.completed",
+          summary: "Web search",
+          tone: "tool",
+          payload: {
+            itemType: "web_search",
+            itemId: "ws_1",
+            title: "Web search",
+            detail: "effect-ts 4 release notes",
+            data: {
+              toolName: "WebSearch",
+              input: { query: "effect-ts 4 release notes" },
+              item: { type: "webSearch", id: "ws_1", query: "effect-ts 4 release notes" },
+            },
+          },
+        }),
+      ];
+
+      const entries = deriveWorkLogEntries(activities, undefined);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.itemType).toBe("web_search");
+      expect(entries[0]!.toolName).toBe("WebSearch");
+      expect(entries[0]!.toolInput).toEqual({ query: "effect-ts 4 release notes" });
+    });
+
+    it("extracts one diffPreview per Codex fileChange change", () => {
+      const activities: OrchestrationThreadActivity[] = [
+        makeActivity({
+          id: "fc-complete",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          kind: "tool.completed",
+          summary: "File change",
+          tone: "tool",
+          payload: {
+            itemType: "file_change",
+            itemId: "file_1",
+            title: "File change",
+            data: {
+              toolName: "ApplyPatch",
+              input: {
+                changes: [
+                  {
+                    path: "src/a.ts",
+                    kind: { type: "update" },
+                    diff: "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                  },
+                  {
+                    path: "src/b.ts",
+                    kind: { type: "delete" },
+                    diff: "@@ -1,1 +0,0 @@\n-gone\n",
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      ];
+
+      const entries = deriveWorkLogEntries(activities, undefined);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.itemType).toBe("file_change");
+      expect(entries[0]!.diffPreviews).toHaveLength(2);
+      expect(entries[0]!.diffPreviews!.map((hunk) => hunk.operation)).toEqual(["edit", "delete"]);
+      expect(entries[0]!.diffPreviews!.map((hunk) => hunk.filePath)).toEqual([
+        "src/a.ts",
+        "src/b.ts",
+      ]);
+    });
+
+    it("exposes mcpToolCall server and tool through entry.toolInput", () => {
+      const activities: OrchestrationThreadActivity[] = [
+        makeActivity({
+          id: "mcp-complete",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          kind: "tool.completed",
+          summary: "MCP tool call",
+          tone: "tool",
+          payload: {
+            itemType: "mcp_tool_call",
+            itemId: "mcp_1",
+            title: "MCP tool call",
+            data: {
+              toolName: "mcp__github__search_repositories",
+              input: { query: "typescript" },
+              server: "github",
+              tool: "search_repositories",
+            },
+          },
+        }),
+      ];
+
+      const entries = deriveWorkLogEntries(activities, undefined);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.itemType).toBe("mcp_tool_call");
+      expect(entries[0]!.toolName).toBe("mcp__github__search_repositories");
+      // `toolInput` only carries the structured invocation args; server/tool
+      // sit alongside as `data.server`/`data.tool`, not inside `input`. The
+      // McpToolCallCard reads them from the Codex-specific branch.
+      expect(entries[0]!.toolInput).toEqual({ query: "typescript" });
+    });
+
+    it("merges started+completed commandExecution into one entry via itemId", () => {
+      const activities: OrchestrationThreadActivity[] = [
+        makeActivity({
+          id: "cmd-start",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          kind: "tool.started",
+          summary: "Ran command",
+          tone: "tool",
+          payload: {
+            itemType: "command_execution",
+            itemId: "cmd_1",
+            title: "Ran command",
+            detail: "ls -la",
+            data: {
+              toolName: "Shell",
+              input: { command: "ls -la" },
+              status: "inProgress",
+            },
+          },
+        }),
+        makeActivity({
+          id: "cmd-complete",
+          createdAt: "2026-02-23T00:00:02.000Z",
+          kind: "tool.completed",
+          summary: "Ran command",
+          tone: "tool",
+          payload: {
+            itemType: "command_execution",
+            itemId: "cmd_1",
+            title: "Ran command",
+            detail: "file1.txt",
+            data: {
+              toolName: "Shell",
+              input: { command: "ls -la" },
+              aggregatedOutput: "file1.txt\n",
+              exitCode: 0,
+              status: "completed",
+            },
+          },
+        }),
+      ];
+
+      const entries = deriveWorkLogEntries(activities, undefined);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.itemType).toBe("command_execution");
+      expect(entries[0]!.command).toBe("ls -la");
+      expect(entries[0]!.exitCode).toBe(0);
+      expect(entries[0]!.toolCompleted).toBe(true);
+    });
   });
 });
 

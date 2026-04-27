@@ -1325,6 +1325,8 @@ export default function ChatView({
     selectedProviderByThreadId ?? threadProvider ?? "claudeAgent",
   );
   const selectedProvider: ProviderKind = lockedProvider ?? unlockedSelectedProvider;
+  const activeTimelineProvider: ProviderKind =
+    activeThread?.session?.provider ?? activeThread?.modelSelection.provider ?? selectedProvider;
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadRef,
     providers: providerStatuses,
@@ -4822,6 +4824,7 @@ export default function ChatView({
               <MessagesTimeline
                 key={activeThread.id}
                 threadId={activeThread.id}
+                provider={activeTimelineProvider}
                 hasMessages={timelineEntries.length > 0}
                 isHydrating={isThreadHydrating}
                 isWorking={isWorking}
@@ -5122,6 +5125,7 @@ export default function ChatView({
                           runtimeMode={runtimeMode}
                           onRuntimeModeChange={handleRuntimeModeChange}
                           onAttachImages={addComposerImages}
+                          provider={selectedProvider}
                           disabled={isConnecting}
                         />
 
@@ -5407,6 +5411,7 @@ export default function ChatView({
 
       <SubagentDetailDrawer
         task={selectedSubagentTask}
+        provider={activeTimelineProvider}
         onClose={onSubagentDrawerClose}
         markdownCwd={gitCwd ?? undefined}
       />

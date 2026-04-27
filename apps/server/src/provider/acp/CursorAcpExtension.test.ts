@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { Schema } from "effect";
 
 import {
+  CursorTaskRequest,
   extractAskQuestions,
   extractPlanMarkdown,
   extractTodosAsPlan,
+  normalizeCursorTask,
 } from "./CursorAcpExtension.ts";
 
 describe("CursorAcpExtension", () => {
@@ -104,5 +107,49 @@ describe("CursorAcpExtension", () => {
         { step: "Unknown status", status: "pending" },
       ],
     });
+  });
+
+  it("normalizes Cursor task notifications into canonical task fields", () => {
+    expect(
+      normalizeCursorTask({
+        toolCallId: "tool-call-1",
+        description: "Explore the codebase",
+        prompt: "Find the relevant files",
+        subagentType: "explore",
+        model: "composer-2",
+        agentId: "agent-1",
+        durationMs: 1200,
+      }),
+    ).toEqual({
+      taskId: "agent-1",
+      toolUseId: "tool-call-1",
+      description: "Explore the codebase",
+      prompt: "Find the relevant files",
+      agentType: "explore",
+      model: "composer-2",
+      durationMs: 1200,
+    });
+  });
+
+  it("uses toolCallId as the task id and supports custom subagent types", () => {
+    expect(
+      normalizeCursorTask({
+        toolCallId: "tool-call-2",
+        description: "Review risky changes",
+        prompt: "Check the diff",
+        subagentType: { custom: "reviewer" },
+        durationMs: -1,
+      }),
+    ).toEqual({
+      taskId: "tool-call-2",
+      toolUseId: "tool-call-2",
+      description: "Review risky changes",
+      prompt: "Check the diff",
+      agentType: "reviewer",
+    });
+  });
+
+  it("rejects invalid Cursor task payloads", () => {
+    expect(Schema.is(CursorTaskRequest)({ toolCallId: "tool-call-1" })).toBe(false);
   });
 });

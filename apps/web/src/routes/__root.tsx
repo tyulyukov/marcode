@@ -119,6 +119,7 @@ function RootRouteView() {
       <AnchoredToastProvider>
         <AuthenticatedTracingBootstrap />
         <ServerStateBootstrap />
+        <RuntimeToolOutputBootstrap />
         <EnvironmentConnectionManagerBootstrap />
         <EventRouter />
         <WebSocketConnectionCoordinator />
@@ -210,6 +211,17 @@ function errorDetails(error: unknown): string {
 
 function ServerStateBootstrap() {
   useEffect(() => startServerStateSync(getPrimaryEnvironmentConnection().client.server), []);
+
+  return null;
+}
+
+function RuntimeToolOutputBootstrap() {
+  useEffect(() => {
+    const connection = getPrimaryEnvironmentConnection();
+    return connection.client.commandOutput.subscribe((event) => {
+      useRuntimeToolOutputStore.getState().appendOutput(event.threadId, event.itemId, event.delta);
+    });
+  }, []);
 
   return null;
 }

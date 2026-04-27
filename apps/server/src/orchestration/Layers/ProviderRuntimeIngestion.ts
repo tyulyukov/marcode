@@ -441,6 +441,9 @@ function runtimeEventToActivities(
             status: event.payload.status,
             ...(event.payload.summary ? { detail: truncateDetail(event.payload.summary) } : {}),
             ...(event.payload.usage !== undefined ? { usage: event.payload.usage } : {}),
+            ...(event.payload.durationMs !== undefined
+              ? { durationMs: event.payload.durationMs }
+              : {}),
           },
           turnId: toTurnId(event.turnId) ?? null,
           ...maybeSequence,

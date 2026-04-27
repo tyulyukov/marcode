@@ -28,6 +28,17 @@ export const ORCHESTRATION_WS_METHODS = {
 
 export const ProviderKind = Schema.Literals(["claudeAgent", "codex", "cursor", "opencode"]);
 export type ProviderKind = typeof ProviderKind.Type;
+
+export interface ProviderCapabilities {
+  readonly supportsAdditionalDirectories: boolean;
+}
+
+export const PROVIDER_CAPABILITIES: Record<ProviderKind, ProviderCapabilities> = {
+  claudeAgent: { supportsAdditionalDirectories: true },
+  codex: { supportsAdditionalDirectories: false },
+  cursor: { supportsAdditionalDirectories: false },
+  opencode: { supportsAdditionalDirectories: false },
+};
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
   "on-failure",

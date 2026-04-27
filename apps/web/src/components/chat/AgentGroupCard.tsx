@@ -1,6 +1,8 @@
 import { BotIcon } from "lucide-react";
 import { memo, useCallback } from "react";
+import type { ProviderKind } from "@marcode/contracts";
 import {
+  formatDuration,
   formatTokenCount,
   formatToolUseCount,
   type AgentGroup,
@@ -14,6 +16,7 @@ interface AgentGroupCardProps {
   agentGroup: AgentGroup;
   label: string;
   isLive: boolean;
+  provider: ProviderKind;
   onTaskSelect: (taskId: string) => void;
 }
 
@@ -49,22 +52,25 @@ function agentTaskActivityLine(task: AgentTaskSummary): string | null {
   return "Starting…";
 }
 
-function agentTaskMeta(task: AgentTaskSummary): string {
+function agentTaskMeta(task: AgentTaskSummary, provider: ProviderKind): string {
   const parts: string[] = [];
   if (task.toolUses !== null) parts.push(formatToolUseCount(task.toolUses));
   if (task.totalTokens !== null) parts.push(formatTokenCount(task.totalTokens));
+  if (provider === "cursor" && task.durationMs !== null)
+    parts.push(formatDuration(task.durationMs));
   return parts.join(" · ");
 }
 
 const AgentTaskRow = memo(function AgentTaskRow(props: {
   task: AgentTaskSummary;
+  provider: ProviderKind;
   onSelect: (taskId: string) => void;
 }) {
-  const { task, onSelect } = props;
+  const { task, provider, onSelect } = props;
   const typeLabel = formatAgentTaskType(task.agentType);
   const isRunning = task.status === "running";
   const activityLine = agentTaskActivityLine(task);
-  const meta = agentTaskMeta(task);
+  const meta = agentTaskMeta(task, provider);
   const handleClick = useCallback(() => onSelect(task.taskId), [onSelect, task.taskId]);
 
   return (
@@ -130,7 +136,7 @@ const AgentTaskRow = memo(function AgentTaskRow(props: {
 });
 
 export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCardProps) {
-  const { agentGroup, label, onTaskSelect } = props;
+  const { agentGroup, label, provider, onTaskSelect } = props;
   const tasks = agentGroup.tasks;
 
   return (
@@ -147,7 +153,7 @@ export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCard
 
       <div className="space-y-1 border-t border-border/20 px-2 py-1.5">
         {tasks.map((task) => (
-          <AgentTaskRow key={task.taskId} task={task} onSelect={onTaskSelect} />
+          <AgentTaskRow key={task.taskId} task={task} provider={provider} onSelect={onTaskSelect} />
         ))}
       </div>
     </div>

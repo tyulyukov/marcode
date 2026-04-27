@@ -59,6 +59,7 @@ export interface AgentTaskSummary {
   status: "running" | "completed" | "failed" | "stopped";
   toolUses: number | null;
   totalTokens: number | null;
+  durationMs: number | null;
   lastToolName: string | null;
   progressSummary: string | null;
   createdAt: string;
@@ -561,6 +562,8 @@ export function deriveWorkLogEntries(
     const payload = asRecord(activity.payload);
     const taskId = asTrimmedString(payload?.taskId);
     if (!taskId) continue;
+    const taskType = asTrimmedString(payload?.taskType);
+    if (taskType === "subagent") continue;
     const toolUseId = asTrimmedString(payload?.toolUseId);
     if (toolUseId && !collabToolItemIds.has(toolUseId)) {
       nestedTaskIds.add(taskId);
@@ -842,6 +845,10 @@ function buildAgentTaskSummary(
 
   const usageSource = completedPayload ?? latestProgressPayload;
   const { totalTokens, toolUses } = extractTaskUsage(usageSource);
+  const durationMs =
+    typeof completedPayload?.durationMs === "number" && Number.isFinite(completedPayload.durationMs)
+      ? completedPayload.durationMs
+      : null;
 
   const lastToolName = asTrimmedString(latestProgressPayload?.lastToolName) ?? null;
   const progressSummary =
@@ -895,6 +902,7 @@ function buildAgentTaskSummary(
     status,
     toolUses,
     totalTokens,
+    durationMs,
     lastToolName,
     progressSummary,
     createdAt,
@@ -1595,8 +1603,14 @@ function summarizeToolRawOutput(payload: Record<string, unknown> | null): string
 function extractRawOutputExitCode(payload: Record<string, unknown> | null): number | undefined {
   const data = asRecord(payload?.data);
   const rawOutput = asRecord(data?.rawOutput);
-  const code = rawOutput?.exitCode;
-  return typeof code === "number" && Number.isInteger(code) ? code : undefined;
+  const rawCode = rawOutput?.exitCode;
+  if (typeof rawCode === "number" && Number.isInteger(rawCode)) return rawCode;
+  // Codex's normalized commandExecution items expose `exitCode` directly on
+  // `data` (not under a `rawOutput` wrapper), so the command card's
+  // Success/Exit-N badge needs this fallback to render correctly.
+  const directCode = data?.exitCode;
+  if (typeof directCode === "number" && Number.isInteger(directCode)) return directCode;
+  return undefined;
 }
 
 function extractToolDetail(

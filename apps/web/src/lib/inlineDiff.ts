@@ -10,7 +10,7 @@ export interface DiffStats {
 
 export interface InlineDiffHunk {
   filePath: string;
-  operation: "edit" | "write";
+  operation: "edit" | "write" | "delete";
   lines: ReadonlyArray<DiffLine>;
   fullLines: ReadonlyArray<DiffLine>;
   truncated: boolean;
@@ -329,12 +329,19 @@ function extractApplyPatchHunks(input: Record<string, unknown>): InlineDiffHunk[
 
   const flush = () => {
     if (!currentPath || currentLines.length === 0) return;
-    const operation: InlineDiffHunk["operation"] = currentOp === "delete" ? "edit" : currentOp; // delete → show as edit removal
     const stats = diffStats(currentLines);
     const trimmed = currentOp === "write" ? currentLines : trimContext(currentLines);
     const { lines, fullLines, truncated } = truncateDiffLines(trimmed);
     const patch = buildUnifiedPatch(currentPath, currentLines, currentOp === "write");
-    hunks.push({ filePath: currentPath, operation, lines, fullLines, truncated, stats, patch });
+    hunks.push({
+      filePath: currentPath,
+      operation: currentOp,
+      lines,
+      fullLines,
+      truncated,
+      stats,
+      patch,
+    });
   };
 
   for (const rawLine of patchText.split(/\r?\n/)) {
@@ -371,6 +378,86 @@ function extractApplyPatchHunks(input: Record<string, unknown>): InlineDiffHunk[
     }
   }
   flush();
+  return hunks;
+}
+
+/**
+ * Parse a unified-diff string (the format Codex ships in each `fileChange.changes[i].diff`
+ * when `kind.type === "update"`) into a sequence of `DiffLine`s. Ignores
+ * `---`/`+++` file headers, `@@` hunk headers, and `\ No newline at end of file`
+ * markers.
+ */
+function parseUnifiedDiffLines(diff: string): DiffLine[] {
+  const lines: DiffLine[] = [];
+  for (const rawLine of diff.split(/\r?\n/)) {
+    if (rawLine.length === 0) continue;
+    if (rawLine.startsWith("---") || rawLine.startsWith("+++")) continue;
+    if (rawLine.startsWith("@@")) continue;
+    if (rawLine.startsWith("\\")) continue;
+    if (rawLine.startsWith("+")) {
+      lines.push({ type: "addition", content: rawLine.slice(1) });
+    } else if (rawLine.startsWith("-")) {
+      lines.push({ type: "deletion", content: rawLine.slice(1) });
+    } else if (rawLine.startsWith(" ")) {
+      lines.push({ type: "context", content: rawLine.slice(1) });
+    }
+  }
+  return lines;
+}
+
+/**
+ * Codex ships the raw file content (no `+`/`-` prefixes, no `@@` hunk header)
+ * in `diff` when `kind.type` is `"add"` or `"delete"` — the unified-diff shape
+ * is only used for `"update"`. Convert the raw content into an all-additions
+ * or all-deletions `DiffLine[]` so FileChangeCard renders the actual contents.
+ */
+function parseCodexRawContentLines(diff: string, lineType: "addition" | "deletion"): DiffLine[] {
+  if (diff.length === 0) return [];
+  const lines = diff.split(/\r?\n/);
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  return lines.map((content) => ({ type: lineType, content }));
+}
+
+/**
+ * Parse Codex's `fileChange` item payload: `data.input.changes` is an array of
+ * `{ path, kind: { type: "add" | "delete" | "update" }, diff: string }`. Each
+ * entry yields one per-file hunk. Delete operations are preserved as their own
+ * operation kind so the UI can render them distinctly.
+ *
+ * Format per kind (observed from live Codex payloads):
+ * - `"update"` — `diff` is a unified patch with `@@` hunk headers and
+ *   `+`/`-`/` ` line prefixes.
+ * - `"add"` — `diff` is the raw new file content (no prefixes).
+ * - `"delete"` — `diff` is the raw old file content (no prefixes); may be empty.
+ */
+function extractCodexChangesHunks(input: Record<string, unknown>): InlineDiffHunk[] {
+  const changes = input.changes;
+  if (!Array.isArray(changes)) return [];
+
+  const hunks: InlineDiffHunk[] = [];
+  for (const raw of changes) {
+    const change = asRecord(raw);
+    if (!change) continue;
+    const path = asString(change.path);
+    const diff = asString(change.diff);
+    if (!path || diff === null) continue;
+    const kind = asRecord(change.kind);
+    const kindType = asString(kind?.type);
+    const operation: InlineDiffHunk["operation"] =
+      kindType === "add" ? "write" : kindType === "delete" ? "delete" : "edit";
+    const rawLines =
+      operation === "edit"
+        ? parseUnifiedDiffLines(diff)
+        : parseCodexRawContentLines(diff, operation === "write" ? "addition" : "deletion");
+    if (rawLines.length === 0) continue;
+    const stats = diffStats(rawLines);
+    const trimmed = operation === "write" ? rawLines : trimContext(rawLines);
+    const { lines, fullLines, truncated } = truncateDiffLines(trimmed);
+    const patch = buildUnifiedPatch(path, rawLines, operation === "write");
+    hunks.push({ filePath: path, operation, lines, fullLines, truncated, stats, patch });
+  }
   return hunks;
 }
 
@@ -454,6 +541,15 @@ export function extractDiffPreviews(payload: Record<string, unknown> | null): In
   const input = asRecord(data.input);
 
   if (!toolName || !input) return [];
+
+  // Codex `fileChange` items expose per-file unified diffs via
+  // `input.changes: [{ path, kind, diff }]`. The shape is provider-specific
+  // and incompatible with OpenCode's `patchText` wrapper, so we route it here
+  // before the toolName-based extractors.
+  if (Array.isArray(input.changes)) {
+    const codexHunks = extractCodexChangesHunks(input);
+    if (codexHunks.length > 0) return codexHunks;
+  }
 
   if (EDIT_TOOL_NAMES.has(toolName)) {
     const hunk = extractEditHunk(input);

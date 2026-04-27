@@ -14,6 +14,7 @@ interface ExplorationCardProps {
   entries: ReadonlyArray<WorkLogEntry>;
   isLive: boolean;
   isPendingApproval?: boolean;
+  summaryOnly?: boolean;
 }
 
 const READ_TOOL_NAMES = new Set(["read", "cat", "head", "tail", "view", "view_file", "read_file"]);
@@ -63,19 +64,11 @@ function shortenPath(filePath: string): string {
 
 /** Parse a `<path>/foo/bar</path>` segment out of Cursor/Codex-style XML detail. */
 const XML_PATH_RE = /<path>([^<]+)<\/path>/i;
-const XML_CONTENT_TRAILER_RE = /<content>[\s\S]*$/i;
 
 function extractPathFromXml(value: string | undefined): string | null {
   if (!value) return null;
   const match = value.match(XML_PATH_RE);
   return match?.[1]?.trim() || null;
-}
-
-/** Strip `<content>…` trailer and compact whitespace for a clean tooltip body. */
-function cleanDetailForTooltip(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const stripped = value.replace(XML_CONTENT_TRAILER_RE, "").trim();
-  return stripped.length > 0 ? stripped : value.trim();
 }
 
 function isReadEntry(entry: WorkLogEntry): boolean {
@@ -315,14 +308,6 @@ function extractFilePathFromValue(value: string): string | null {
   return looksLikePath(trimmed) ? trimmed : null;
 }
 
-function extractFileNameFromDetail(detail: string | undefined): string {
-  if (!detail) return "";
-  const cleaned = stripToolPrefix(detail);
-  const filePath = extractFilePathFromValue(cleaned);
-  if (filePath) return fileNameFromPath(filePath);
-  return "";
-}
-
 function extractSearchSummaryFromDetail(detail: string | undefined): string {
   if (!detail) return "";
   const cleaned = stripToolPrefix(detail);
@@ -391,7 +376,7 @@ function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
 }
 
 export const ExplorationCard = memo(function ExplorationCard(props: ExplorationCardProps) {
-  const { entries, isLive, isPendingApproval = false } = props;
+  const { entries, isLive, isPendingApproval = false, summaryOnly = false } = props;
   const [expanded, setExpanded] = useState(false);
 
   if (entries.length === 0) return null;
@@ -406,6 +391,35 @@ export const ExplorationCard = memo(function ExplorationCard(props: ExplorationC
 
   const verb = isLive ? "Exploring" : "Explored";
   const ToggleIcon = expanded ? ChevronDownIcon : ChevronRightIcon;
+
+  if (summaryOnly) {
+    return (
+      <div
+        data-scroll-anchor-target
+        className={cn(
+          "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
+          isLive ? "border-l-blue-400/40" : "border-l-blue-400/20",
+        )}
+      >
+        <div className="flex w-full items-center gap-2 px-3 py-1.5 text-left">
+          <SearchIcon className="size-3.5 shrink-0 text-blue-400/50" />
+          <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">
+            {verb} {summary}
+          </span>
+          {isPendingApproval ? (
+            <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
+              <ShieldQuestionIcon className="size-3" />
+              Approval requested
+            </span>
+          ) : (
+            isLive && (
+              <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400/60" />
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -1,7 +1,13 @@
 import { parsePatchFiles } from "@pierre/diffs";
 import { cn } from "~/lib/utils";
 import { FileDiff, type FileDiffMetadata } from "@pierre/diffs/react";
-import { ChevronDownIcon, ChevronUpIcon, ShieldQuestionIcon, SquarePenIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ShieldQuestionIcon,
+  SquarePenIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { type InlineDiffHunk } from "~/lib/inlineDiff";
 import { buildPatchCacheKey, resolveDiffThemeName } from "~/lib/diffRendering";
@@ -123,24 +129,49 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   const totalDeletions = diffPreviews.reduce((sum, h) => sum + h.stats.deletions, 0);
   const isSingleHunk = diffPreviews.length === 1;
   const hasMoreContent = expanded || previewOverflows || diffPreviews.length > 1;
+  const isDelete = isSingleHunk && diffPreviews[0]!.operation === "delete";
 
   const ExpandIcon = expanded ? ChevronUpIcon : ChevronDownIcon;
+  const HeaderIcon = isDelete ? Trash2Icon : SquarePenIcon;
 
   return (
     <div
       data-scroll-anchor-target
       className={cn(
         "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
-        isPendingApproval ? "border-l-blue-400/40" : "border-l-primary/25",
+        isPendingApproval
+          ? "border-l-blue-400/40"
+          : isDelete
+            ? "border-l-destructive/50"
+            : "border-l-primary/25",
       )}
     >
       {isSingleHunk ? (
         <div className="flex items-center gap-2 px-3 py-1.5">
-          <SquarePenIcon className="size-3.5 shrink-0 text-primary/50" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
+          <HeaderIcon
+            className={cn(
+              "size-3.5 shrink-0",
+              isDelete ? "text-destructive/70" : "text-primary/50",
+            )}
+          />
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate font-mono text-[11px]",
+              isDelete
+                ? "text-foreground/60 line-through decoration-destructive/40"
+                : "text-foreground/80",
+            )}
+          >
             {relativizePath(diffPreviews[0]!.filePath, cwd)}
           </span>
-          <span className="shrink-0 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground/60">
+          <span
+            className={cn(
+              "shrink-0 rounded-sm px-1.5 py-0.5 text-[9px] uppercase tracking-wider",
+              isDelete
+                ? "bg-destructive/10 text-destructive/80"
+                : "bg-muted/40 text-muted-foreground/60",
+            )}
+          >
             {OPERATION_LABELS[diffPreviews[0]!.operation]}
           </span>
           <DiffStatSummary

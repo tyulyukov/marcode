@@ -11,7 +11,9 @@ import {
   XIcon,
 } from "lucide-react";
 import { memo, useMemo, type ReactNode } from "react";
+import type { ProviderKind } from "@marcode/contracts";
 import {
+  formatDuration,
   formatTokenCount,
   formatToolUseCount,
   type AgentProgressEntry,
@@ -34,6 +36,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface SubagentDetailDrawerProps {
   task: AgentTaskSummary | null;
+  provider: ProviderKind;
   onClose: () => void;
   markdownCwd: string | undefined;
 }
@@ -365,11 +368,12 @@ function Section(props: {
   );
 }
 
-function DrawerHeader(props: { task: AgentTaskSummary }) {
-  const { task } = props;
+function DrawerHeader(props: { task: AgentTaskSummary; provider: ProviderKind }) {
+  const { task, provider } = props;
   const meta: string[] = [];
   if (task.toolUses !== null) meta.push(formatToolUseCount(task.toolUses));
   if (task.totalTokens !== null) meta.push(formatTokenCount(task.totalTokens));
+  if (provider === "cursor" && task.durationMs !== null) meta.push(formatDuration(task.durationMs));
 
   return (
     <SheetHeader className="gap-1.5 border-b border-border/40 pb-4">
@@ -405,7 +409,7 @@ function DrawerHeader(props: { task: AgentTaskSummary }) {
 export const SubagentDetailDrawer = memo(function SubagentDetailDrawer(
   props: SubagentDetailDrawerProps,
 ) {
-  const { task, onClose, markdownCwd } = props;
+  const { task, provider, onClose, markdownCwd } = props;
 
   return (
     <Sheet
@@ -429,7 +433,7 @@ export const SubagentDetailDrawer = memo(function SubagentDetailDrawer(
             >
               <XIcon />
             </Button>
-            <DrawerHeader task={task} />
+            <DrawerHeader task={task} provider={provider} />
             <SheetPanel>
               <div className="space-y-6">
                 {task.prompt && <PromptSection prompt={task.prompt} markdownCwd={markdownCwd} />}

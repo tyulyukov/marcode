@@ -17,6 +17,7 @@ import {
   type ProviderUserInputAnswers,
   RuntimeItemId,
   RuntimeRequestId,
+  RuntimeTaskId,
   ProviderApprovalDecision,
   ThreadId,
   ProviderSendTurnInput,
@@ -249,7 +250,22 @@ function itemTitle(itemType: CanonicalItemType): string | undefined {
   }
 }
 
-function itemDetail(item: CodexLifecycleItem): string | undefined {
+function itemDetail(
+  item: CodexLifecycleItem,
+  lifecycle?: "started" | "completed",
+): string | undefined {
+  if ("type" in item && item.type === "commandExecution") {
+    if (lifecycle === "completed") {
+      const output = trimText(
+        "aggregatedOutput" in item ? (item.aggregatedOutput ?? undefined) : undefined,
+      );
+      if (output) return output;
+    }
+    return trimText(item.command);
+  }
+  if ("type" in item && item.type === "webSearch") {
+    return trimText(item.query);
+  }
   const candidates = [
     "command" in item ? item.command : undefined,
     "title" in item ? item.title : undefined,
@@ -264,6 +280,260 @@ function itemDetail(item: CodexLifecycleItem): string | undefined {
     return trimmed;
   }
   return undefined;
+}
+
+function sanitizeMcpSegment(value: string): string {
+  return value.replace(/__/g, "_");
+}
+
+function asArgumentRecord(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+type ItemDataExtras = Record<string, unknown>;
+
+interface NormalizedItemData {
+  readonly toolName?: string;
+  readonly input?: Record<string, unknown>;
+  readonly extras: ItemDataExtras;
+}
+
+/**
+ * Build the Claude-compatible `data: { toolName, input, ...extras }` shape that
+ * the web app's extractors expect. The raw Codex item is preserved under
+ * `data.item` so helpers like `extractChangedFiles` (which recurse into
+ * `data.item.changes`) keep working.
+ */
+function buildItemData(item: CodexLifecycleItem): NormalizedItemData {
+  if (!("type" in item)) return { extras: {} };
+
+  switch (item.type) {
+    case "commandExecution": {
+      const extras: ItemDataExtras = {
+        commandActions: item.commandActions,
+        cwd: item.cwd,
+        status: item.status,
+      };
+      if (item.aggregatedOutput !== undefined && item.aggregatedOutput !== null) {
+        extras.aggregatedOutput = item.aggregatedOutput;
+      }
+      if (item.exitCode !== undefined && item.exitCode !== null) {
+        extras.exitCode = item.exitCode;
+      }
+      if (item.durationMs !== undefined && item.durationMs !== null) {
+        extras.durationMs = item.durationMs;
+      }
+      return {
+        toolName: "Shell",
+        input: { command: item.command },
+        extras,
+      };
+    }
+    case "fileChange": {
+      return {
+        toolName: "ApplyPatch",
+        input: { changes: item.changes },
+        extras: { status: item.status },
+      };
+    }
+    case "webSearch": {
+      const extras: ItemDataExtras = {};
+      if (item.action !== undefined && item.action !== null) {
+        extras.action = item.action;
+      }
+      return {
+        toolName: "WebSearch",
+        input: { query: item.query },
+        extras,
+      };
+    }
+    case "mcpToolCall": {
+      const server = sanitizeMcpSegment(item.server);
+      const tool = sanitizeMcpSegment(item.tool);
+      const extras: ItemDataExtras = {
+        server: item.server,
+        tool: item.tool,
+        status: item.status,
+      };
+      if (item.result !== undefined && item.result !== null) {
+        extras.result = item.result;
+      }
+      if (item.error !== undefined && item.error !== null) {
+        extras.error = item.error;
+      }
+      if (item.durationMs !== undefined && item.durationMs !== null) {
+        extras.durationMs = item.durationMs;
+      }
+      return {
+        toolName: `mcp__${server}__${tool}`,
+        input: asArgumentRecord(item.arguments),
+        extras,
+      };
+    }
+    case "dynamicToolCall": {
+      const extras: ItemDataExtras = { status: item.status };
+      if (item.namespace !== undefined && item.namespace !== null) {
+        extras.namespace = item.namespace;
+      }
+      if (item.success !== undefined && item.success !== null) {
+        extras.success = item.success;
+      }
+      if (item.contentItems !== undefined && item.contentItems !== null) {
+        extras.contentItems = item.contentItems;
+      }
+      if (item.durationMs !== undefined && item.durationMs !== null) {
+        extras.durationMs = item.durationMs;
+      }
+      return {
+        toolName: item.tool,
+        input: asArgumentRecord(item.arguments),
+        extras,
+      };
+    }
+    default:
+      return { extras: {} };
+  }
+}
+
+/**
+ * Per-subagent state accumulated across Codex `collabAgentToolCall` item
+ * notifications. Codex exposes subagent lifecycle through multiple tool calls
+ * (`spawnAgent` → `sendInput` → `wait` → `closeAgent`), each reporting the
+ * current `agentsStates`. We collapse those into a single `task.started` /
+ * `task.completed` pair per subagent so the UI's AgentGroupCard renders the
+ * subagent uniformly with Claude/Cursor subagents.
+ *
+ * Keyed by `${parentThreadId}|${subagentThreadId}`.
+ */
+interface SubagentTaskState {
+  started: boolean;
+  terminated: boolean;
+}
+export type SubagentTaskTracker = Map<string, SubagentTaskState>;
+
+type CollabAgentToolCallItem = Extract<
+  EffectCodexSchema.V2ItemCompletedNotification["item"],
+  { type: "collabAgentToolCall" }
+>;
+
+type CollabAgentStatus = EffectCodexSchema.ServerNotification__CollabAgentStatus;
+
+function mapCollabAgentStatusToTaskStatus(
+  status: CollabAgentStatus | undefined,
+): "completed" | "failed" | "stopped" | undefined {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "errored":
+      return "failed";
+    case "interrupted":
+    case "shutdown":
+      return "stopped";
+    default:
+      return undefined;
+  }
+}
+
+function deriveSubagentDescription(prompt: string | undefined): string | undefined {
+  if (!prompt) return undefined;
+  const firstLine = prompt.split(/\r?\n/)[0]?.trim();
+  if (!firstLine) return undefined;
+  return firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
+}
+
+/**
+ * Pick the relevant `CollabAgentState` for a given subagent thread. `agentsStates`
+ * is keyed by an opaque agent identifier — prefer the subagent's threadId match
+ * (most common convention) but fall back to the first entry so we still surface
+ * a status when the key scheme differs.
+ */
+function pickAgentState(
+  agentsStates: CollabAgentToolCallItem["agentsStates"],
+  subagentThreadId: string,
+): EffectCodexSchema.ServerNotification__CollabAgentState | undefined {
+  const direct = agentsStates[subagentThreadId];
+  if (direct) return direct;
+  const first = Object.values(agentsStates)[0];
+  return first;
+}
+
+/**
+ * Translate a `collabAgentToolCall` `item/completed` notification into
+ * `task.started` / `task.completed` events, maintaining `tracker` to guarantee
+ * idempotency (each subagent emits exactly one started and at most one
+ * completed). The raw collab tool item still flows through the normal lifecycle
+ * path; the web layer filters it out via `isSubagentToolActivity` so the
+ * AgentGroupCard is the only surface that renders.
+ */
+function buildSubagentTaskEvents(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+  item: CollabAgentToolCallItem,
+  tracker: SubagentTaskTracker,
+): ReadonlyArray<ProviderRuntimeEvent> {
+  const receiverThreadIds = item.receiverThreadIds;
+  if (receiverThreadIds.length === 0) return [];
+
+  const base = runtimeEventBase(event, canonicalThreadId);
+  const prompt = trimText(item.prompt);
+  const model = trimText(item.model);
+  const description = deriveSubagentDescription(prompt);
+  const events: ProviderRuntimeEvent[] = [];
+
+  for (const subagentThreadId of receiverThreadIds) {
+    if (!subagentThreadId) continue;
+    const key = `${canonicalThreadId}|${subagentThreadId}`;
+    const state = tracker.get(key) ?? { started: false, terminated: false };
+
+    // First `spawnAgent` completion for this subagent → task.started.
+    // Skip if the spawn itself failed (status: "failed") — we can't show a
+    // subagent card for a subagent that never existed. The failure is still
+    // visible in the raw tool timeline.
+    if (item.tool === "spawnAgent" && !state.started) {
+      const spawnFailed = (item as { readonly status?: string }).status === "failed";
+      if (!spawnFailed) {
+        events.push({
+          ...base,
+          type: "task.started",
+          payload: {
+            taskId: RuntimeTaskId.make(subagentThreadId),
+            ...(description ? { description } : {}),
+            taskType: "subagent",
+            ...(item.id ? { toolUseId: item.id } : {}),
+            ...(prompt ? { prompt } : {}),
+            ...(model ? { model } : {}),
+          },
+        });
+        state.started = true;
+      }
+    }
+
+    // Emit task.completed on first terminal agentsStates snapshot.
+    if (state.started && !state.terminated) {
+      const agentState = pickAgentState(item.agentsStates, subagentThreadId);
+      const terminalStatus = mapCollabAgentStatusToTaskStatus(agentState?.status);
+      if (terminalStatus) {
+        const summary = trimText(agentState?.message);
+        events.push({
+          ...base,
+          type: "task.completed",
+          payload: {
+            taskId: RuntimeTaskId.make(subagentThreadId),
+            status: terminalStatus,
+            ...(summary ? { summary } : {}),
+          },
+        });
+        state.terminated = true;
+      }
+    }
+
+    tracker.set(key, state);
+  }
+
+  return events;
 }
 
 function toRequestTypeFromMethod(method: string): CanonicalRequestType {
@@ -447,13 +717,28 @@ function mapItemLifecycle(
     return undefined;
   }
 
-  const detail = itemDetail(item);
+  const lifecyclePhase =
+    lifecycle === "item.started"
+      ? "started"
+      : lifecycle === "item.completed"
+        ? "completed"
+        : undefined;
+  const detail = itemDetail(item, lifecyclePhase);
   const status =
     lifecycle === "item.started"
       ? "inProgress"
       : lifecycle === "item.completed"
         ? "completed"
         : undefined;
+  const normalized = buildItemData(item);
+  const data: Record<string, unknown> = {
+    ...(event.payload !== undefined && event.payload !== null
+      ? (event.payload as Record<string, unknown>)
+      : {}),
+    ...(normalized.toolName ? { toolName: normalized.toolName } : {}),
+    ...(normalized.input ? { input: normalized.input } : {}),
+    ...normalized.extras,
+  };
 
   return {
     ...runtimeEventBase(event, canonicalThreadId),
@@ -463,7 +748,7 @@ function mapItemLifecycle(
       ...(status ? { status } : {}),
       ...(itemTitle(itemType) ? { title: itemTitle(itemType) } : {}),
       ...(detail ? { detail } : {}),
-      ...(event.payload !== undefined ? { data: event.payload } : {}),
+      data,
     },
   };
 }
@@ -471,6 +756,7 @@ function mapItemLifecycle(
 function mapToRuntimeEvents(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
+  subagentTaskTracker: SubagentTaskTracker,
 ): ReadonlyArray<ProviderRuntimeEvent> {
   if (event.kind === "error") {
     if (!event.message) {
@@ -551,6 +837,29 @@ function mapToRuntimeEvents(
       }
     })();
 
+    const args: Record<string, unknown> | undefined = (() => {
+      if (event.payload === undefined || event.payload === null) return undefined;
+      const base =
+        typeof event.payload === "object" && !Array.isArray(event.payload)
+          ? (event.payload as Record<string, unknown>)
+          : {};
+      if (event.method === "item/tool/call") {
+        const dynamicParams = readPayload(
+          EffectCodexSchema.ServerRequest__DynamicToolCallParams,
+          event.payload,
+        );
+        if (dynamicParams) {
+          return {
+            ...base,
+            toolName: dynamicParams.tool,
+            input: asArgumentRecord(dynamicParams.arguments),
+            ...(dynamicParams.namespace ? { namespace: dynamicParams.namespace } : {}),
+          };
+        }
+      }
+      return base;
+    })();
+
     return [
       {
         ...runtimeEventBase(event, canonicalThreadId),
@@ -558,7 +867,7 @@ function mapToRuntimeEvents(
         payload: {
           requestType: toRequestTypeFromMethod(event.method),
           ...(detail ? { detail } : {}),
-          ...(event.payload !== undefined ? { args: event.payload } : {}),
+          ...(args !== undefined ? { args } : {}),
         },
       },
     ];
@@ -836,7 +1145,11 @@ function mapToRuntimeEvents(
       ];
     }
     const completed = mapItemLifecycle(event, canonicalThreadId, "item.completed");
-    return completed ? [completed] : [];
+    const taskEvents =
+      item.type === "collabAgentToolCall"
+        ? buildSubagentTaskEvents(event, canonicalThreadId, item, subagentTaskTracker)
+        : [];
+    return completed ? [completed, ...taskEvents] : [...taskEvents];
   }
 
   if (
@@ -1336,6 +1649,10 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const serverSettingsService = yield* ServerSettingsService;
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
+  // Shared across sessions: keys are `${parentThreadId}|${subagentThreadId}`,
+  // so cross-session collisions are impossible. Lives for the adapter lifetime
+  // so task state survives reconnects within the same server process.
+  const subagentTaskTracker: SubagentTaskTracker = new Map();
 
   const startSession: CodexAdapterShape["startSession"] = (input) =>
     Effect.scoped(
@@ -1405,7 +1722,7 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
             yield* writeNativeEvent(event);
-            const runtimeEvents = mapToRuntimeEvents(event, event.threadId);
+            const runtimeEvents = mapToRuntimeEvents(event, event.threadId, subagentTaskTracker);
             if (runtimeEvents.length === 0) {
               yield* Effect.logDebug("ignoring unhandled Codex provider event", {
                 method: event.method,

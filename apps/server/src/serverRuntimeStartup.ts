@@ -33,6 +33,7 @@ import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import { ProviderSessionReaper } from "./provider/Services/ProviderSessionReaper.ts";
+import { recoverOrphanedProviderSessionsAtStartup } from "./provider/Layers/StartupSessionRecovery.ts";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,
@@ -331,6 +332,16 @@ export const makeServerRuntimeStartup = Effect.gen(function* () {
         yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
         yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
       }),
+    );
+
+    yield* Effect.logDebug("startup phase: recovering orphaned provider sessions");
+    yield* runStartupPhase(
+      "provider.session.startup-recovery",
+      recoverOrphanedProviderSessionsAtStartup.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider.session.startup-recovery.failed", { cause }),
+        ),
+      ),
     );
 
     const welcomeBase = yield* resolveWelcomeBase;
