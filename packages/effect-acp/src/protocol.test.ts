@@ -163,10 +163,41 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
           direction: "outgoing",
           stage: "raw",
           payload:
-            '{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"session-1"},"id":"","headers":[]}\n',
+            '{"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":"session-1"}}\n',
         },
       ]);
     }),
+  );
+
+  it.effect(
+    "emits JSON-RPC 2.0 spec-compliant notifications with no id field (regression guard)",
+    () =>
+      Effect.gen(function* () {
+        // Regression guard: prior to this test, transport.notify went through
+        // upstream Effect's ndJsonRpc encoder, which emits notifications as
+        // {"jsonrpc":"2.0","method":"...","params":{...},"id":"","headers":[]}.
+        // Per JSON-RPC 2.0 §4.1, notifications MUST NOT contain an "id" member.
+        // Cursor's ACP agent (and other spec-compliant peers) reject the
+        // malformed payload with `"Method not found": session/cancel`, which
+        // silently breaks the in-app stop button for the Cursor provider.
+        const { stdio, output } = yield* makeInMemoryStdio();
+        const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+          stdio,
+          serverRequestMethods: new Set(),
+        });
+
+        yield* transport.notify("session/cancel", { sessionId: "session-1" });
+        const outbound = yield* Queue.take(output);
+        const decoded = JSON.parse(outbound) as Record<string, unknown>;
+
+        assert.deepEqual(decoded, {
+          jsonrpc: "2.0",
+          method: "session/cancel",
+          params: { sessionId: "session-1" },
+        });
+        assert.notProperty(decoded, "id");
+        assert.notProperty(decoded, "headers");
+      }),
   );
 
   it.effect("fails notification encoding through the declared ACP error channel", () =>
