@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  ClientSettingsSchema,
   EnvironmentId,
   type ClientSettings,
   type PersistedSavedEnvironmentRecord,
@@ -19,6 +20,7 @@ import {
   writeSavedEnvironmentSecret,
   type DesktopSecretStorage,
 } from "./clientPersistence.ts";
+import { Schema } from "effect";
 
 const tempDirectories: string[] = [];
 
@@ -48,11 +50,10 @@ function makeSecretStorage(available: boolean): DesktopSecretStorage {
   };
 }
 
-const clientSettings: ClientSettings = {
+const clientSettings: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({
   confirmThreadArchive: true,
   confirmThreadDelete: false,
   diffWordWrap: true,
-  favorites: [],
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
@@ -60,16 +61,7 @@ const clientSettings: ClientSettings = {
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   timestampFormat: "24-hour",
-  turnNotificationMode: "off",
-  turnNotificationSoundId: "default",
-  turnNotificationCustomSounds: [],
-  turnNotificationAdvancedSounds: false,
-  turnNotificationSoundMap: {
-    "turn-events": "default",
-    "approval-needed": "default",
-    "user-input-needed": "default",
-  },
-};
+});
 
 const savedRegistryRecord: PersistedSavedEnvironmentRecord = {
   environmentId: EnvironmentId.make("environment-1"),
