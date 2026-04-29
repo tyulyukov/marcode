@@ -16,44 +16,56 @@ function formatResetTime(resetsAt: number | null): string | null {
   })}`;
 }
 
-function UsageBar(props: { percent: number; status: "ok" | "warning" | "rejected" }) {
-  const barColor =
-    props.status === "rejected" || props.percent >= 90
-      ? "bg-red-500"
-      : props.status === "warning" || props.percent >= 70
-        ? "bg-amber-500"
-        : "bg-rose-500";
+function usageBarColor(percent: number | null): string {
+  if (percent === null) {
+    return "color-mix(in oklab, var(--color-muted-foreground) 45%, transparent)";
+  }
+
+  const boundedPercent = Math.min(100, Math.max(0, percent));
+  if (boundedPercent < 80) {
+    const progress = boundedPercent / 80;
+    const hue = 186 - progress * 144;
+    return `hsl(${hue} 78% 52%)`;
+  }
+
+  const progress = (boundedPercent - 80) / 20;
+  const hue = 42 - progress * 34;
+  return `hsl(${hue} 86% 56%)`;
+}
+
+function UsageBar(props: { percent: number | null }) {
+  const percent = props.percent ?? 0;
 
   return (
     <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted/50">
       <div
-        className={`absolute inset-y-0 left-0 rounded-full transition-[width] duration-500 ease-out ${barColor}`}
-        style={{ width: `${Math.min(100, Math.max(0, props.percent))}%` }}
+        className="absolute inset-y-0 left-0 rounded-full transition-[width,background-color] duration-500 ease-out"
+        style={{
+          width: `${Math.min(100, Math.max(0, percent))}%`,
+          backgroundColor: usageBarColor(props.percent),
+        }}
       />
     </div>
   );
 }
 
-function BarGraphIcon(props: { status: "ok" | "warning" | "rejected" }) {
-  const barColor =
-    props.status === "rejected"
-      ? "var(--color-destructive)"
-      : props.status === "warning"
-        ? "var(--color-warning, #f59e0b)"
-        : "var(--color-muted-foreground)";
-
+function BarGraphIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
-      <rect x="4" y="13" width="4" height="7" rx="1" fill={barColor} opacity={0.6} />
-      <rect x="10" y="8" width="4" height="12" rx="1" fill={barColor} opacity={0.8} />
-      <rect x="16" y="4" width="4" height="16" rx="1" fill={barColor} />
+      <rect x="4" y="13" width="4" height="7" rx="1" fill="currentColor" opacity={0.45} />
+      <rect x="10" y="8" width="4" height="12" rx="1" fill="currentColor" opacity={0.65} />
+      <rect x="16" y="4" width="4" height="16" rx="1" fill="currentColor" opacity={0.85} />
     </svg>
   );
 }
 
 export function ProviderUsageMeter(props: { usage: ProviderUsageSnapshot }) {
   const { usage } = props;
-  const maxPercent = Math.max(...usage.windows.map((w) => w.usedPercent), 0);
+  const reportedPercents = usage.windows
+    .map((window) => window.usedPercent)
+    .filter((percent): percent is number => percent !== null);
+  const maxPercent = Math.max(...reportedPercents, 0);
+  const hasReportedPercent = reportedPercents.length > 0;
 
   return (
     <Popover>
@@ -64,10 +76,14 @@ export function ProviderUsageMeter(props: { usage: ProviderUsageSnapshot }) {
         render={
           <button
             type="button"
-            className="group inline-flex items-center justify-center rounded-full p-0.5 transition-opacity hover:opacity-85"
-            aria-label={`${usage.providerLabel} usage: ${Math.round(maxPercent)}%`}
+            className="group inline-flex items-center justify-center rounded-full p-0.5 text-muted-foreground/75 transition-[color,opacity] hover:text-muted-foreground hover:opacity-90"
+            aria-label={
+              hasReportedPercent
+                ? `${usage.providerLabel} usage: ${Math.round(maxPercent)}%`
+                : `${usage.providerLabel} usage`
+            }
           >
-            <BarGraphIcon status={usage.status} />
+            <BarGraphIcon />
           </button>
         }
       />
@@ -84,10 +100,12 @@ export function ProviderUsageMeter(props: { usage: ProviderUsageSnapshot }) {
                 <div className="flex items-baseline justify-between">
                   <span className="text-xs font-semibold text-foreground">{window.label}</span>
                   <span className="text-xs font-semibold text-foreground">
-                    {Math.round(window.usedPercent)}%
+                    {window.usedPercent !== null
+                      ? `${Math.round(window.usedPercent)}%`
+                      : "Usage unknown"}
                   </span>
                 </div>
-                <UsageBar percent={window.usedPercent} status={usage.status} />
+                <UsageBar percent={window.usedPercent} />
                 {resetText ? (
                   <div className="text-[11px] text-muted-foreground">{resetText}</div>
                 ) : null}

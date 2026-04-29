@@ -15,8 +15,8 @@ function asString(value: unknown): string | null {
 export interface RateLimitWindow {
   /** Label for this window, e.g. "Session (5 hrs)" or "Weekly" */
   readonly label: string;
-  /** Percentage used, 0-100 */
-  readonly usedPercent: number;
+  /** Percentage used, 0-100. Null means the provider did not report utilization. */
+  readonly usedPercent: number | null;
   /** Unix timestamp (seconds) when this window resets, or null if unknown */
   readonly resetsAt: number | null;
 }
@@ -63,14 +63,19 @@ const CLAUDE_WINDOW_LABELS: Record<string, string> = {
 function statusFromWindows(
   windows: ReadonlyArray<RateLimitWindow>,
 ): ProviderUsageSnapshot["status"] {
-  const maxPercent = Math.max(...windows.map((window) => window.usedPercent), 0);
-  if (maxPercent >= 90) {
+  const maxPercent = Math.max(...windows.map((window) => window.usedPercent ?? 0), 0);
+  if (maxPercent >= 98) {
     return "rejected";
   }
-  if (maxPercent >= 70) {
+  if (maxPercent >= 80) {
     return "warning";
   }
   return "ok";
+}
+
+function normalizePercent(value: number): number {
+  const percent = value <= 1 ? value * 100 : value;
+  return Math.min(100, Math.max(0, percent));
 }
 
 function normalizeClaudeRateLimitEvent(
@@ -88,26 +93,35 @@ function normalizeClaudeRateLimitEvent(
 
   // utilization (0-1) may or may not be present.
   const utilization = asFiniteNumber(info.utilization);
+  const surpassedThreshold = asFiniteNumber(info.surpassedThreshold);
 
   const label = (rateLimitType && CLAUDE_WINDOW_LABELS[rateLimitType]) ?? "Session";
 
   const windows: RateLimitWindow[] = [];
 
-  if (utilization !== null) {
-    // We have a utilization value — use it directly.
+  const usedPercent =
+    utilization !== null
+      ? normalizePercent(utilization)
+      : surpassedThreshold !== null
+        ? normalizePercent(surpassedThreshold)
+        : null;
+
+  if (usedPercent !== null) {
     windows.push({
       label,
-      usedPercent: Math.min(100, Math.max(0, utilization * 100)),
+      usedPercent,
+      resetsAt,
+    });
+  } else if (statusRaw === "rejected") {
+    windows.push({
+      label,
+      usedPercent: 100,
       resetsAt,
     });
   } else if (rateLimitType || resetsAt !== null) {
-    // No utilization, but we still know which window and its reset time.
-    // Show a placeholder — the status field tells us whether we're OK or not.
-    const estimatedPercent =
-      statusRaw === "rejected" ? 100 : statusRaw === "allowed_warning" ? 80 : 0;
     windows.push({
       label,
-      usedPercent: estimatedPercent,
+      usedPercent: null,
       resetsAt,
     });
   }
