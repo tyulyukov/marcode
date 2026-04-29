@@ -213,6 +213,39 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
+  it("routes work entries with planSteps into a plan-update row", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "entry-plan-1",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:00Z",
+          entry: {
+            id: "work-plan-1",
+            createdAt: "2026-01-01T00:00:00Z",
+            label: "Plan updated",
+            tone: "info",
+            planSteps: [
+              { step: "Read files", status: "completed" },
+              { step: "Write code", status: "inProgress" },
+              { step: "Run tests", status: "pending" },
+            ],
+          },
+        },
+      ],
+      completionDividerBeforeEntryId: null,
+      isWorking: false,
+      activeTurnStartedAt: null,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe("plan-update");
+    if (rows[0]?.kind === "plan-update") {
+      expect(rows[0].entry.planSteps).toHaveLength(3);
+      expect(rows[0].isLatestTurn).toBe(true);
+    }
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

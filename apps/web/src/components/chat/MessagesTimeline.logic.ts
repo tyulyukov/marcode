@@ -90,6 +90,13 @@ export type MessagesTimelineRow =
       isLive: boolean;
       readonly isLatestTurn?: boolean;
     }
+  | {
+      kind: "plan-update";
+      id: string;
+      createdAt: string;
+      entry: WorkLogEntry;
+      readonly isLatestTurn?: boolean;
+    }
   | { kind: "working"; id: string; createdAt: string | null };
 
 export function computeMessageDurationStart(
@@ -344,6 +351,15 @@ export function deriveMessagesTimelineRows(input: {
             entry: current.entry,
             isLive: false,
           });
+        } else if (current.entry.planSteps && current.entry.planSteps.length > 0) {
+          flushPendingWork();
+          flushPendingExploration();
+          nextRows.push({
+            kind: "plan-update",
+            id: current.id,
+            createdAt: current.createdAt,
+            entry: current.entry,
+          });
         } else if (
           current.entry.itemType === "file_change" &&
           (current.entry.diffPreviews?.length ?? 0) > 0
@@ -429,7 +445,8 @@ export function deriveMessagesTimelineRows(input: {
       r.kind === "command" ||
       r.kind === "web-search" ||
       r.kind === "web-fetch" ||
-      r.kind === "mcp-tool"
+      r.kind === "mcp-tool" ||
+      r.kind === "plan-update"
     ) {
       nextRows[i] = { ...r, isLatestTurn: true };
     }
@@ -494,6 +511,8 @@ export function estimateMessagesTimelineRowHeight(
       return WEB_FETCH_CARD_COLLAPSED_HEIGHT;
     case "mcp-tool":
       return MCP_TOOL_CARD_COLLAPSED_HEIGHT;
+    case "plan-update":
+      return 60 + (row.entry.planSteps?.length ?? 0) * 32;
     case "message": {
       let estimate = estimateTimelineMessageHeight(row.message, {
         timelineWidthPx: input.timelineWidthPx,

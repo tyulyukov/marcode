@@ -1,6 +1,7 @@
 import {
   BotIcon,
   GlobeIcon,
+  ListTodoIcon,
   type LucideIcon,
   SearchIcon,
   SquarePenIcon,
@@ -17,7 +18,8 @@ export type ToolKind =
   | "file-edit"
   | "file-delete"
   | "exploration"
-  | "agent";
+  | "agent"
+  | "plan";
 
 export const TOOL_ICONS: Record<ToolKind, LucideIcon> = {
   bash: TerminalIcon,
@@ -28,4 +30,5 @@ export const TOOL_ICONS: Record<ToolKind, LucideIcon> = {
   "file-delete": Trash2Icon,
   exploration: SearchIcon,
   agent: BotIcon,
+  plan: ListTodoIcon,
 };

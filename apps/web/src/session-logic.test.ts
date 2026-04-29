@@ -2378,6 +2378,57 @@ describe("deriveWorkLogEntries context window handling", () => {
   });
 });
 
+describe("deriveWorkLogEntries plan handling", () => {
+  it("populates planSteps and planExplanation for turn.plan.updated activities", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "plan-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        payload: {
+          explanation: "Refining approach",
+          plan: [
+            { step: "Inspect code", status: "completed" },
+            { step: "Implement card", status: "inProgress" },
+            { step: "Add tests", status: "pending" },
+          ],
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, TurnId.make("turn-1"));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.planSteps).toEqual([
+      { step: "Inspect code", status: "completed" },
+      { step: "Implement card", status: "inProgress" },
+      { step: "Add tests", status: "pending" },
+    ]);
+    expect(entries[0]?.planExplanation).toBe("Refining approach");
+  });
+
+  it("leaves planSteps undefined when the plan payload is empty", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "plan-empty",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        payload: { plan: [] },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, TurnId.make("turn-1"));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.planSteps).toBeUndefined();
+    expect(entries[0]?.planExplanation).toBeUndefined();
+  });
+});
+
 describe("hasToolActivityForTurn", () => {
   it("returns false when turn id is missing", () => {
     const activities: OrchestrationThreadActivity[] = [

@@ -94,6 +94,11 @@ export interface WorkLogEntry {
   diffPreviews?: ReadonlyArray<InlineDiffHunk>;
   agentGroup?: AgentGroup;
   itemId?: string;
+  planSteps?: ReadonlyArray<{
+    step: string;
+    status: "pending" | "inProgress" | "completed";
+  }>;
+  planExplanation?: string | null;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -397,6 +402,30 @@ export function derivePendingUserInputs(
   );
 }
 
+type PlanStep = { step: string; status: "pending" | "inProgress" | "completed" };
+
+function extractPlanStepsFromPayload(payload: Record<string, unknown> | null): PlanStep[] {
+  const rawPlan = payload?.plan;
+  if (!Array.isArray(rawPlan)) {
+    return [];
+  }
+  return rawPlan
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const record = entry as Record<string, unknown>;
+      if (typeof record.step !== "string") {
+        return null;
+      }
+      const status =
+        record.status === "completed" || record.status === "inProgress" ? record.status : "pending";
+      return {
+        step: record.step,
+        status,
+      };
+    })
+    .filter((step): step is PlanStep => step !== null);
+}
+
 export function deriveActivePlanState(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
@@ -418,32 +447,7 @@ export function deriveActivePlanState(
     latest.payload && typeof latest.payload === "object"
       ? (latest.payload as Record<string, unknown>)
       : null;
-  const rawPlan = payload?.plan;
-  if (!Array.isArray(rawPlan)) {
-    return null;
-  }
-  const steps = rawPlan
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const record = entry as Record<string, unknown>;
-      if (typeof record.step !== "string") {
-        return null;
-      }
-      const status =
-        record.status === "completed" || record.status === "inProgress" ? record.status : "pending";
-      return {
-        step: record.step,
-        status,
-      };
-    })
-    .filter(
-      (
-        step,
-      ): step is {
-        step: string;
-        status: "pending" | "inProgress" | "completed";
-      } => step !== null,
-    );
+  const steps = extractPlanStepsFromPayload(payload);
   if (steps.length === 0) {
     return null;
   }
@@ -1065,6 +1069,15 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const diffPreviews = extractDiffPreviews(payload);
   if (diffPreviews.length > 0) {
     entry.diffPreviews = diffPreviews;
+  }
+  if (activity.kind === "turn.plan.updated") {
+    const planSteps = extractPlanStepsFromPayload(payload);
+    if (planSteps.length > 0) {
+      entry.planSteps = planSteps;
+      if (payload && "explanation" in payload) {
+        entry.planExplanation = payload.explanation as string | null;
+      }
+    }
   }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);
   if (collapseKey) {

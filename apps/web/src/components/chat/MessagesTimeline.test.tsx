@@ -153,6 +153,81 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("yoo what&#x27;s ");
   }, 10_000);
 
+  it("renders a plan-update card when a work entry carries planSteps", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const listRef = createRef<LegendListRef | null>();
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        provider="claudeAgent"
+        threadId="test-thread"
+        hasMessages
+        isHydrating={false}
+        isWorking={false}
+        activeTurnInProgress={false}
+        activeTurnStartedAt={null}
+        listRef={listRef}
+        onIsAtEndChange={() => {}}
+        timelineEntries={[
+          {
+            id: "entry-plan-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-plan-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Plan updated",
+              tone: "info",
+              planSteps: [
+                { step: "Inspect code", status: "completed" },
+                { step: "Implement card", status: "inProgress" },
+                { step: "Verify tests", status: "pending" },
+              ],
+              planExplanation: "Refining approach",
+            },
+          },
+        ]}
+        completionDividerBeforeEntryId={null}
+        completionSummary={null}
+        turnDiffSummaryByAssistantMessageId={new Map()}
+        changedFilesExpandedByTurnId={{}}
+        onSetChangedFilesExpanded={() => {}}
+        onOpenTurnDiff={() => {}}
+        revertTurnCountByUserMessageId={new Map()}
+        onRevertUserMessage={() => {}}
+        isRevertingCheckpoint={false}
+        onImageExpand={() => {}}
+        activeThreadEnvironmentId={ACTIVE_THREAD_ENVIRONMENT_ID}
+        markdownCwd={undefined}
+        resolvedTheme="light"
+        timestampFormat="locale"
+        workspaceRoot={undefined}
+        isSendBusy={false}
+        isSessionStarting={false}
+        hasPendingAssistantResponse={false}
+        isPreparingWorktree={false}
+        isCompacting={false}
+        onSubagentSelect={() => {}}
+        editingUserMessageId={null}
+        editingUserMessageText=""
+        editingUserMessageImages={[]}
+        onStartEditUserMessage={() => {}}
+        onChangeEditingUserMessageText={() => {}}
+        onAddEditingUserMessageImages={() => {}}
+        onRemoveEditingUserMessageImage={() => {}}
+        onCancelEditUserMessage={() => {}}
+        onSubmitEditUserMessage={() => {}}
+        onReplyToSelection={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('data-timeline-row-kind="plan-update"');
+    expect(markup).toContain("Plan progress");
+    expect(markup).toContain("Inspect code");
+    expect(markup).toContain("Implement card");
+    expect(markup).toContain("Verify tests");
+    expect(markup).toContain("Refining approach");
+  });
+
   it("renders context compaction entries in the normal work log", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const listRef = createRef<LegendListRef | null>();

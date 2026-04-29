@@ -61,6 +61,7 @@ import { ExplorationCard } from "./ExplorationCard";
 import { WebSearchCard } from "./WebSearchCard";
 import { WebFetchCard } from "./WebFetchCard";
 import { McpToolCallCard } from "./McpToolCallCard";
+import { PlanUpdateCard } from "./PlanUpdateCard";
 import { selectUserMessageMinimapEntries } from "./ChatMinimap.logic";
 import { ChatMinimap } from "./ChatMinimap";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
@@ -609,6 +610,8 @@ function estimateRowSize(item: MessagesTimelineRow): number {
     case "web-fetch":
     case "mcp-tool":
       return 110;
+    case "plan-update":
+      return 60 + (item.entry.planSteps?.length ?? 0) * 32;
     case "work":
       return 60 + Math.min(item.groupedEntries.length, 6) * 28;
     case "working":
@@ -670,6 +673,10 @@ function TimelineRowContent({ row }: { row: TimelineRow }) {
           isLive={row.isLive}
           isLatestTurn={row.isLatestTurn ?? false}
         />
+      )}
+
+      {row.kind === "plan-update" && (
+        <PlanUpdateCard entry={row.entry} isLatestTurn={row.isLatestTurn ?? false} />
       )}
 
       {row.kind === "message" && row.message.role === "user" && <UserMessageRow row={row} />}
