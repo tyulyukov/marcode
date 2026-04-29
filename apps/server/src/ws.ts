@@ -148,10 +148,10 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const gitStatusBroadcaster = yield* GitStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
       const providerRegistry = yield* ProviderRegistry;
-      const providerUpdater = yield* makeProviderUpdater({ providerRegistry });
+      const serverSettings = yield* ServerSettingsService;
+      const providerUpdater = yield* makeProviderUpdater({ providerRegistry, serverSettings });
       const config = yield* ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents;
-      const serverSettings = yield* ServerSettingsService;
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem;

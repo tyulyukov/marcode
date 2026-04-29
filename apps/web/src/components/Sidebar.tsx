@@ -1981,7 +1981,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         <SidebarMenuButton
           ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
           size="sm"
-          className={`gap-2 pl-2 pr-8 py-1.5 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground ${
+          className={`gap-2 pl-2.5 pr-9 py-2 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground ${
             isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
           }`}
           {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
@@ -2013,8 +2013,14 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               }`}
             />
           )}
-          <ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />
-          <span className="flex min-w-0 flex-1 items-center gap-2">
+          <ProjectFavicon
+            environmentId={project.environmentId}
+            cwd={project.cwd}
+            seed={project.displayName}
+            className="size-4.5"
+            iconClassName="size-3"
+          />
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="truncate text-xs font-medium text-foreground/90">
               {project.displayName}
             </span>
@@ -2441,7 +2447,7 @@ const SidebarChromeHeader = memo(function SidebarChromeHeader({
               to="/"
             >
               <MarCodeWordmark />
-              <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+              <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-primary">
                 {APP_STAGE_LABEL}
               </span>
             </Link>

@@ -35,10 +35,14 @@ export function SidebarProviderUpdatePill() {
   const [exitingKey, setExitingKey] = useState<string | null>(null);
   const [dismissAfterExitKey, setDismissAfterExitKey] = useState<string | null>(null);
   const sessionStartedAtMs = useMemo(() => Date.now(), []);
-  const view = getProviderUpdateSidebarPillView(providers, {
-    visibleAfterMs: sessionStartedAtMs,
-    dismissedKeys,
-  });
+  const view = useMemo(
+    () =>
+      getProviderUpdateSidebarPillView(providers, {
+        visibleAfterMs: sessionStartedAtMs,
+        dismissedKeys,
+      }),
+    [providers, sessionStartedAtMs, dismissedKeys],
+  );
 
   const openProviderSettings = useCallback(() => {
     void navigate({ to: "/settings/general", hash: "providers" });

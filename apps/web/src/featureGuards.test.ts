@@ -129,4 +129,15 @@ describe("MarCode feature guards", () => {
     expect(routeSource).not.toContain("hydrateThread");
     expect(routeSource).not.toContain("MAX_HYDRATION_RETRIES");
   });
+
+  it("route gates thread detail subscription on server thread existence", () => {
+    const routeSource = readSrc("routes/_chat.$environmentId.$threadId.tsx");
+    const retainIndex = routeSource.indexOf("retainThreadDetailSubscription(");
+    const effectStart = routeSource.lastIndexOf("useEffect(", retainIndex);
+    const effectEnd = routeSource.indexOf("}, [", retainIndex);
+    expect(effectStart).toBeGreaterThan(-1);
+    expect(effectEnd).toBeGreaterThan(retainIndex);
+    const effectBody = routeSource.slice(effectStart, effectEnd);
+    expect(effectBody).toContain("threadExists");
+  });
 });

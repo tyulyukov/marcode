@@ -10,19 +10,22 @@ import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { DiffIcon, ListTodoIcon, TerminalSquareIcon } from "lucide-react";
-import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
+import { ProjectFavicon } from "../ProjectFavicon";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   draftId?: DraftId;
   activeThreadTitle: string;
+  activeThreadActivityAt: string | undefined;
   activeProjectName: string | undefined;
+  activeProjectCwd: string | null;
   isGitRepo: boolean;
   openInCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
@@ -52,7 +55,9 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   draftId,
   activeThreadTitle,
+  activeThreadActivityAt,
   activeProjectName,
+  activeProjectCwd,
   isGitRepo,
   openInCwd,
   activeProjectScripts,
@@ -76,14 +81,18 @@ export const ChatHeader = memo(function ChatHeader({
   onToggleDiff,
   onTogglePlanSidebar,
 }: ChatHeaderProps) {
+  const relativeActivityAt = activeThreadActivityAt
+    ? formatRelativeTimeLabel(activeThreadActivityAt)
+    : null;
+  const showMetaRow = Boolean(activeProjectName) || Boolean(relativeActivityAt);
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden sm:gap-3">
-        <SidebarTrigger className="size-7 shrink-0 md:hidden" />
+      <SidebarTrigger className="size-7 shrink-0 md:hidden" />
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 overflow-hidden">
         <Tooltip>
           <TooltipTrigger
             render={
-              <h2 className="min-w-0 shrink truncate text-sm font-medium text-foreground">
+              <h2 className="min-w-0 truncate text-sm font-medium text-foreground">
                 {activeThreadTitle}
               </h2>
             }
@@ -95,15 +104,40 @@ export const ChatHeader = memo(function ChatHeader({
             {activeThreadTitle}
           </TooltipPopup>
         </Tooltip>
-        {activeProjectName && (
-          <Badge variant="outline" className="min-w-0 shrink overflow-hidden">
-            <span className="min-w-0 truncate">{activeProjectName}</span>
-          </Badge>
-        )}
-        {activeProjectName && !isGitRepo && (
-          <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700">
-            No Git
-          </Badge>
+        {showMetaRow && (
+          <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+            {activeProjectName && activeProjectCwd && (
+              <ProjectFavicon
+                environmentId={activeThreadEnvironmentId}
+                cwd={activeProjectCwd}
+                seed={activeProjectName}
+              />
+            )}
+            {activeProjectName && <span className="min-w-0 truncate">{activeProjectName}</span>}
+            {activeProjectName && relativeActivityAt && (
+              <span aria-hidden className="shrink-0 text-muted-foreground/40">
+                ·
+              </span>
+            )}
+            {relativeActivityAt && <span className="shrink-0">{relativeActivityAt}</span>}
+            {activeProjectName && !isGitRepo && (
+              <>
+                <span aria-hidden className="shrink-0 text-muted-foreground/40">
+                  ·
+                </span>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="shrink-0 text-amber-600/80 dark:text-amber-400/80">
+                        No Git
+                      </span>
+                    }
+                  />
+                  <TooltipPopup side="bottom">This project is not a git repository.</TooltipPopup>
+                </Tooltip>
+              </>
+            )}
+          </div>
         )}
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">

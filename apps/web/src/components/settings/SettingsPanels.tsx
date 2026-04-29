@@ -10,7 +10,6 @@ import {
   PlusIcon,
   RefreshCwIcon,
   Trash2Icon,
-  Undo2Icon,
   UploadIcon,
   XIcon,
 } from "lucide-react";
@@ -22,7 +21,6 @@ import {
   type ProviderKind,
   type ServerProvider,
   type ServerProviderModel,
-  ThreadId,
   type ServerProviderUpdateState,
   type ServerProviderVersionAdvisory,
 } from "@marcode/contracts";
@@ -123,6 +121,7 @@ type InstallProviderSettings = {
   badgeLabel?: string;
   binaryPlaceholder: string;
   binaryDescription: ReactNode;
+  defaultUpdateCommand: string;
   serverUrlPlaceholder?: string;
   serverUrlDescription?: ReactNode;
   serverPasswordPlaceholder?: string;
@@ -138,6 +137,7 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Codex",
     binaryPlaceholder: "Codex binary path",
     binaryDescription: "Path to the Codex binary",
+    defaultUpdateCommand: "npm install -g @openai/codex@latest",
     homePathKey: "codexHomePath",
     homePlaceholder: "CODEX_HOME",
     homeDescription: "Optional custom Codex home and config directory.",
@@ -147,6 +147,7 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Claude",
     binaryPlaceholder: "Claude binary path",
     binaryDescription: "Path to the Claude binary",
+    defaultUpdateCommand: "npm install -g @anthropic-ai/claude-code@latest",
   },
   {
     provider: "cursor",
@@ -154,12 +155,14 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     badgeLabel: "Early Access",
     binaryPlaceholder: "Cursor agent binary path",
     binaryDescription: "Path to the Cursor agent binary",
+    defaultUpdateCommand: "agent update",
   },
   {
     provider: "opencode",
     title: "OpenCode",
     binaryPlaceholder: "OpenCode binary path",
     binaryDescription: "Path to the OpenCode binary",
+    defaultUpdateCommand: "npm install -g opencode-ai@latest",
     serverUrlPlaceholder: "http://127.0.0.1:4096",
     serverUrlDescription: "Leave blank to let MarCode spawn the server when needed",
     serverPasswordPlaceholder: "Server password (optional)",
@@ -294,12 +297,22 @@ function getProviderUpdateStatePresentation(updateState: ServerProviderUpdateSta
       return {
         detail:
           updateState.message ??
-          "Update command completed, but T3 Code still detects an outdated provider version.",
+          "Update command completed, but MarCode still detects an outdated provider version.",
         emphasis: "strong" as const,
       };
     case "idle":
       return null;
   }
+}
+
+function getProviderUpdateOutput(
+  updateState: ServerProviderUpdateState | undefined,
+): string | null {
+  if (updateState?.status !== "failed" && updateState?.status !== "unchanged") {
+    return null;
+  }
+  const output = updateState.output?.trim();
+  return output && output.length > 0 ? output : null;
 }
 
 function getProviderAdvisoryDetail(input: {
@@ -546,7 +559,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.addProjectBaseDirectory,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
-      settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.diffWordWrap,
       settings.enableAssistantStreaming,
@@ -1078,22 +1090,30 @@ export function GeneralSettingsPanel({
     codex: Boolean(
       settings.providers.codex.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.binaryPath ||
       settings.providers.codex.homePath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.homePath ||
+      settings.providers.codex.updateCommand !==
+        DEFAULT_UNIFIED_SETTINGS.providers.codex.updateCommand ||
       settings.providers.codex.customModels.length > 0,
     ),
     claudeAgent: Boolean(
       settings.providers.claudeAgent.binaryPath !==
         DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.binaryPath ||
+      settings.providers.claudeAgent.updateCommand !==
+        DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.updateCommand ||
       settings.providers.claudeAgent.customModels.length > 0 ||
       settings.providers.claudeAgent.launchArgs !== "",
     ),
     cursor: Boolean(
       settings.providers.cursor.binaryPath !==
         DEFAULT_UNIFIED_SETTINGS.providers.cursor.binaryPath ||
+      settings.providers.cursor.updateCommand !==
+        DEFAULT_UNIFIED_SETTINGS.providers.cursor.updateCommand ||
       settings.providers.cursor.customModels.length > 0,
     ),
     opencode: Boolean(
       settings.providers.opencode.binaryPath !==
         DEFAULT_UNIFIED_SETTINGS.providers.opencode.binaryPath ||
+      settings.providers.opencode.updateCommand !==
+        DEFAULT_UNIFIED_SETTINGS.providers.opencode.updateCommand ||
       settings.providers.opencode.serverUrl !==
         DEFAULT_UNIFIED_SETTINGS.providers.opencode.serverUrl ||
       settings.providers.opencode.serverPassword !==
@@ -1384,8 +1404,10 @@ export function GeneralSettingsPanel({
       homePlaceholder: providerSettings.homePlaceholder,
       homeDescription: providerSettings.homeDescription,
       binaryPathValue: providerConfig.binaryPath,
+      defaultUpdateCommand: providerSettings.defaultUpdateCommand,
       serverUrlValue: "serverUrl" in providerConfig ? providerConfig.serverUrl : "",
       serverPasswordValue: "serverPassword" in providerConfig ? providerConfig.serverPassword : "",
+      updateCommandValue: providerConfig.updateCommand,
       isDirty: !Equal.equals(providerConfig, defaultProviderConfig),
       liveProvider,
       models,
@@ -1776,8 +1798,12 @@ export function GeneralSettingsPanel({
           const providerDisplayName =
             PROVIDER_DISPLAY_NAMES[providerCard.provider] ?? providerCard.title;
           const versionAdvisory = providerCard.versionAdvisory;
-          const updateCommand = versionAdvisory?.updateCommand ?? null;
+          const updateCommand =
+            providerCard.updateCommandValue.trim() ||
+            versionAdvisory?.updateCommand ||
+            providerCard.defaultUpdateCommand;
           const updateStatePresentation = providerCard.updateStatePresentation;
+          const updateOutput = getProviderUpdateOutput(providerCard.updateState);
           const isUpdatingProvider =
             providerCard.updateState?.status === "queued" ||
             providerCard.updateState?.status === "running" ||
@@ -1840,58 +1866,70 @@ export function GeneralSettingsPanel({
                       {providerCard.summary.detail ? ` - ${providerCard.summary.detail}` : null}
                     </p>
                     {advisoryDetail ? (
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                        <span
-                          className={cn(
-                            advisoryEmphasis === "strong" && "text-warning",
-                            advisoryEmphasis === "success" && "text-success",
-                            advisoryEmphasis === "danger" && "text-destructive",
-                            advisoryEmphasis === "normal" && "text-muted-foreground",
-                          )}
-                        >
-                          {advisoryDetail}
-                        </span>
-                        {updateCommand ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <Button
-                                  type="button"
-                                  size="xs"
-                                  variant="ghost"
-                                  className="h-5 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                                  onClick={() =>
-                                    copyToClipboard(updateCommand, {
-                                      providerName: providerDisplayName,
-                                    })
-                                  }
-                                >
-                                  <CopyIcon className="size-3" />
-                                  Copy command
-                                </Button>
-                              }
-                            />
-                            <TooltipPopup side="top">{updateCommand}</TooltipPopup>
-                          </Tooltip>
-                        ) : null}
-                        {canRunProviderUpdate ? (
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="outline"
-                            className="h-5 gap-1 px-1.5 text-[11px]"
-                            disabled={isUpdatingProvider}
-                            onClick={() =>
-                              updateProvider(providerCard.provider, providerDisplayName)
-                            }
-                          >
-                            {isUpdatingProvider ? (
-                              <LoaderIcon className="size-3 animate-spin" />
-                            ) : (
-                              <DownloadIcon className="size-3" />
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span
+                            className={cn(
+                              advisoryEmphasis === "strong" && "text-warning",
+                              advisoryEmphasis === "success" && "text-success",
+                              advisoryEmphasis === "danger" && "text-destructive",
+                              advisoryEmphasis === "normal" && "text-muted-foreground",
                             )}
-                            Update
-                          </Button>
+                          >
+                            {advisoryDetail}
+                          </span>
+                          {updateCommand ? (
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={
+                                  <Button
+                                    type="button"
+                                    size="xs"
+                                    variant="ghost"
+                                    className="h-5 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                    onClick={() =>
+                                      copyToClipboard(updateCommand, {
+                                        providerName: providerDisplayName,
+                                      })
+                                    }
+                                  >
+                                    <CopyIcon className="size-3" />
+                                    Copy command
+                                  </Button>
+                                }
+                              />
+                              <TooltipPopup side="top">{updateCommand}</TooltipPopup>
+                            </Tooltip>
+                          ) : null}
+                          {canRunProviderUpdate ? (
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="outline"
+                              className="h-5 gap-1 px-1.5 text-[11px]"
+                              disabled={isUpdatingProvider}
+                              onClick={() =>
+                                updateProvider(providerCard.provider, providerDisplayName)
+                              }
+                            >
+                              {isUpdatingProvider ? (
+                                <LoaderIcon className="size-3 animate-spin" />
+                              ) : (
+                                <DownloadIcon className="size-3" />
+                              )}
+                              Update
+                            </Button>
+                          ) : null}
+                        </div>
+                        {updateOutput ? (
+                          <details className="max-w-2xl rounded-md border border-border/70 bg-muted/30 px-2 py-1.5 text-muted-foreground">
+                            <summary className="cursor-pointer text-[11px] font-medium text-foreground/80">
+                              Update command output
+                            </summary>
+                            <pre className="mt-1 max-h-36 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
+                              {updateOutput}
+                            </pre>
+                          </details>
                         ) : null}
                       </div>
                     ) : null}
@@ -2024,6 +2062,36 @@ export function GeneralSettingsPanel({
                         </label>
                       </div>
                     ) : null}
+
+                    <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                      <label
+                        htmlFor={`provider-install-${providerCard.provider}-update-command`}
+                        className="block"
+                      >
+                        <span className="text-xs font-medium text-foreground">Update command</span>
+                        <Input
+                          id={`provider-install-${providerCard.provider}-update-command`}
+                          className="mt-1.5 font-mono text-xs"
+                          value={providerCard.updateCommandValue}
+                          onChange={(event) =>
+                            updateSettings({
+                              providers: {
+                                ...settings.providers,
+                                [providerCard.provider]: {
+                                  ...settings.providers[providerCard.provider],
+                                  updateCommand: event.target.value,
+                                },
+                              },
+                            })
+                          }
+                          placeholder={updateCommand}
+                          spellCheck={false}
+                        />
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Leave empty to use the MarCode default: <code>{updateCommand}</code>
+                        </span>
+                      </label>
+                    </div>
 
                     {providerCard.serverPasswordPlaceholder ? (
                       <div className="border-t border-border/60 px-4 py-3 sm:px-5">
@@ -2421,7 +2489,13 @@ export function ArchivedThreadsPanel() {
           <SettingsSection
             key={project.id}
             title={project.name}
-            icon={<ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />}
+            icon={
+              <ProjectFavicon
+                environmentId={project.environmentId}
+                cwd={project.cwd}
+                seed={project.name}
+              />
+            }
           >
             {projectThreads.map((thread) => (
               <div

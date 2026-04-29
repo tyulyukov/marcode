@@ -107,11 +107,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         enabled: true,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "/Users/julius/.codex",
+        updateCommand: "",
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
         enabled: true,
         binaryPath: "/usr/local/bin/claude",
+        updateCommand: "",
         customModels: ["claude-custom"],
         launchArgs: "",
       });
@@ -209,6 +211,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             binaryPath: "  /opt/homebrew/bin/opencode  ",
             serverUrl: "  http://127.0.0.1:4096  ",
             serverPassword: "  secret-password  ",
+            updateCommand: "  pnpm add -g opencode-ai@latest  ",
           },
         },
       });
@@ -217,11 +220,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         enabled: true,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",
+        updateCommand: "",
         customModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
         enabled: true,
         binaryPath: "/opt/homebrew/bin/claude",
+        updateCommand: "",
         customModels: [],
         launchArgs: "",
       });
@@ -230,6 +235,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         binaryPath: "/opt/homebrew/bin/opencode",
         serverUrl: "http://127.0.0.1:4096",
         serverPassword: "secret-password",
+        updateCommand: "pnpm add -g opencode-ai@latest",
         customModels: [],
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),

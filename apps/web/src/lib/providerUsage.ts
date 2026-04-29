@@ -12,10 +12,6 @@ function asString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function asBoolean(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
-}
-
 export interface RateLimitWindow {
   /** Label for this window, e.g. "Session (5 hrs)" or "Weekly" */
   readonly label: string;
