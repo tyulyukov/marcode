@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+import {
+  createProviderVersionAdvisory,
+  getProviderVersionLifecycle,
+} from "./providerVersionLifecycle.ts";
+
+describe("providerVersionLifecycle", () => {
+  it("marks providers with unknown current versions as unknown", () => {
+    expect(
+      createProviderVersionAdvisory({
+        provider: "codex",
+        currentVersion: null,
+        latestVersion: "9.9.9",
+      }),
+    ).toMatchObject({
+      status: "unknown",
+      currentVersion: null,
+      latestVersion: "9.9.9",
+    });
+  });
+
+  it("marks providers with unknown latest versions as unknown", () => {
+    expect(
+      createProviderVersionAdvisory({
+        provider: "codex",
+        currentVersion: "1.0.0",
+        latestVersion: null,
+      }),
+    ).toMatchObject({
+      status: "unknown",
+      currentVersion: "1.0.0",
+      latestVersion: null,
+      message: null,
+    });
+  });
+
+  it("marks installed providers behind latest when a newer provider version is available", () => {
+    expect(
+      createProviderVersionAdvisory({
+        provider: "claudeAgent",
+        currentVersion: "2.1.110",
+        latestVersion: "2.1.117",
+      }),
+    ).toMatchObject({
+      status: "behind_latest",
+      currentVersion: "2.1.110",
+      latestVersion: "2.1.117",
+      updateCommand: "npm install -g @anthropic-ai/claude-code@latest",
+      canUpdate: true,
+      message: "Install the update now or review provider settings.",
+    });
+  });
+
+  it("keeps update commands owned by provider lifecycle metadata", () => {
+    expect(getProviderVersionLifecycle("cursor")).toEqual({
+      provider: "cursor",
+      packageName: null,
+      updateCommand: "agent update",
+      updateExecutable: "agent",
+      updateArgs: ["update"],
+      updateLockKey: "cursor-agent",
+    });
+  });
+});

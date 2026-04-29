@@ -11,6 +11,7 @@ import { Effect, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { normalizeModelSlug } from "@marcode/shared/model";
 import { isWindowsCommandNotFound } from "../processRunner.ts";
+import { createProviderVersionAdvisory } from "./providerVersionLifecycle.ts";
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
 // Auth status checks involve disk/network lookups and can be slow on first run (especially Windows)
@@ -205,6 +206,11 @@ export function buildServerProvider(input: {
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
+    versionAdvisory: createProviderVersionAdvisory({
+      provider: input.provider,
+      currentVersion: input.probe.version,
+      checkedAt: input.checkedAt,
+    }),
   };
 }
 

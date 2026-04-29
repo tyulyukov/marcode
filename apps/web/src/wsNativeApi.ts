@@ -153,6 +153,7 @@ export function createWsNativeApi(): MarCodeNativeApi {
     server: {
       getConfig: rpcClient.server.getConfig,
       refreshProviders: rpcClient.server.refreshProviders,
+      updateProvider: rpcClient.server.updateProvider,
       upsertKeybinding: rpcClient.server.upsertKeybinding,
       getSettings: rpcClient.server.getSettings,
       updateSettings: rpcClient.server.updateSettings,
