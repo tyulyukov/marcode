@@ -91,15 +91,15 @@ describe("UserMessageQuotedContextLabel", () => {
     }
   });
 
-  it("uses the violet accent for text and code entries", async () => {
+  it("uses the primary accent for text and code entries", async () => {
     const mounted = await mountLabel([
       { header: "Quoted text", body: "plain text" },
       { header: "Quoted code (ts)", body: "const x = 1" },
     ]);
 
     try {
-      const violetCards = mounted.host.querySelectorAll("div[class*='violet']");
-      expect(violetCards.length).toBeGreaterThanOrEqual(2);
+      const primaryCards = mounted.host.querySelectorAll("div[class*='primary']");
+      expect(primaryCards.length).toBeGreaterThanOrEqual(2);
 
       const emeraldCards = mounted.host.querySelectorAll("div[class*='emerald']");
       expect(emeraldCards.length).toBe(0);
@@ -118,8 +118,8 @@ describe("UserMessageQuotedContextLabel", () => {
       const emeraldCards = mounted.host.querySelectorAll("div[class*='emerald']");
       expect(emeraldCards.length).toBeGreaterThanOrEqual(1);
 
-      const violetCards = mounted.host.querySelectorAll("div[class*='violet']");
-      expect(violetCards.length).toBeGreaterThanOrEqual(1);
+      const primaryCards = mounted.host.querySelectorAll("div[class*='primary']");
+      expect(primaryCards.length).toBeGreaterThanOrEqual(1);
     } finally {
       await mounted.cleanup();
     }

@@ -215,12 +215,12 @@ describe("MessagesTimeline auto-follow", () => {
 
     await vi.waitFor(
       () => {
-        expect(page.getByRole("button", { name: "Show full output" }).query()).toBeTruthy();
+        expect(page.getByRole("button", { name: "Show full content" }).query()).toBeTruthy();
       },
       { timeout: 8_000, interval: 16 },
     );
 
-    await page.getByRole("button", { name: "Show full output" }).click();
+    await page.getByRole("button", { name: "Show full content" }).click();
     await waitForLayout(3);
 
     await vi.waitFor(
