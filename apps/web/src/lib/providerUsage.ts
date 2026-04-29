@@ -60,6 +60,19 @@ const CLAUDE_WINDOW_LABELS: Record<string, string> = {
   overage: "Overage",
 };
 
+function statusFromWindows(
+  windows: ReadonlyArray<RateLimitWindow>,
+): ProviderUsageSnapshot["status"] {
+  const maxPercent = Math.max(...windows.map((window) => window.usedPercent), 0);
+  if (maxPercent >= 90) {
+    return "rejected";
+  }
+  if (maxPercent >= 70) {
+    return "warning";
+  }
+  return "ok";
+}
+
 function normalizeClaudeRateLimitEvent(
   payload: Record<string, unknown>,
 ): Omit<ProviderUsageSnapshot, "updatedAt"> | null {
@@ -103,13 +116,10 @@ function normalizeClaudeRateLimitEvent(
     return null;
   }
 
-  const status: ProviderUsageSnapshot["status"] =
-    statusRaw === "rejected" ? "rejected" : statusRaw === "allowed_warning" ? "warning" : "ok";
-
   return {
     providerLabel: "Claude",
     windows,
-    status,
+    status: statusFromWindows(windows),
   };
 }
 
@@ -189,14 +199,10 @@ function normalizeCodexRateLimits(
     return null;
   }
 
-  const maxPercent = Math.max(...windows.map((w) => w.usedPercent));
-  const status: ProviderUsageSnapshot["status"] =
-    maxPercent >= 100 ? "rejected" : maxPercent >= 80 ? "warning" : "ok";
-
   return {
     providerLabel: "Codex",
     windows,
-    status,
+    status: statusFromWindows(windows),
   };
 }
 
@@ -257,7 +263,6 @@ export function deriveLatestProviderUsageSnapshot(
 ): ProviderUsageSnapshot | null {
   const windowsByLabel = new Map<string, RateLimitWindow>();
   let providerLabel: string | null = null;
-  let latestStatus: ProviderUsageSnapshot["status"] = "ok";
   let latestUpdatedAt: string | null = null;
 
   // Walk backwards so the first match for each label wins (most recent).
@@ -274,7 +279,6 @@ export function deriveLatestProviderUsageSnapshot(
 
     if (providerLabel === null) {
       providerLabel = result.providerLabel;
-      latestStatus = result.status;
       latestUpdatedAt = activity.createdAt;
     }
 
@@ -288,23 +292,18 @@ export function deriveLatestProviderUsageSnapshot(
         windowsByLabel.set(window.label, window);
       }
     }
-
-    // Escalate status if a worse status was seen in an older event.
-    if (result.status === "rejected") {
-      latestStatus = "rejected";
-    } else if (result.status === "warning" && latestStatus === "ok") {
-      latestStatus = "warning";
-    }
   }
 
   if (providerLabel === null || windowsByLabel.size === 0 || latestUpdatedAt === null) {
     return null;
   }
 
+  const windows = Array.from(windowsByLabel.values());
+
   return {
     providerLabel,
-    windows: Array.from(windowsByLabel.values()),
-    status: latestStatus,
+    windows,
+    status: statusFromWindows(windows),
     updatedAt: latestUpdatedAt,
   };
 }

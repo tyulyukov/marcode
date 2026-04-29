@@ -42,12 +42,12 @@ function QuotedContextEntry({ ctx, panelId }: { ctx: ParsedQuotedContextEntry; p
     "rounded-md rounded-l-none border-l-2 transition-colors",
     isDiff
       ? "border-emerald-400/70 bg-emerald-500/8 hover:bg-emerald-500/12 dark:border-emerald-400/70 dark:bg-emerald-400/8 dark:hover:bg-emerald-400/12"
-      : "border-violet-400/70 bg-violet-500/8 hover:bg-violet-500/12 dark:border-violet-400/70 dark:bg-violet-400/8 dark:hover:bg-violet-400/12",
+      : "border-primary/60 bg-primary/15 hover:bg-primary/20",
   );
 
   const headerClass = cn(
     "flex w-full items-center gap-1.5 rounded-md rounded-l-none px-2.5 py-1.5 text-left text-xs font-medium",
-    isDiff ? "text-emerald-700 dark:text-emerald-300" : "text-violet-700 dark:text-violet-300",
+    isDiff ? "text-emerald-700 dark:text-emerald-300" : "text-primary",
   );
 
   const headerInner = (

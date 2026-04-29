@@ -45,7 +45,7 @@ describe("providerVersionLifecycle", () => {
       status: "behind_latest",
       currentVersion: "2.1.110",
       latestVersion: "2.1.117",
-      updateCommand: "npm install -g @anthropic-ai/claude-code@latest",
+      updateCommand: "claude upgrade",
       canUpdate: true,
       message: "Install the update now or review provider settings.",
     });

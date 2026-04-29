@@ -147,7 +147,7 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Claude",
     binaryPlaceholder: "Claude binary path",
     binaryDescription: "Path to the Claude binary",
-    defaultUpdateCommand: "npm install -g @anthropic-ai/claude-code@latest",
+    defaultUpdateCommand: "claude upgrade",
   },
   {
     provider: "cursor",
@@ -162,7 +162,7 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "OpenCode",
     binaryPlaceholder: "OpenCode binary path",
     binaryDescription: "Path to the OpenCode binary",
-    defaultUpdateCommand: "npm install -g opencode-ai@latest",
+    defaultUpdateCommand: "opencode upgrade",
     serverUrlPlaceholder: "http://127.0.0.1:4096",
     serverUrlDescription: "Leave blank to let MarCode spawn the server when needed",
     serverPasswordPlaceholder: "Server password (optional)",

@@ -106,6 +106,7 @@ import {
   useStore,
 } from "../store";
 import {
+  createSidebarThreadSummarySelectorByRef,
   createProjectSelectorByRef,
   createThreadSelectorByRef,
   createThreadSelectorAcrossEnvironments,
@@ -320,12 +321,16 @@ const threadPlanCatalogCache = new LRUCache<{
   entry: ThreadPlanCatalogEntry;
 }>(MAX_THREAD_PLAN_CATALOG_CACHE_ENTRIES, MAX_THREAD_PLAN_CATALOG_CACHE_MEMORY_BYTES);
 
-function deriveActiveThreadActivityIso(thread: Thread): string {
+function deriveActiveThreadActivityIso(
+  thread: Thread,
+  latestUserMessageAt: string | null | undefined,
+): string | undefined {
+  if (latestUserMessageAt) return latestUserMessageAt;
   for (let i = thread.messages.length - 1; i >= 0; i--) {
     const message = thread.messages[i];
     if (message?.role === "user") return message.createdAt;
   }
-  return thread.updatedAt ?? thread.createdAt;
+  return undefined;
 }
 
 function estimateThreadPlanCatalogEntrySize(thread: Thread): number {
@@ -766,6 +771,9 @@ export default function ChatView({
         ? scopeThreadRef(activeThreadEnvironmentId, threadId)
         : scopeThreadRef("" as EnvironmentId, threadId),
     [activeThreadEnvironmentId, threadId],
+  );
+  const activeSidebarThreadSummary = useStore(
+    useMemo(() => createSidebarThreadSummarySelectorByRef(threadRef), [threadRef]),
   );
   const setStoreThreadError = useStore((store) => store.setError);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
@@ -4790,7 +4798,10 @@ export default function ChatView({
           activeThreadId={activeThread.id}
           activeThreadEnvironmentId={activeThreadEnvironmentId!}
           activeThreadTitle={activeThread.title}
-          activeThreadActivityAt={deriveActiveThreadActivityIso(activeThread)}
+          activeThreadActivityAt={deriveActiveThreadActivityIso(
+            activeThread,
+            activeSidebarThreadSummary?.latestUserMessageAt,
+          )}
           activeProjectName={activeProject?.name}
           activeProjectCwd={activeProject?.cwd ?? null}
           isGitRepo={isGitRepo}

@@ -31,10 +31,10 @@ const PROVIDER_VERSION_LIFECYCLES = {
   claudeAgent: {
     provider: "claudeAgent",
     packageName: "@anthropic-ai/claude-code",
-    updateCommand: "npm install -g @anthropic-ai/claude-code@latest",
-    updateExecutable: "npm",
-    updateArgs: ["install", "-g", "@anthropic-ai/claude-code@latest"],
-    updateLockKey: "npm-global",
+    updateCommand: "claude upgrade",
+    updateExecutable: "claude",
+    updateArgs: ["upgrade"],
+    updateLockKey: "claude",
   },
   cursor: {
     provider: "cursor",
@@ -47,10 +47,10 @@ const PROVIDER_VERSION_LIFECYCLES = {
   opencode: {
     provider: "opencode",
     packageName: "opencode-ai",
-    updateCommand: "npm install -g opencode-ai@latest",
-    updateExecutable: "npm",
-    updateArgs: ["install", "-g", "opencode-ai@latest"],
-    updateLockKey: "npm-global",
+    updateCommand: "opencode upgrade",
+    updateExecutable: "opencode",
+    updateArgs: ["upgrade"],
+    updateLockKey: "opencode",
   },
 } as const satisfies Record<ProviderKind, ProviderVersionLifecycle>;
 
