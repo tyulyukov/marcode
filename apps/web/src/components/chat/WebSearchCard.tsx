@@ -67,17 +67,8 @@ export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardPro
     </span>
   );
 
-  const previewBody = renderedOutput ? (
-    <div className="relative overflow-hidden" style={{ maxHeight: "120px" }}>
-      <pre className="whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
-        {renderedOutput}
-      </pre>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card/90 to-transparent" />
-    </div>
-  ) : null;
-
-  const expandedBody = renderedOutput ? (
-    <pre className="overflow-y-auto whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
+  const body = renderedOutput ? (
+    <pre className="whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
       {renderedOutput}
     </pre>
   ) : null;
@@ -87,8 +78,7 @@ export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardPro
       tool="web"
       status={status}
       primary={primary}
-      preview={previewBody}
-      expanded={expandedBody}
+      body={body}
       defaultState="collapsed"
       statusLabels={{ running: "Searching", success: "Done", error: "Failed" }}
     />

@@ -1,20 +1,20 @@
 import { ChevronDownIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Collapsible, CollapsiblePanel } from "~/components/ui/collapsible";
 import { cn } from "~/lib/utils";
+import { ApprovalBadge } from "./ApprovalBadge";
 import { StatusBadge, type ToolStatusKind } from "./StatusBadge";
-import { ToolTab } from "./ToolTab";
 import { TOOL_COLORS, type ToolKind } from "./toolColors";
 import { useToolCardState, type ToolCardState } from "./useToolCardState";
 
 interface ToolCardProps {
   readonly tool: ToolKind;
-  readonly status: ToolStatusKind;
-  readonly tabLabel?: string;
+  readonly status?: ToolStatusKind;
   readonly primary: ReactNode;
   readonly meta?: ReactNode;
-  readonly preview?: ReactNode;
-  readonly expanded?: ReactNode;
+  readonly body?: ReactNode;
+  readonly expandedBody?: ReactNode;
+  readonly bodyMaxPreviewPx?: number;
   readonly defaultState?: ToolCardState;
   readonly isPendingApproval?: boolean;
   readonly statusLabels?: {
@@ -33,15 +33,17 @@ const CHEVRON_ROTATION: Record<ToolCardState, string> = {
   expanded: "rotate-180",
 };
 
+const OVERFLOW_THRESHOLD_PX = 24;
+
 export function ToolCard(props: ToolCardProps) {
   const {
     tool,
     status,
-    tabLabel,
     primary,
     meta,
-    preview,
-    expanded,
+    body,
+    expandedBody,
+    bodyMaxPreviewPx = 120,
     defaultState = "collapsed",
     isPendingApproval = false,
     statusLabels,
@@ -50,67 +52,106 @@ export function ToolCard(props: ToolCardProps) {
     bodyClassName,
   } = props;
 
-  const previewAvailable = preview !== undefined && preview !== null;
-  const expandedAvailable = expanded !== undefined && expanded !== null;
-  const anyBody = previewAvailable || expandedAvailable;
+  const bodyAvailable = body !== undefined && body !== null;
+  const expandedBodyAvailable = expandedBody !== undefined && expandedBody !== null;
+  const anyBody = bodyAvailable || expandedBodyAvailable;
+
+  const previewAvailable = bodyAvailable;
+
+  const [bodyOverflows, setBodyOverflows] = useState(false);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  const hasExpandedState = expandedBodyAvailable || (bodyAvailable && bodyOverflows);
 
   const { state, cycleNext } = useToolCardState({
     defaultState: anyBody ? defaultState : "collapsed",
     previewAvailable,
+    hasExpandedState,
   });
+
+  useLayoutEffect(() => {
+    if (!previewAvailable || expandedBodyAvailable) {
+      setBodyOverflows(false);
+      return;
+    }
+    const node = previewRef.current;
+    if (!node) return;
+
+    const measure = () => {
+      const overflows = node.scrollHeight > node.clientHeight + OVERFLOW_THRESHOLD_PX;
+      setBodyOverflows(overflows);
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [previewAvailable, expandedBodyAvailable, body, state]);
 
   const colors = TOOL_COLORS[tool];
   const HeaderIcon = colors.icon;
 
-  const effectiveStatus: ToolStatusKind = isPendingApproval ? "approval" : status;
   const showChevron = !hideChevron && anyBody;
   const isOpen = state !== "collapsed";
   const showPreview = state === "preview" && previewAvailable;
-  const showExpanded = state === "expanded" && (expandedAvailable || previewAvailable);
+  const showExpanded = state === "expanded" && (expandedBodyAvailable || previewAvailable);
 
   return (
-    <div data-scroll-anchor-target className="flex flex-col">
-      <ToolTab tool={tool} {...(tabLabel !== undefined ? { label: tabLabel } : {})} />
-      <div
-        className={cn(
-          "overflow-hidden rounded-tl-none rounded-tr-xl rounded-b-xl border border-border/40 bg-card/25",
-        )}
+    <div
+      data-scroll-anchor-target
+      className={cn("overflow-hidden rounded-xl border border-border/40 bg-card/25")}
+    >
+      <HeaderRow
+        showChevron={showChevron}
+        state={state}
+        onClick={showChevron ? cycleNext : undefined}
+        {...(headerClassName !== undefined ? { headerClassName } : {})}
       >
-        <HeaderRow
-          showChevron={showChevron}
-          state={state}
-          onClick={showChevron ? cycleNext : undefined}
-          {...(headerClassName !== undefined ? { headerClassName } : {})}
-        >
-          <HeaderIcon className={cn("size-3.5 shrink-0", colors.headerIcon)} />
-          <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">{primary}</span>
-          {meta}
+        <HeaderIcon className={cn("size-3.5 shrink-0", colors.headerIcon)} />
+        <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">{primary}</span>
+        {meta}
+        {isPendingApproval ? (
+          <ApprovalBadge />
+        ) : status !== undefined ? (
           <StatusBadge
-            status={effectiveStatus}
+            status={status}
             {...(statusLabels?.running !== undefined ? { runningLabel: statusLabels.running } : {})}
             {...(statusLabels?.success !== undefined ? { successLabel: statusLabels.success } : {})}
             {...(statusLabels?.error !== undefined ? { errorLabel: statusLabels.error } : {})}
           />
-          {showChevron && (
-            <ChevronDownIcon
-              className={cn(
-                "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-200",
-                CHEVRON_ROTATION[state],
-              )}
-            />
-          )}
-        </HeaderRow>
-        {anyBody && (
-          <Collapsible open={isOpen}>
-            <CollapsiblePanel>
-              <div className={cn("border-t border-border/20", bodyClassName)}>
-                {showPreview && preview}
-                {showExpanded && (expandedAvailable ? expanded : preview)}
-              </div>
-            </CollapsiblePanel>
-          </Collapsible>
+        ) : null}
+        {showChevron && (
+          <ChevronDownIcon
+            className={cn(
+              "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-200",
+              CHEVRON_ROTATION[state],
+            )}
+          />
         )}
-      </div>
+      </HeaderRow>
+      {anyBody && (
+        <Collapsible open={isOpen}>
+          <CollapsiblePanel>
+            <div className={cn("border-t border-border/20", bodyClassName)}>
+              {showPreview && bodyAvailable && (
+                <div
+                  ref={previewRef}
+                  className="relative overflow-hidden"
+                  style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
+                >
+                  {body}
+                  {bodyOverflows && (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card/90 to-transparent" />
+                  )}
+                </div>
+              )}
+              {showExpanded && (expandedBodyAvailable ? expandedBody : body)}
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
+      )}
     </div>
   );
 }

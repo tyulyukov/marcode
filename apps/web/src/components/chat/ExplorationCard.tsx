@@ -3,7 +3,6 @@ import { memo } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import type { WorkLogEntry } from "../../session-logic";
 import { ToolCard } from "./_shared/ToolCard";
-import type { ToolStatusKind } from "./_shared/StatusBadge";
 
 interface ExplorationCardProps {
   entries: ReadonlyArray<WorkLogEntry>;
@@ -370,10 +369,6 @@ function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
   );
 }
 
-function deriveStatus(isLive: boolean): ToolStatusKind {
-  return isLive ? "running" : "success";
-}
-
 export const ExplorationCard = memo(function ExplorationCard(props: ExplorationCardProps) {
   const { entries, isLive, isPendingApproval = false, summaryOnly = false } = props;
 
@@ -388,7 +383,6 @@ export const ExplorationCard = memo(function ExplorationCard(props: ExplorationC
   const summary = headerParts.join(", ");
 
   const verb = isLive ? "Exploring" : "Explored";
-  const status = deriveStatus(isLive);
 
   const primary = (
     <span className="block min-w-0 flex-1 truncate text-[11px] text-foreground/80">
@@ -407,13 +401,11 @@ export const ExplorationCard = memo(function ExplorationCard(props: ExplorationC
   return (
     <ToolCard
       tool="exploration"
-      status={status}
       primary={primary}
-      expanded={summaryOnly ? undefined : expandedBody}
+      {...(summaryOnly ? {} : { expandedBody })}
       defaultState="collapsed"
       isPendingApproval={isPendingApproval}
       hideChevron={summaryOnly}
-      statusLabels={{ running: "Exploring", success: "Done", error: "Failed" }}
     />
   );
 });

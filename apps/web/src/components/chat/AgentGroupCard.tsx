@@ -167,7 +167,7 @@ export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCard
       tool="agent"
       status={status}
       primary={primary}
-      expanded={expandedBody}
+      expandedBody={expandedBody}
       defaultState="expanded"
       hideChevron
     />

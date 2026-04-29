@@ -10,8 +10,6 @@ import { ToolCard } from "./_shared/ToolCard";
 
 type DiffThemeType = "light" | "dark";
 
-const PREVIEW_MAX_HEIGHT = "120px";
-
 const INLINE_DIFF_CSS = `
 [data-diffs-header],
 [data-diff],
@@ -110,7 +108,6 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   const isDelete = isSingleHunk && firstHunk.operation === "delete";
 
   const tool = isDelete ? "file-delete" : "file-edit";
-  const status = "success";
 
   const primary = isSingleHunk ? (
     <span
@@ -150,11 +147,8 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
     <DiffStatSummary additions={totalAdditions} deletions={totalDeletions} />
   );
 
-  const previewBody = isSingleHunk ? (
-    <div className="relative" style={{ maxHeight: PREVIEW_MAX_HEIGHT, overflow: "hidden" }}>
-      <InlineDiffBlock patch={firstHunk.patch} cacheScope={`card-preview:${firstHunk.filePath}`} />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-background/80 to-transparent" />
-    </div>
+  const body = isSingleHunk ? (
+    <InlineDiffBlock patch={firstHunk.patch} cacheScope={`card-preview:${firstHunk.filePath}`} />
   ) : (
     <div className="px-3 py-1">
       {diffPreviews.map((hunk) => (
@@ -168,17 +162,15 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
     </div>
   );
 
-  const expandedBody = (
+  const expandedBody = isSingleHunk ? undefined : (
     <div>
       {diffPreviews.map((hunk) => (
         <div key={hunk.filePath}>
-          {!isSingleHunk && (
-            <div className="border-t border-border/20 px-3 py-1">
-              <span className="font-mono text-[10px] text-muted-foreground/60">
-                {relativizePath(hunk.filePath, cwd)}
-              </span>
-            </div>
-          )}
+          <div className="border-t border-border/20 px-3 py-1">
+            <span className="font-mono text-[10px] text-muted-foreground/60">
+              {relativizePath(hunk.filePath, cwd)}
+            </span>
+          </div>
           <InlineDiffBlock patch={hunk.patch} cacheScope={`card-expanded:${hunk.filePath}`} />
         </div>
       ))}
@@ -188,12 +180,11 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   return (
     <ToolCard
       tool={tool}
-      status={status}
       primary={primary}
       meta={meta}
-      preview={previewBody}
-      expanded={expandedBody}
-      defaultState="collapsed"
+      body={body}
+      {...(expandedBody !== undefined ? { expandedBody } : {})}
+      defaultState="preview"
       isPendingApproval={isPendingApproval}
     />
   );
