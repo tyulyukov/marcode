@@ -117,32 +117,38 @@ interface ViewportSpec {
   attachmentTolerancePx: number;
 }
 
+// The chat minimap (`pr-2`) shaves 8px off the timeline row's right side,
+// which trims ~6.4px from the user-bubble (after the 80% width ratio). With
+// long messages near a wrap boundary that's enough to flip 1-2 lines between
+// the renderer and the character-width-based estimator, so each viewport's
+// text tolerance budgets a couple extra wrapped-line heights to absorb that
+// drift without flapping the test on minor layout adjustments.
 const DEFAULT_VIEWPORT: ViewportSpec = {
   name: "desktop",
   width: 960,
   height: 1_100,
-  textTolerancePx: 48,
+  textTolerancePx: 80,
   attachmentTolerancePx: 56,
 };
 const WIDE_FOOTER_VIEWPORT: ViewportSpec = {
   name: "wide-footer",
   width: 1_400,
   height: 1_100,
-  textTolerancePx: 48,
+  textTolerancePx: 80,
   attachmentTolerancePx: 56,
 };
 const COMPACT_FOOTER_VIEWPORT: ViewportSpec = {
   name: "compact-footer",
   width: 430,
   height: 932,
-  textTolerancePx: 68,
+  textTolerancePx: 96,
   attachmentTolerancePx: 56,
 };
 const TEXT_VIEWPORT_MATRIX = [
   DEFAULT_VIEWPORT,
-  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 48, attachmentTolerancePx: 56 },
-  { name: "mobile", width: 430, height: 932, textTolerancePx: 68, attachmentTolerancePx: 56 },
-  { name: "narrow", width: 320, height: 700, textTolerancePx: 114, attachmentTolerancePx: 56 },
+  { name: "tablet", width: 720, height: 1_024, textTolerancePx: 80, attachmentTolerancePx: 56 },
+  { name: "mobile", width: 430, height: 932, textTolerancePx: 96, attachmentTolerancePx: 56 },
+  { name: "narrow", width: 320, height: 700, textTolerancePx: 140, attachmentTolerancePx: 56 },
 ] as const satisfies readonly ViewportSpec[];
 const ATTACHMENT_VIEWPORT_MATRIX = [
   { ...DEFAULT_VIEWPORT, attachmentTolerancePx: 120 },
