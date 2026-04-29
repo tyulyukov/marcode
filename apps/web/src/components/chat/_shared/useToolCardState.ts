@@ -1,44 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export type ToolCardState = "collapsed" | "preview" | "expanded";
 
 export interface UseToolCardStateOptions {
   readonly defaultState?: ToolCardState;
-  readonly previewAvailable?: boolean;
-  readonly hasExpandedState?: boolean;
+  readonly bodyAvailable?: boolean;
 }
 
 export interface UseToolCardStateResult {
   readonly state: ToolCardState;
-  readonly cycleNext: () => void;
+  readonly toggleOpen: () => void;
+  readonly expandFully: () => void;
   readonly setState: (next: ToolCardState) => void;
 }
 
 export function useToolCardState(options?: UseToolCardStateOptions): UseToolCardStateResult {
   const defaultState = options?.defaultState ?? "collapsed";
-  const previewAvailable = options?.previewAvailable ?? true;
-  const hasExpandedState = options?.hasExpandedState ?? true;
+  const bodyAvailable = options?.bodyAvailable ?? true;
 
   const [state, setState] = useState<ToolCardState>(defaultState);
 
-  useEffect(() => {
-    if (state === "expanded" && !hasExpandedState) {
-      setState(previewAvailable ? "preview" : "collapsed");
-    }
-  }, [state, hasExpandedState, previewAvailable]);
-
-  const cycleNext = useCallback(() => {
+  const toggleOpen = useCallback(() => {
     setState((current) => {
       if (current === "collapsed") {
-        if (previewAvailable) return "preview";
-        return hasExpandedState ? "expanded" : "collapsed";
-      }
-      if (current === "preview") {
-        return hasExpandedState ? "expanded" : "collapsed";
+        return bodyAvailable ? "preview" : "expanded";
       }
       return "collapsed";
     });
-  }, [previewAvailable, hasExpandedState]);
+  }, [bodyAvailable]);
 
-  return { state, cycleNext, setState };
+  const expandFully = useCallback(() => {
+    setState("expanded");
+  }, []);
+
+  return { state, toggleOpen, expandFully, setState };
 }

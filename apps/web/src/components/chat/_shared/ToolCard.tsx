@@ -4,7 +4,7 @@ import { Collapsible, CollapsiblePanel } from "~/components/ui/collapsible";
 import { cn } from "~/lib/utils";
 import { ApprovalBadge } from "./ApprovalBadge";
 import { StatusBadge, type ToolStatusKind } from "./StatusBadge";
-import { TOOL_COLORS, type ToolKind } from "./toolColors";
+import { TOOL_ICONS, type ToolKind } from "./toolColors";
 import { useToolCardState, type ToolCardState } from "./useToolCardState";
 
 interface ToolCardProps {
@@ -26,12 +26,6 @@ interface ToolCardProps {
   readonly headerClassName?: string;
   readonly bodyClassName?: string;
 }
-
-const CHEVRON_ROTATION: Record<ToolCardState, string> = {
-  collapsed: "rotate-0",
-  preview: "rotate-90",
-  expanded: "rotate-180",
-};
 
 const OVERFLOW_THRESHOLD_PX = 24;
 
@@ -56,22 +50,16 @@ export function ToolCard(props: ToolCardProps) {
   const expandedBodyAvailable = expandedBody !== undefined && expandedBody !== null;
   const anyBody = bodyAvailable || expandedBodyAvailable;
 
-  const previewAvailable = bodyAvailable;
-
   const [bodyOverflows, setBodyOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
-  const hasExpandedState = expandedBodyAvailable || (bodyAvailable && bodyOverflows);
-
-  const { state, cycleNext } = useToolCardState({
+  const { state, toggleOpen, expandFully } = useToolCardState({
     defaultState: anyBody ? defaultState : "collapsed",
-    previewAvailable,
-    hasExpandedState,
+    bodyAvailable,
   });
 
   useLayoutEffect(() => {
-    if (!previewAvailable || expandedBodyAvailable) {
-      setBodyOverflows(false);
+    if (state !== "preview" || !bodyAvailable) {
       return;
     }
     const node = previewRef.current;
@@ -88,15 +76,16 @@ export function ToolCard(props: ToolCardProps) {
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [previewAvailable, expandedBodyAvailable, body, state]);
+  }, [state, bodyAvailable, body]);
 
-  const colors = TOOL_COLORS[tool];
-  const HeaderIcon = colors.icon;
+  const HeaderIcon = TOOL_ICONS[tool];
 
   const showChevron = !hideChevron && anyBody;
   const isOpen = state !== "collapsed";
-  const showPreview = state === "preview" && previewAvailable;
-  const showExpanded = state === "expanded" && (expandedBodyAvailable || previewAvailable);
+
+  const showPreview = state === "preview" && bodyAvailable;
+  const showExpanded = state === "expanded" && (expandedBodyAvailable || bodyAvailable);
+  const showFullCtaVisible = showPreview && (bodyOverflows || expandedBodyAvailable);
 
   return (
     <div
@@ -106,10 +95,10 @@ export function ToolCard(props: ToolCardProps) {
       <HeaderRow
         showChevron={showChevron}
         state={state}
-        onClick={showChevron ? cycleNext : undefined}
+        onClick={showChevron ? toggleOpen : undefined}
         {...(headerClassName !== undefined ? { headerClassName } : {})}
       >
-        <HeaderIcon className={cn("size-3.5 shrink-0", colors.headerIcon)} />
+        <HeaderIcon className="size-3.5 shrink-0 text-primary/60" />
         <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">{primary}</span>
         {meta}
         {isPendingApproval ? (
@@ -126,7 +115,7 @@ export function ToolCard(props: ToolCardProps) {
           <ChevronDownIcon
             className={cn(
               "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-200",
-              CHEVRON_ROTATION[state],
+              isOpen ? "rotate-0" : "-rotate-90",
             )}
           />
         )}
@@ -136,15 +125,15 @@ export function ToolCard(props: ToolCardProps) {
           <CollapsiblePanel>
             <div className={cn("border-t border-border/20", bodyClassName)}>
               {showPreview && bodyAvailable && (
-                <div
-                  ref={previewRef}
-                  className="relative overflow-hidden"
-                  style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
-                >
-                  {body}
-                  {bodyOverflows && (
-                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card/90 to-transparent" />
-                  )}
+                <div className="relative">
+                  <div
+                    ref={previewRef}
+                    className="overflow-hidden"
+                    style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
+                  >
+                    {body}
+                  </div>
+                  {showFullCtaVisible && <ShowFullButton onClick={expandFully} />}
                 </div>
               )}
               {showExpanded && (expandedBodyAvailable ? expandedBody : body)}
@@ -153,6 +142,36 @@ export function ToolCard(props: ToolCardProps) {
         </Collapsible>
       )}
     </div>
+  );
+}
+
+function ShowFullButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-scroll-anchor-ignore
+      onClick={onClick}
+      className={cn(
+        "group absolute inset-x-0 bottom-0 z-10 cursor-pointer",
+        "h-14 pb-2",
+        "flex items-end justify-center",
+        "bg-gradient-to-t from-card via-card/70 via-55% to-transparent",
+        "transition-[background-image] duration-200",
+        "hover:from-card hover:via-card hover:via-35%",
+      )}
+      aria-label="Show full content"
+    >
+      <span
+        className={cn(
+          "flex items-center gap-1 text-[10px] tracking-wide",
+          "text-muted-foreground/40 transition-colors duration-200",
+          "group-hover:text-muted-foreground/80",
+        )}
+      >
+        <ChevronDownIcon className="size-3 transition-transform duration-200 group-hover:translate-y-[1px]" />
+        Show full
+      </span>
+    </button>
   );
 }
 
