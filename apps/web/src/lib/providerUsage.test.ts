@@ -73,7 +73,7 @@ describe("providerUsage", () => {
     ]);
   });
 
-  it("marks current provider usage as rejected at 90 percent or higher", () => {
+  it("keeps very high provider usage in warning until the limit is effectively exhausted", () => {
     const snapshot = deriveLatestProviderUsageSnapshot([
       makeActivity("activity-1", {
         type: "rate_limit_event",
@@ -86,7 +86,52 @@ describe("providerUsage", () => {
       }),
     ]);
 
-    expect(snapshot?.status).toBe("rejected");
+    expect(snapshot?.status).toBe("warning");
+  });
+
+  it("uses Claude surpassedThreshold when utilization is omitted", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot([
+      makeActivity("activity-1", {
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed_warning",
+          resetsAt: 1776582000,
+          rateLimitType: "five_hour",
+          surpassedThreshold: 0.66,
+        },
+      }),
+    ]);
+
+    expect(snapshot?.status).toBe("ok");
+    expect(snapshot?.windows).toEqual([
+      {
+        label: "Session (5 hrs)",
+        usedPercent: 66,
+        resetsAt: 1776582000,
+      },
+    ]);
+  });
+
+  it("does not fabricate zero percent when Claude omits utilization", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot([
+      makeActivity("activity-1", {
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          resetsAt: 1776582000,
+          rateLimitType: "five_hour",
+        },
+      }),
+    ]);
+
+    expect(snapshot?.status).toBe("ok");
+    expect(snapshot?.windows).toEqual([
+      {
+        label: "Session (5 hrs)",
+        usedPercent: null,
+        resetsAt: 1776582000,
+      },
+    ]);
   });
 
   it("derives Codex primary and secondary rate-limit windows", () => {
