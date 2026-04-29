@@ -307,20 +307,116 @@ function asRuntimeItemId(value: string): RuntimeItemId {
   return RuntimeItemId.make(value);
 }
 
-function maxClaudeContextWindowFromModelUsage(
+/**
+ * Resolve the Claude context window for the *configured* (parent-agent) model
+ * from `result.modelUsage`.
+ *
+ * `result.modelUsage` is a `Record<modelName, ModelUsage>` that may include
+ * sub-agent models spawned via the Task tool. Picking `Math.max` over every
+ * entry — as the previous implementation did — produces a 1M `maxTokens`
+ * whenever any sub-agent uses a `[1m]`-context model, even though the user
+ * selected the 200k variant. (See anthropics/claude-code#35214.)
+ *
+ * Strategy:
+ *   1. Match the configured model id verbatim.
+ *   2. Match the canonical id (strip `[1m]` suffix).
+ *   3. Match the canonical id with the `[1m]` suffix added.
+ *   4. Fall back to the max value across the map (preserves previous
+ *      behaviour when we have no idea which entry is the parent's).
+ */
+function readClaudeMainModelContextWindow(
   modelUsage: Record<string, ModelUsage> | undefined,
+  configuredApiModelId: string | undefined,
 ): number | undefined {
   if (!modelUsage) return undefined;
 
-  let maxContextWindow: number | undefined;
-  for (const value of Object.values(modelUsage)) {
-    const contextWindow = value.contextWindow;
-    maxContextWindow = Math.max(maxContextWindow ?? 0, contextWindow);
+  const isPositive = (value: unknown): value is number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0;
+
+  if (configuredApiModelId) {
+    const exact = modelUsage[configuredApiModelId]?.contextWindow;
+    if (isPositive(exact)) return exact;
+
+    const baseId = configuredApiModelId.replace(/\[1m\]$/, "");
+    const baseMatch = modelUsage[baseId]?.contextWindow;
+    if (isPositive(baseMatch)) return baseMatch;
+
+    const withSuffix = `${baseId}[1m]`;
+    const suffixMatch = modelUsage[withSuffix]?.contextWindow;
+    if (isPositive(suffixMatch)) return suffixMatch;
   }
 
+  let maxContextWindow: number | undefined;
+  for (const value of Object.values(modelUsage)) {
+    if (isPositive(value.contextWindow)) {
+      maxContextWindow = Math.max(maxContextWindow ?? 0, value.contextWindow);
+    }
+  }
   return maxContextWindow;
 }
 
+/**
+ * Read the **last** sampling iteration from a `BetaUsage`-shaped value.
+ *
+ * Per Anthropic SDK docs (`BetaUsage.iterations`):
+ *
+ * > Per-iteration token usage breakdown. Each entry represents one sampling
+ * > iteration… Calculate the **true context window size** from the **last
+ * > iteration**.
+ *
+ * The cumulative `usage.input_tokens` / `cache_*` / `output_tokens` fields are
+ * summed across every iteration in the turn (and across server-side tool-use
+ * loops), so they are the wrong source for "current ring fill". The last
+ * iteration tells us what was actually on the wire for the most recent API
+ * call.
+ */
+function readLastClaudeIterationUsage(value: NonNullableUsage | undefined):
+  | {
+      readonly inputTokens: number;
+      readonly cacheCreationInputTokens: number;
+      readonly cacheReadInputTokens: number;
+      readonly outputTokens: number;
+      readonly contextSize: number;
+    }
+  | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const iterations = (value as { iterations?: unknown }).iterations;
+  if (!Array.isArray(iterations) || iterations.length === 0) return undefined;
+  const last = iterations[iterations.length - 1];
+  if (!last || typeof last !== "object") return undefined;
+  const record = last as Record<string, unknown>;
+
+  const finite = (raw: unknown): number =>
+    typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+
+  const inputTokens = finite(record.input_tokens);
+  const cacheCreationInputTokens = finite(record.cache_creation_input_tokens);
+  const cacheReadInputTokens = finite(record.cache_read_input_tokens);
+  const outputTokens = finite(record.output_tokens);
+  const contextSize = inputTokens + cacheCreationInputTokens + cacheReadInputTokens + outputTokens;
+  if (contextSize <= 0) return undefined;
+
+  return {
+    inputTokens,
+    cacheCreationInputTokens,
+    cacheReadInputTokens,
+    outputTokens,
+    contextSize,
+  };
+}
+
+/**
+ * Convert a Claude `BetaUsage`-shaped value (or the truncated
+ * `task_progress`/`task_notification` payload) into the canonical
+ * {@link ThreadTokenUsageSnapshot}.
+ *
+ * Token semantics (matching {@link normalizeCodexTokenUsage} in
+ * `CodexAdapter.ts`):
+ *   - `usedTokens`         → current API call's context size
+ *                           (last iteration when available)
+ *   - `totalProcessedTokens` → cumulative tokens across the turn
+ *   - `maxTokens`          → the *configured* model's context window
+ */
 function normalizeClaudeTokenUsage(
   value: NonNullableUsage | undefined,
   contextWindow?: number,
@@ -330,28 +426,29 @@ function normalizeClaudeTokenUsage(
   }
 
   const usage = value as Record<string, unknown>;
-  const inputTokens =
-    (typeof usage.input_tokens === "number" && Number.isFinite(usage.input_tokens)
-      ? usage.input_tokens
-      : 0) +
-    (typeof usage.cache_creation_input_tokens === "number" &&
-    Number.isFinite(usage.cache_creation_input_tokens)
-      ? usage.cache_creation_input_tokens
-      : 0) +
-    (typeof usage.cache_read_input_tokens === "number" &&
-    Number.isFinite(usage.cache_read_input_tokens)
-      ? usage.cache_read_input_tokens
-      : 0);
-  const outputTokens =
-    typeof usage.output_tokens === "number" && Number.isFinite(usage.output_tokens)
-      ? usage.output_tokens
-      : 0;
-  const derivedTotalProcessedTokens = inputTokens + outputTokens;
-  const totalProcessedTokens =
+  const finite = (raw: unknown): number =>
+    typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+
+  const accumulatedInputTokens =
+    finite(usage.input_tokens) +
+    finite(usage.cache_creation_input_tokens) +
+    finite(usage.cache_read_input_tokens);
+  const accumulatedOutputTokens = finite(usage.output_tokens);
+  const derivedAccumulatedTotal = accumulatedInputTokens + accumulatedOutputTokens;
+  const accumulatedTotalProcessedTokens =
     (typeof usage.total_tokens === "number" && Number.isFinite(usage.total_tokens)
       ? usage.total_tokens
-      : undefined) ?? (derivedTotalProcessedTokens > 0 ? derivedTotalProcessedTokens : undefined);
-  if (totalProcessedTokens === undefined || totalProcessedTokens <= 0) {
+      : undefined) ?? (derivedAccumulatedTotal > 0 ? derivedAccumulatedTotal : undefined);
+
+  const lastIteration = readLastClaudeIterationUsage(value);
+
+  // `usedTokens` represents the parent agent's *current* context fill. The
+  // canonical source is `iterations[last]` per Anthropic SDK docs; if absent
+  // (older SDK builds, `task_progress` payloads with only `total_tokens`,
+  // etc.) we fall back to the cumulative total — which is a strict upper
+  // bound capped by `maxTokens` below.
+  const rawUsedTokens = lastIteration?.contextSize ?? accumulatedTotalProcessedTokens;
+  if (rawUsedTokens === undefined || rawUsedTokens <= 0) {
     return undefined;
   }
 
@@ -359,15 +456,26 @@ function normalizeClaudeTokenUsage(
     typeof contextWindow === "number" && Number.isFinite(contextWindow) && contextWindow > 0
       ? contextWindow
       : undefined;
-  const usedTokens =
-    maxTokens !== undefined ? Math.min(totalProcessedTokens, maxTokens) : totalProcessedTokens;
+  const usedTokens = maxTokens !== undefined ? Math.min(rawUsedTokens, maxTokens) : rawUsedTokens;
 
   return {
     usedTokens,
     lastUsedTokens: usedTokens,
-    ...(totalProcessedTokens > usedTokens ? { totalProcessedTokens } : {}),
-    ...(inputTokens > 0 ? { inputTokens } : {}),
-    ...(outputTokens > 0 ? { outputTokens } : {}),
+    ...(accumulatedTotalProcessedTokens !== undefined &&
+    accumulatedTotalProcessedTokens > usedTokens
+      ? { totalProcessedTokens: accumulatedTotalProcessedTokens }
+      : {}),
+    ...(lastIteration && lastIteration.inputTokens > 0
+      ? { lastInputTokens: lastIteration.inputTokens }
+      : {}),
+    ...(lastIteration && lastIteration.cacheReadInputTokens > 0
+      ? { lastCachedInputTokens: lastIteration.cacheReadInputTokens }
+      : {}),
+    ...(lastIteration && lastIteration.outputTokens > 0
+      ? { lastOutputTokens: lastIteration.outputTokens }
+      : {}),
+    ...(accumulatedInputTokens > 0 ? { inputTokens: accumulatedInputTokens } : {}),
+    ...(accumulatedOutputTokens > 0 ? { outputTokens: accumulatedOutputTokens } : {}),
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(typeof usage.tool_uses === "number" && Number.isFinite(usage.tool_uses)
       ? { toolUses: usage.tool_uses }
@@ -1534,7 +1642,10 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     errorMessage?: string,
     result?: SDKResultMessage,
   ) {
-    const resultContextWindow = maxClaudeContextWindowFromModelUsage(result?.modelUsage);
+    const resultContextWindow = readClaudeMainModelContextWindow(
+      result?.modelUsage,
+      context.currentApiModelId,
+    );
     if (resultContextWindow !== undefined) {
       context.lastKnownContextWindow = resultContextWindow;
     }
@@ -2178,6 +2289,38 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (context.turnState) {
       context.turnState.items.push(message.message);
       yield* backfillAssistantTextBlocksFromSnapshot(context, message);
+    }
+
+    // Live ring updates for the parent agent. Sub-agent assistant messages
+    // (`parent_tool_use_id !== null`) carry their own context that is
+    // distinct from the parent's, so they must not clobber the parent ring.
+    // Each parent assistant message corresponds to one Anthropic API call;
+    // its `BetaUsage.iterations` (when present) gives the canonical
+    // current-context size — see {@link readLastClaudeIterationUsage}.
+    if (message.parent_tool_use_id == null) {
+      const messageUsage = (message.message as { usage?: unknown } | undefined)?.usage;
+      if (messageUsage && typeof messageUsage === "object") {
+        const normalizedUsage = normalizeClaudeTokenUsage(
+          messageUsage as NonNullableUsage,
+          context.lastKnownContextWindow,
+        );
+        if (normalizedUsage) {
+          context.lastKnownTokenUsage = normalizedUsage;
+          const usageStamp = yield* makeEventStamp();
+          yield* offerRuntimeEvent({
+            type: "thread.token-usage.updated",
+            eventId: usageStamp.eventId,
+            provider: PROVIDER,
+            createdAt: usageStamp.createdAt,
+            threadId: context.session.threadId,
+            ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+            payload: {
+              usage: normalizedUsage,
+            },
+            providerRefs: nativeProviderRefs(context),
+          });
+        }
+      }
     }
 
     context.lastAssistantUuid = message.uuid;

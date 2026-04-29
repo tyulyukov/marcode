@@ -1636,6 +1636,373 @@ describe("ClaudeAdapterLive", () => {
   });
 
   it.effect(
+    "uses the configured model's contextWindow when modelUsage also lists a 1M-context subagent model",
+    () => {
+      // Regression for the "1m / 1m 100%" ring: when the parent agent uses a
+      // 200k-context model but a Task-tool subagent runs a `[1m]` model, the
+      // SDK's `result.modelUsage` lists *both*. Previous behaviour picked
+      // `Math.max` over every entry, falsely setting the ring's denominator
+      // to 1 000 000. The configured model's contextWindow must win.
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: "claudeAgent",
+          modelSelection: {
+            provider: "claudeAgent",
+            model: "claude-opus-4-6",
+          },
+          runtimeMode: "full-access",
+        });
+
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "hello",
+          modelSelection: {
+            provider: "claudeAgent",
+            model: "claude-opus-4-6",
+          },
+          attachments: [],
+        });
+
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          duration_ms: 1234,
+          duration_api_ms: 1200,
+          num_turns: 1,
+          result: "done",
+          stop_reason: "end_turn",
+          session_id: "sdk-session-result-multi-model",
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 2715,
+            cache_read_input_tokens: 21144,
+            output_tokens: 679,
+          },
+          modelUsage: {
+            "claude-opus-4-6": {
+              contextWindow: 200000,
+              maxOutputTokens: 64000,
+            },
+            // Subagent ran with the 1M-context variant — this entry must NOT
+            // dominate the parent's ring.
+            "claude-opus-4-6[1m]": {
+              contextWindow: 1000000,
+              maxOutputTokens: 64000,
+            },
+          },
+        } as unknown as SDKMessage);
+        harness.query.finish();
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        const usageEvent = runtimeEvents.find(
+          (event) => event.type === "thread.token-usage.updated",
+        );
+        assert.equal(usageEvent?.type, "thread.token-usage.updated");
+        if (usageEvent?.type === "thread.token-usage.updated") {
+          assert.equal(usageEvent.payload.usage.maxTokens, 200000);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("uses the canonical model match when the configured id carries the [1m] suffix", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        modelSelection: createModelSelection("claudeAgent", "claude-opus-4-6", [
+          { id: "contextWindow", value: "1m" },
+        ]),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        modelSelection: createModelSelection("claudeAgent", "claude-opus-4-6", [
+          { id: "contextWindow", value: "1m" },
+        ]),
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 1234,
+        duration_api_ms: 1200,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-result-1m-suffix",
+        usage: {
+          total_tokens: 800000,
+        },
+        modelUsage: {
+          // SDK reports back the canonical id without the `[1m]` suffix.
+          "claude-opus-4-6": {
+            contextWindow: 1000000,
+            maxOutputTokens: 64000,
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
+      assert.equal(usageEvent?.type, "thread.token-usage.updated");
+      if (usageEvent?.type === "thread.token-usage.updated") {
+        assert.equal(usageEvent.payload.usage.maxTokens, 1000000);
+        assert.equal(usageEvent.payload.usage.usedTokens, 800000);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect(
+    "emits a live token usage update from a parent assistant message's BetaUsage.iterations",
+    () => {
+      // Each parent-agent assistant message corresponds to one Anthropic API
+      // call; its `message.usage.iterations[last]` is the canonical current
+      // context size. We use this to update the ring live during a turn,
+      // before the final `result` arrives.
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 6).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: "claudeAgent",
+          runtimeMode: "full-access",
+        });
+
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "hello",
+          attachments: [],
+        });
+
+        harness.query.emit({
+          type: "assistant",
+          session_id: "sdk-session-assistant-iter",
+          uuid: "assistant-iter",
+          parent_tool_use_id: null,
+          message: {
+            id: "msg-iter",
+            content: [],
+            usage: {
+              // Cumulative across both iterations.
+              input_tokens: 4,
+              cache_creation_input_tokens: 5000,
+              cache_read_input_tokens: 95000,
+              output_tokens: 4000,
+              iterations: [
+                {
+                  type: "message",
+                  input_tokens: 2,
+                  cache_creation_input_tokens: 5000,
+                  cache_read_input_tokens: 30000,
+                  output_tokens: 2000,
+                },
+                {
+                  type: "message",
+                  input_tokens: 2,
+                  cache_creation_input_tokens: 0,
+                  cache_read_input_tokens: 65000,
+                  output_tokens: 2000,
+                },
+              ],
+            },
+          },
+        } as unknown as SDKMessage);
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        const usageEvent = runtimeEvents.find(
+          (event) => event.type === "thread.token-usage.updated",
+        );
+        assert.equal(usageEvent?.type, "thread.token-usage.updated");
+        if (usageEvent?.type === "thread.token-usage.updated") {
+          // Last iteration: 2 + 0 + 65000 + 2000 = 67002.
+          assert.equal(usageEvent.payload.usage.usedTokens, 67002);
+          assert.equal(usageEvent.payload.usage.lastUsedTokens, 67002);
+          assert.equal(usageEvent.payload.usage.lastInputTokens, 2);
+          assert.equal(usageEvent.payload.usage.lastCachedInputTokens, 65000);
+          assert.equal(usageEvent.payload.usage.lastOutputTokens, 2000);
+          // Cumulative: 4 + 5000 + 95000 + 4000 = 104004.
+          assert.equal(usageEvent.payload.usage.totalProcessedTokens, 104004);
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("skips token usage updates from sub-agent assistant messages", () => {
+    // Sub-agent assistant messages (parent_tool_use_id !== null) carry the
+    // sub-agent's own context — they must NOT update the parent ring.
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 4).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "full-access",
+      });
+
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-subagent-msg",
+        uuid: "assistant-subagent",
+        parent_tool_use_id: "tool-use-launching-subagent",
+        message: {
+          id: "msg-subagent",
+          content: [],
+          usage: {
+            input_tokens: 10,
+            cache_read_input_tokens: 80000,
+            output_tokens: 1000,
+          },
+        },
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
+      assert.equal(usageEvent, undefined);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("derives current context size from BetaUsage iterations when present", () => {
+    // The Anthropic SDK's `BetaUsage.iterations` is the canonical source for
+    // "true context window size" (per their type docs). The cumulative
+    // `usage.input_tokens + cache_* + output_tokens` sums every sampling
+    // iteration in the turn — useless for the ring. The last iteration is
+    // the most recent API call's actual context fill.
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 1234,
+        duration_api_ms: 1200,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-result-iterations",
+        usage: {
+          // Cumulative across all iterations — these would mistakenly
+          // appear as "current context" without the iterations fix.
+          input_tokens: 4,
+          cache_creation_input_tokens: 5000,
+          cache_read_input_tokens: 180000,
+          output_tokens: 5000,
+          iterations: [
+            {
+              type: "message",
+              input_tokens: 2,
+              cache_creation_input_tokens: 5000,
+              cache_read_input_tokens: 30000,
+              output_tokens: 2500,
+            },
+            {
+              // Last iteration → this is the parent's actual current
+              // context size for the next call.
+              type: "message",
+              input_tokens: 2,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 60000,
+              output_tokens: 2500,
+            },
+          ],
+        },
+        modelUsage: {
+          "claude-opus-4-6": {
+            contextWindow: 200000,
+            maxOutputTokens: 64000,
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.finish();
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
+      assert.equal(usageEvent?.type, "thread.token-usage.updated");
+      if (usageEvent?.type === "thread.token-usage.updated") {
+        // Last iteration: 2 + 0 + 60000 + 2500 = 62502 (NOT 190004 from
+        // the cumulative sums).
+        assert.equal(usageEvent.payload.usage.usedTokens, 62502);
+        assert.equal(usageEvent.payload.usage.lastUsedTokens, 62502);
+        assert.equal(usageEvent.payload.usage.lastInputTokens, 2);
+        assert.equal(usageEvent.payload.usage.lastCachedInputTokens, 60000);
+        assert.equal(usageEvent.payload.usage.lastOutputTokens, 2500);
+        assert.equal(usageEvent.payload.usage.maxTokens, 200000);
+        // The cumulative tally is preserved as totalProcessedTokens.
+        assert.equal(usageEvent.payload.usage.totalProcessedTokens, 190004);
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect(
     "preserves oversized Claude result totals after task progress snapshots are recorded",
     () => {
       const harness = makeHarness();
