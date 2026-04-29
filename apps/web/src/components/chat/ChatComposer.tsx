@@ -296,9 +296,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 }) {
   return (
     <>
-      {props.activeProviderUsage ? (
-        <ProviderUsageMeter usage={props.activeProviderUsage} />
-      ) : null}
+      {props.activeProviderUsage ? <ProviderUsageMeter usage={props.activeProviderUsage} /> : null}
       {props.activeContextWindow ? <ContextWindowMeter usage={props.activeContextWindow} /> : null}
       {props.isPreparingWorktree ? (
         <span className="text-muted-foreground/70 text-xs">Preparing worktree...</span>

@@ -1,4 +1,4 @@
-import type { OrchestrationThreadActivity } from "@t3tools/contracts";
+import type { OrchestrationThreadActivity } from "@marcode/contracts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -73,11 +73,9 @@ function normalizeClaudeRateLimitEvent(
   }
 
   // The SDK may use camelCase or snake_case depending on version.
-  const rateLimitType =
-    asString(info.rateLimitType) ?? asString(info.rate_limit_type);
+  const rateLimitType = asString(info.rateLimitType) ?? asString(info.rate_limit_type);
   const statusRaw = asString(info.status);
-  const resetsAt =
-    asFiniteNumber(info.resetsAt) ?? asFiniteNumber(info.resets_at);
+  const resetsAt = asFiniteNumber(info.resetsAt) ?? asFiniteNumber(info.resets_at);
 
   // utilization (0-1) may or may not be present.
   const utilization = asFiniteNumber(info.utilization);
@@ -97,11 +95,7 @@ function normalizeClaudeRateLimitEvent(
     // No utilization, but we still know which window and its reset time.
     // Show a placeholder — the status field tells us whether we're OK or not.
     const estimatedPercent =
-      statusRaw === "rejected"
-        ? 100
-        : statusRaw === "allowed_warning"
-          ? 80
-          : 0;
+      statusRaw === "rejected" ? 100 : statusRaw === "allowed_warning" ? 80 : 0;
     windows.push({
       label,
       usedPercent: estimatedPercent,
@@ -114,11 +108,7 @@ function normalizeClaudeRateLimitEvent(
   }
 
   const status: ProviderUsageSnapshot["status"] =
-    statusRaw === "rejected"
-      ? "rejected"
-      : statusRaw === "allowed_warning"
-        ? "warning"
-        : "ok";
+    statusRaw === "rejected" ? "rejected" : statusRaw === "allowed_warning" ? "warning" : "ok";
 
   return {
     providerLabel: "Claude",

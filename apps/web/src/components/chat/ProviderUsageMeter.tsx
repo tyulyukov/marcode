@@ -43,12 +43,7 @@ function BarGraphIcon(props: { status: "ok" | "warning" | "rejected" }) {
         : "var(--color-muted-foreground)";
 
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      className="h-4 w-4"
-      aria-hidden="true"
-    >
+    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
       <rect x="4" y="13" width="4" height="7" rx="1" fill={barColor} opacity={0.6} />
       <rect x="10" y="8" width="4" height="12" rx="1" fill={barColor} opacity={0.8} />
       <rect x="16" y="4" width="4" height="16" rx="1" fill={barColor} />
