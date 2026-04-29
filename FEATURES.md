@@ -11,6 +11,7 @@ Features implemented exclusively in MarCode that do **not** exist upstream. This
 - [Rich Tool Display Cards](#rich-tool-display-cards)
 - [Git Integration (Multi-Host)](#git-integration-multi-host)
 - [Jira Cloud Integration](#jira-cloud-integration)
+- [Jira Ticket Engraving in Branches / Commits / MRs](#jira-ticket-engraving-in-branches--commits--mrs)
 - [Theme System](#theme-system)
 - [Notifications](#notifications)
 - [Composer Enhancements](#composer-enhancements)
@@ -161,6 +162,61 @@ When merging upstream, **reject** any removal of:
 - Pasted Jira URL auto-detection (`*.atlassian.net/browse/PROJ-123`)
 - Jira task context appended as `<jira_context>` XML blocks
 - Text attachments inline, images as `ChatImageAttachment`
+
+---
+
+## Jira Ticket Engraving in Branches / Commits / MRs
+
+**Files:**
+
+- `apps/server/src/git/Prompts.ts` — `buildClassifyImplementingJiraTicketsPrompt`, `COMMIT_JIRA_CONTEXT_RULE`, `PR_TITLE_REQUIRED_RULE`, `PR_BODY_RULE`, `BRANCH_RULE`, etc.
+- `apps/server/src/git/Services/TextGeneration.ts` — `classifyImplementingJiraTickets` method on `TextGenerationShape`; `jiraTickets?` on commit/PR/branch/title generation inputs
+- `apps/server/src/git/Layers/{Claude,Codex,Cursor,OpenCode}TextGeneration.ts` — `classifyImplementingJiraTickets` implementation per provider; `filterToAllowedKeys` hallucination guard
+- `apps/server/src/git/Layers/RoutingTextGeneration.ts` — fallback routing for the classifier alongside the existing `withFallback` pattern
+- `apps/server/src/git/Utils.ts` — `filterToAllowedKeys` utility
+- `apps/server/src/git/Layers/GitManager.ts` — `runStackedAction` resolves `jiraTickets` once via `JiraContextCollector` and threads them into `runFeatureBranchStep` / `runCommitStep` / `runPrStep`
+- `apps/server/src/jira/Services/JiraContextCollector.ts` + `Layers/JiraContextCollector.ts` — Effect service that walks `thread.messages`, extracts `<jira_context>` blocks, then **filters by `thread.implementingJiraTicketKeys`** so only classified tickets reach the auxiliary generators. Falls back to all mentions when classification hasn't run yet.
+- `apps/server/src/jira/threadJiraContext.ts` — `collectThreadJiraContexts` with token budgets + dedup
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` — `maybeClassifyAndPersistImplementingJiraTickets` runs at first turn before branch-rename / title-gen, persists result via `thread.meta.update`
+- `packages/shared/src/jiraContext.ts` — shared `JiraTaskDraft`, `JiraTicketContext`, `extractTrailingJiraContexts`, `parseJiraContextEntry`, `jiraIssueKeysFromContexts` (re-exported by `apps/web/src/lib/jiraContext.ts`)
+- `packages/contracts/src/git.ts` — `threadId?: ThreadId` on `GitRunStackedActionInput`
+- `packages/contracts/src/orchestration.ts` — `implementingJiraTicketKeys: Schema.Array(JiraIssueKey)` on `OrchestrationThread` + `OrchestrationThreadShell`; same field optional on `ThreadMetaUpdateCommand` / `ThreadMetaUpdatedPayload`
+- `apps/server/src/orchestration/{decider,projector}.ts` + `Layers/{ProjectionPipeline,ProjectionSnapshotQuery}.ts` — projection plumbing for the new field
+- `apps/server/src/persistence/Services/ProjectionThreads.ts` + `Layers/ProjectionThreads.ts` — `implementingJiraTicketKeys` row column + JSON encoding
+- `apps/server/src/persistence/Migrations/031_ProjectionThreadsImplementingJiraTicketKeys.ts` + `Migrations.ts` — adds `implementing_jira_ticket_keys_json TEXT NOT NULL DEFAULT '[]'` to `projection_threads`
+- `apps/web/src/types.ts`, `apps/web/src/store.ts` — `Thread.implementingJiraTicketKeys`, `ThreadShell.implementingJiraTicketKeys` mapped through projection + meta-update event reducer
+- `apps/web/src/components/GitActionsJiraChips.tsx` — chip beside the git-actions group reads `thread.implementingJiraTicketKeys`; tooltip explains the classification semantics
+- `apps/web/src/components/GitActionsControl.tsx` — passes `activeServerThread?.implementingJiraTicketKeys` to the chip; passes `activeThreadRef.threadId` on `runStackedAction` mutation
+- `apps/web/src/lib/gitReactQuery.ts` — `gitRunStackedActionMutationOptions` accepts and forwards `threadId`
+
+For enterprise users who live in Jira + GitLab/GitHub. The flow:
+
+1. User `@jira:`-mentions tickets in any user message. Composer serializes them into a trailing `<jira_context>...</jira_context>` block per message (existing infra).
+2. **First-turn classifier** runs on the server via the configured text-generation model. Input: the user's message text + every mentioned ticket. Output: the subset of ticket keys the user is **actively implementing** (vs. mentioned for context / reference / pattern-matching). Even a single mentioned ticket goes through the classifier — a lone reference ticket (e.g. "fix this the same way we fixed `@jira:OTHER-99`") must not leak into the branch/commit/PR.
+3. Result is persisted as `thread.implementingJiraTicketKeys` via the existing `thread.meta-updated` event path. Survives reconnects, server restarts, and app reopens.
+4. **Branch:** the worktree-rename produces `marcode/PROJECT-111-<short-name>` (or `marcode/PROJECT-111-PROJECT-222-<short-name>` for multi-ticket implementations). Commit-time feature-branch flow wraps to `feature/PROJECT-111-…`.
+5. **Commit messages:** Jira tickets are passed to the prompt as **CONTEXT ONLY**. The model uses ticket descriptions to inform the body's "why" but is explicitly forbidden from including the ticket key in the subject or body — no `Refs:` trailer, no `[KEY]` prefix, no parenthesized suffix. Commit messages read naturally on their own.
+6. **PR/MR titles:** the implemented ticket key is **mandatory and visible**. The model picks placement (bracketed prefix, parenthesized suffix, or interpolated scope) — non-negotiable that the key appears.
+7. **PR/MR bodies:** Jira description informs `## Summary`'s "why". No `## Tickets` sidecar section, no `Refs:` trailer — the title already carries the key.
+8. **UI chip** (`GitActionsJiraChips`) sits beside the Commit / Push / MR action button and shows the classified implementing keys (primary + `+N` for additional tickets, hover popover lists all). Reads from `thread.implementingJiraTicketKeys` directly — server is the source of truth, web is read-only feedback.
+
+### Trust boundary (Critical)
+
+The contract change is **only `threadId?: ThreadId`** on `GitRunStackedActionInput`. The client never ships ticket descriptions back to the server. The server re-derives Jira context from stored message text via `JiraContextCollector` and applies the classified-keys filter. Avoids prompt-injection vector and parser drift.
+
+When merging upstream, **reject** any change that:
+
+- Adds a `jiraTickets[]` payload field to `GitRunStackedActionInput`.
+- Drops the `threadId` field or stops the web from passing it.
+- Inlines Jira context parsing into web — keep it in `@marcode/shared/jiraContext` so server + web stay aligned.
+- Removes the `withDecodingDefault([])` on `OrchestrationThread.implementingJiraTicketKeys` / `OrchestrationThreadShell.implementingJiraTicketKeys` (breaks decoding of pre-feature DB rows).
+- Drops migration `031_ProjectionThreadsImplementingJiraTicketKeys` from `Migrations.ts`.
+
+### Resilience
+
+`JiraContextCollector` wraps the read pipeline in `Effect.catchCause` — any failure (read-model miss, parse error, OAuth-expired Jira upstream) degrades silently to `[]`. The classifier itself is wrapped the same way and falls back to `mentionedTickets` (no filtering) when classification fails. Commit/PR actions are never blocked by the Jira layer.
+
+The classifier prompt defaults to **excluding** ambiguous tickets — better to omit a key from artifacts than engrave a reference ticket the user never intended to implement. The model output is filtered through `filterToAllowedKeys` so the model can't invent a key.
 
 ---
 
@@ -316,6 +372,7 @@ After any upstream merge, verify each feature still works:
 - [ ] All rich tool display cards
 - [ ] GitLab MR support + dynamic PR/MR labels
 - [ ] Jira OAuth + board selection + task chips
+- [ ] Jira ticket engraving — first-turn classifier persists `implementingJiraTicketKeys`; branch/PR title carry the key; commit messages stay clean (no `Refs:` trailer, no `[KEY]` prefix); chip beside git-actions reads `thread.implementingJiraTicketKeys`; migration `031` adds the column; `@marcode/shared/jiraContext` hosts the shared parser
 - [ ] All 24+ themes
 - [ ] Turn notifications with sound
 - [ ] Directory picker popover
