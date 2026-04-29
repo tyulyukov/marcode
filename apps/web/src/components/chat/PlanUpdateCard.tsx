@@ -33,16 +33,58 @@ function stepStatusIcon(status: StepStatus) {
   );
 }
 
+function DeltaSection(props: {
+  label: string;
+  status: StepStatus;
+  steps: ReadonlyArray<{ step: string }>;
+}) {
+  if (props.steps.length === 0) return null;
+  return (
+    <div>
+      <p className="px-3 pt-2 pb-1 text-[10px] tracking-[0.16em] text-muted-foreground/45 uppercase">
+        {props.label}
+      </p>
+      <div className="space-y-0.5">
+        {props.steps.map((entry, index) => (
+          <div key={`${index}:${entry.step}`} className="flex items-start gap-2 px-3 py-1">
+            {stepStatusIcon(props.status)}
+            <p
+              className={cn(
+                "text-[12px] leading-snug",
+                props.status === "completed"
+                  ? "text-muted-foreground/55 line-through decoration-muted-foreground/25"
+                  : props.status === "inProgress"
+                    ? "text-foreground/90"
+                    : "text-muted-foreground/70",
+              )}
+            >
+              {entry.step}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export const PlanUpdateCard = memo(function PlanUpdateCard(props: PlanUpdateCardProps) {
   const { entry, isLatestTurn = false } = props;
-  const steps = entry.planSteps ?? [];
+  const justCompleted = entry.planJustCompletedSteps ?? [];
+  const inProgress = entry.planInProgressSteps ?? [];
+  const added = entry.planNewSteps ?? [];
 
-  if (steps.length === 0) return null;
+  if (justCompleted.length === 0 && inProgress.length === 0 && added.length === 0) {
+    return null;
+  }
 
-  const completedCount = steps.filter((step) => step.status === "completed").length;
-  const total = steps.length;
-  const allPending = steps.every((step) => step.status === "pending");
-  const primaryLabel = allPending ? "Plan updated" : "Plan progress";
+  const total = entry.planTotalCount ?? entry.planSteps?.length ?? 0;
+  const completedCount =
+    entry.planCompletedCount ??
+    entry.planSteps?.filter((step) => step.status === "completed").length ??
+    0;
+  const isFirstUpdate = total > 0 && added.length === total;
+  const primaryLabel = isFirstUpdate ? "Plan started" : "Plan updated";
+  const addedLabel = isFirstUpdate ? "NEW PLAN" : "JUST ADDED";
 
   const meta = (
     <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/45">
@@ -53,32 +95,13 @@ export const PlanUpdateCard = memo(function PlanUpdateCard(props: PlanUpdateCard
   const body = (
     <div className="px-1 py-1">
       {entry.planExplanation ? (
-        <p className="px-3 pt-1 pb-2 text-[12px] leading-relaxed text-muted-foreground/75">
+        <p className="px-3 pt-2 text-[12px] leading-relaxed text-muted-foreground/80">
           {entry.planExplanation}
         </p>
       ) : null}
-      <div className="space-y-0.5">
-        {steps.map((step, index) => (
-          <div
-            key={`${index}:${step.status}:${step.step}`}
-            className="flex items-start gap-2 px-3 py-1.5"
-          >
-            {stepStatusIcon(step.status)}
-            <p
-              className={cn(
-                "text-[12px] leading-snug",
-                step.status === "completed"
-                  ? "text-muted-foreground/55 line-through decoration-muted-foreground/25"
-                  : step.status === "inProgress"
-                    ? "text-foreground/90"
-                    : "text-muted-foreground/70",
-              )}
-            >
-              {step.step}
-            </p>
-          </div>
-        ))}
-      </div>
+      <DeltaSection label="JUST COMPLETED" status="completed" steps={justCompleted} />
+      <DeltaSection label="NOW WORKING ON" status="inProgress" steps={inProgress} />
+      <DeltaSection label={addedLabel} status="pending" steps={added} />
     </div>
   );
 

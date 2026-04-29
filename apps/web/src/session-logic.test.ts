@@ -2409,6 +2409,111 @@ describe("deriveWorkLogEntries plan handling", () => {
     expect(entries[0]?.planExplanation).toBe("Refining approach");
   });
 
+  it("treats the first plan update as fully new", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "plan-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        payload: {
+          plan: [
+            { step: "Inspect code", status: "pending" },
+            { step: "Implement card", status: "inProgress" },
+            { step: "Add tests", status: "pending" },
+          ],
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, TurnId.make("turn-1"));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.planNewSteps?.length).toBe(3);
+    expect(entries[0]?.planTotalCount).toBe(3);
+    expect(entries[0]?.planJustCompletedSteps).toEqual([]);
+    expect(entries[0]?.planInProgressSteps).toEqual([{ step: "Implement card" }]);
+  });
+
+  it("computes deltas against the chronologically previous plan update", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "plan-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        sequence: 1,
+        payload: {
+          plan: [
+            { step: "Inspect code", status: "inProgress" },
+            { step: "Implement card", status: "pending" },
+          ],
+        },
+      }),
+      makeActivity({
+        id: "plan-2",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        sequence: 2,
+        payload: {
+          plan: [
+            { step: "Inspect code", status: "completed" },
+            { step: "Implement card", status: "inProgress" },
+          ],
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, TurnId.make("turn-1"));
+    const second = entries.find((entry) => entry.id === "plan-2");
+    expect(second?.planJustCompletedSteps).toEqual([{ step: "Inspect code" }]);
+    expect(second?.planInProgressSteps).toEqual([{ step: "Implement card" }]);
+    expect(second?.planNewSteps).toEqual([]);
+    expect(second?.planCompletedCount).toBe(1);
+    expect(second?.planTotalCount).toBe(2);
+  });
+
+  it("emits empty deltas when the plan payload is identical to the previous update", () => {
+    const plan = [
+      { step: "Inspect code", status: "completed" as const },
+      { step: "Implement card", status: "inProgress" as const },
+    ];
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "plan-1",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        sequence: 1,
+        payload: { plan },
+      }),
+      makeActivity({
+        id: "plan-2",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        tone: "info",
+        turnId: "turn-1",
+        sequence: 2,
+        payload: { plan },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, TurnId.make("turn-1"));
+    const second = entries.find((entry) => entry.id === "plan-2");
+    expect(second?.planJustCompletedSteps).toEqual([]);
+    expect(second?.planInProgressSteps).toEqual([{ step: "Implement card" }]);
+    expect(second?.planNewSteps).toEqual([]);
+  });
+
   it("leaves planSteps undefined when the plan payload is empty", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({

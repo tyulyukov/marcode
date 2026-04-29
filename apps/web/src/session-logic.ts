@@ -99,6 +99,11 @@ export interface WorkLogEntry {
     status: "pending" | "inProgress" | "completed";
   }>;
   planExplanation?: string | null;
+  planJustCompletedSteps?: ReadonlyArray<{ step: string }>;
+  planInProgressSteps?: ReadonlyArray<{ step: string }>;
+  planNewSteps?: ReadonlyArray<{ step: string }>;
+  planTotalCount?: number;
+  planCompletedCount?: number;
 }
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -404,6 +409,46 @@ export function derivePendingUserInputs(
 
 type PlanStep = { step: string; status: "pending" | "inProgress" | "completed" };
 
+function computePlanDelta(
+  current: ReadonlyArray<PlanStep>,
+  previous: ReadonlyArray<PlanStep> | null,
+): {
+  justCompleted: ReadonlyArray<{ step: string }>;
+  inProgress: ReadonlyArray<{ step: string }>;
+  added: ReadonlyArray<{ step: string }>;
+} {
+  if (!previous) {
+    return {
+      justCompleted: [],
+      inProgress: current
+        .filter((step) => step.status === "inProgress")
+        .map((step) => ({ step: step.step })),
+      added: current.map((step) => ({ step: step.step })),
+    };
+  }
+  const previousByText = new Map<string, PlanStep["status"]>();
+  for (const step of previous) {
+    previousByText.set(step.step.trim(), step.status);
+  }
+  const justCompleted: { step: string }[] = [];
+  const inProgress: { step: string }[] = [];
+  const added: { step: string }[] = [];
+  for (const step of current) {
+    const key = step.step.trim();
+    const previousStatus = previousByText.get(key);
+    if (previousStatus === undefined) {
+      added.push({ step: step.step });
+    }
+    if (step.status === "completed" && previousStatus !== "completed") {
+      justCompleted.push({ step: step.step });
+    }
+    if (step.status === "inProgress") {
+      inProgress.push({ step: step.step });
+    }
+  }
+  return { justCompleted, inProgress, added };
+}
+
 function extractPlanStepsFromPayload(payload: Record<string, unknown> | null): PlanStep[] {
   const rawPlan = payload?.plan;
   if (!Array.isArray(rawPlan)) {
@@ -528,6 +573,21 @@ export function deriveWorkLogEntries(
 ): WorkLogEntry[] {
   const isSessionRunning = options?.isSessionRunning ?? false;
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
+
+  const previousPlanStepsByActivityId = new Map<string, PlanStep[] | null>();
+  let runningPreviousPlanSteps: PlanStep[] | null = null;
+  for (const activity of ordered) {
+    if (activity.kind !== "turn.plan.updated") continue;
+    const planPayload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const currentSteps = extractPlanStepsFromPayload(planPayload);
+    previousPlanStepsByActivityId.set(activity.id, runningPreviousPlanSteps);
+    if (currentSteps.length > 0) {
+      runningPreviousPlanSteps = currentSteps;
+    }
+  }
 
   const collabToolDataByItemId = new Map<string, SubagentCollabToolData>();
   const collabToolDataUnkeyed: SubagentCollabToolData[] = [];
@@ -682,7 +742,11 @@ export function deriveWorkLogEntries(
       continue;
     }
     if (activity.kind === "tool.progress") continue;
-    entries.push(toDerivedWorkLogEntry(activity));
+    const previousPlanSteps =
+      activity.kind === "turn.plan.updated"
+        ? (previousPlanStepsByActivityId.get(activity.id) ?? null)
+        : null;
+    entries.push(toDerivedWorkLogEntry(activity, previousPlanSteps));
   }
 
   return deduplicateToolLifecycleEntries(collapseDerivedWorkLogEntries(entries)).map(
@@ -977,7 +1041,10 @@ function buildAgentGroupEntry(
   };
 }
 
-function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
+function toDerivedWorkLogEntry(
+  activity: OrchestrationThreadActivity,
+  previousPlanSteps: PlanStep[] | null = null,
+): DerivedWorkLogEntry {
   const payload =
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
@@ -1077,6 +1144,12 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       if (payload && "explanation" in payload) {
         entry.planExplanation = payload.explanation as string | null;
       }
+      const delta = computePlanDelta(planSteps, previousPlanSteps);
+      entry.planJustCompletedSteps = delta.justCompleted;
+      entry.planInProgressSteps = delta.inProgress;
+      entry.planNewSteps = delta.added;
+      entry.planTotalCount = planSteps.length;
+      entry.planCompletedCount = planSteps.filter((step) => step.status === "completed").length;
     }
   }
   const collapseKey = deriveToolLifecycleCollapseKey(entry);

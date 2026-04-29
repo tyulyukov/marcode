@@ -213,7 +213,7 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
-  it("routes work entries with planSteps into a plan-update row", () => {
+  it("routes work entries with plan deltas into a plan-update row", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -230,6 +230,11 @@ describe("deriveMessagesTimelineRows", () => {
               { step: "Write code", status: "inProgress" },
               { step: "Run tests", status: "pending" },
             ],
+            planJustCompletedSteps: [{ step: "Read files" }],
+            planInProgressSteps: [{ step: "Write code" }],
+            planNewSteps: [],
+            planTotalCount: 3,
+            planCompletedCount: 1,
           },
         },
       ],
@@ -244,6 +249,35 @@ describe("deriveMessagesTimelineRows", () => {
       expect(rows[0].entry.planSteps).toHaveLength(3);
       expect(rows[0].isLatestTurn).toBe(true);
     }
+  });
+
+  it("does not route plan-update rows when every delta array is empty", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "entry-plan-noop",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:00Z",
+          entry: {
+            id: "work-plan-noop",
+            createdAt: "2026-01-01T00:00:00Z",
+            label: "Plan updated",
+            tone: "info",
+            planSteps: [{ step: "Read files", status: "completed" }],
+            planJustCompletedSteps: [],
+            planInProgressSteps: [],
+            planNewSteps: [],
+            planTotalCount: 1,
+            planCompletedCount: 1,
+          },
+        },
+      ],
+      completionDividerBeforeEntryId: null,
+      isWorking: false,
+      activeTurnStartedAt: null,
+    });
+
+    expect(rows.some((row) => row.kind === "plan-update")).toBe(false);
   });
 
   it("only enables assistant copy for the terminal assistant message in a turn", () => {

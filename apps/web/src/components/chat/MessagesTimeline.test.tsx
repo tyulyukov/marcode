@@ -153,7 +153,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("yoo what&#x27;s ");
   }, 10_000);
 
-  it("renders a plan-update card when a work entry carries planSteps", async () => {
+  it("renders a plan-update card with delta sections when a work entry carries plan deltas", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const listRef = createRef<LegendListRef | null>();
     const markup = renderToStaticMarkup(
@@ -183,6 +183,11 @@ describe("MessagesTimeline", () => {
                 { step: "Verify tests", status: "pending" },
               ],
               planExplanation: "Refining approach",
+              planJustCompletedSteps: [{ step: "Inspect code" }],
+              planInProgressSteps: [{ step: "Implement card" }],
+              planNewSteps: [{ step: "Verify tests" }],
+              planTotalCount: 3,
+              planCompletedCount: 1,
             },
           },
         ]}
@@ -221,7 +226,10 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain('data-timeline-row-kind="plan-update"');
-    expect(markup).toContain("Plan progress");
+    expect(markup).toContain("Plan updated");
+    expect(markup).toContain("JUST COMPLETED");
+    expect(markup).toContain("NOW WORKING ON");
+    expect(markup).toContain("JUST ADDED");
     expect(markup).toContain("Inspect code");
     expect(markup).toContain("Implement card");
     expect(markup).toContain("Verify tests");

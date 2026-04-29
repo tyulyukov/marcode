@@ -610,8 +610,17 @@ function estimateRowSize(item: MessagesTimelineRow): number {
     case "web-fetch":
     case "mcp-tool":
       return 110;
-    case "plan-update":
-      return 60 + (item.entry.planSteps?.length ?? 0) * 32;
+    case "plan-update": {
+      const deltaCount =
+        (item.entry.planJustCompletedSteps?.length ?? 0) +
+        (item.entry.planInProgressSteps?.length ?? 0) +
+        (item.entry.planNewSteps?.length ?? 0);
+      const sectionCount =
+        ((item.entry.planJustCompletedSteps?.length ?? 0) > 0 ? 1 : 0) +
+        ((item.entry.planInProgressSteps?.length ?? 0) > 0 ? 1 : 0) +
+        ((item.entry.planNewSteps?.length ?? 0) > 0 ? 1 : 0);
+      return 60 + sectionCount * 24 + deltaCount * 28;
+    }
     case "work":
       return 60 + Math.min(item.groupedEntries.length, 6) * 28;
     case "working":

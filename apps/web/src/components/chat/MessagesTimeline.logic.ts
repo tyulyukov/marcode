@@ -351,7 +351,13 @@ export function deriveMessagesTimelineRows(input: {
             entry: current.entry,
             isLive: false,
           });
-        } else if (current.entry.planSteps && current.entry.planSteps.length > 0) {
+        } else if (
+          current.entry.planSteps &&
+          current.entry.planSteps.length > 0 &&
+          ((current.entry.planJustCompletedSteps?.length ?? 0) > 0 ||
+            (current.entry.planInProgressSteps?.length ?? 0) > 0 ||
+            (current.entry.planNewSteps?.length ?? 0) > 0)
+        ) {
           flushPendingWork();
           flushPendingExploration();
           nextRows.push({
@@ -511,8 +517,17 @@ export function estimateMessagesTimelineRowHeight(
       return WEB_FETCH_CARD_COLLAPSED_HEIGHT;
     case "mcp-tool":
       return MCP_TOOL_CARD_COLLAPSED_HEIGHT;
-    case "plan-update":
-      return 60 + (row.entry.planSteps?.length ?? 0) * 32;
+    case "plan-update": {
+      const deltaCount =
+        (row.entry.planJustCompletedSteps?.length ?? 0) +
+        (row.entry.planInProgressSteps?.length ?? 0) +
+        (row.entry.planNewSteps?.length ?? 0);
+      const sectionCount =
+        ((row.entry.planJustCompletedSteps?.length ?? 0) > 0 ? 1 : 0) +
+        ((row.entry.planInProgressSteps?.length ?? 0) > 0 ? 1 : 0) +
+        ((row.entry.planNewSteps?.length ?? 0) > 0 ? 1 : 0);
+      return 60 + sectionCount * 24 + deltaCount * 28;
+    }
     case "message": {
       let estimate = estimateTimelineMessageHeight(row.message, {
         timelineWidthPx: input.timelineWidthPx,
