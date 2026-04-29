@@ -1,17 +1,10 @@
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  CircleXIcon,
-  ShieldQuestionIcon,
-  TerminalIcon,
-} from "lucide-react";
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { cn } from "~/lib/utils";
+import { memo, useMemo } from "react";
 import { ansiToSpans } from "~/lib/ansiToSpans";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import type { WorkLogEntry } from "../../session-logic";
 import { useRuntimeToolOutput } from "../../runtimeToolOutputStore";
+import { ToolCard } from "./_shared/ToolCard";
+import type { ToolStatusKind } from "./_shared/StatusBadge";
 
 interface CommandExecutionCardProps {
   entry: WorkLogEntry;
@@ -21,9 +14,6 @@ interface CommandExecutionCardProps {
 }
 
 type CommandStatus = "running" | "error" | "success" | "approval";
-
-const PREVIEW_MAX_HEIGHT_PX = 120;
-const MIN_OVERFLOW_PX = 24;
 
 function deriveCommandStatus(entry: WorkLogEntry, isPendingApproval: boolean): CommandStatus {
   if (entry.toolCompleted || entry.exitCode !== undefined) {
@@ -90,58 +80,17 @@ function detailIsDistinctOutput(
   return true;
 }
 
-const STATUS_ACCENT: Record<CommandStatus, string> = {
-  running: "border-l-amber-400/40",
-  error: "border-l-rose-400/40",
-  success: "border-l-emerald-400/25",
-  approval: "border-l-blue-400/40",
-};
-
-function CommandStatusBadge(props: { entry: WorkLogEntry; status: CommandStatus }) {
-  const { entry, status } = props;
-
-  if (status === "approval") {
-    return (
-      <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
-        <ShieldQuestionIcon className="size-3" />
-        Approval requested
-      </span>
-    );
-  }
-
-  if (status === "running") {
-    return (
-      <span className="flex items-center gap-1 text-[10px] text-amber-400/70">
-        <span className="size-1.5 animate-pulse rounded-full bg-amber-400/80" />
-        Running
-      </span>
-    );
-  }
-
-  if (status === "error") {
-    return (
-      <span className="flex items-center gap-1 text-[10px] text-rose-400/60">
-        <CircleXIcon className="size-3" />
-        {entry.exitCode !== undefined && entry.exitCode !== 0 ? `Exit ${entry.exitCode}` : "Failed"}
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex items-center gap-1 text-[10px] text-emerald-400/60">
-      <CheckIcon className="size-3" />
-      Success
-    </span>
-  );
+function statusToToolStatus(status: CommandStatus): ToolStatusKind {
+  if (status === "approval") return "approval";
+  if (status === "running") return "running";
+  if (status === "error") return "error";
+  return "success";
 }
 
 export const CommandExecutionCard = memo(function CommandExecutionCard(
   props: CommandExecutionCardProps,
 ) {
   const { entry, threadId, isPendingApproval = false } = props;
-  const [expanded, setExpanded] = useState(false);
-  const [previewOverflows, setPreviewOverflows] = useState(false);
-  const previewRef = useRef<HTMLDivElement>(null);
 
   const status = deriveCommandStatus(entry, isPendingApproval);
   const liveOutput = useRuntimeToolOutput(threadId, entry.itemId);
@@ -152,82 +101,57 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
     [effectiveOutput],
   );
 
-  useLayoutEffect(() => {
-    const el = previewRef.current;
-    if (!el || expanded) return;
-    setPreviewOverflows(el.scrollHeight > el.clientHeight + MIN_OVERFLOW_PX);
-  }, [expanded, effectiveOutput]);
-
   if (!displayCommand && !renderedOutput && status === "running") {
     return null;
   }
 
-  const hasMoreContent = expanded || previewOverflows;
-  const ExpandIcon = expanded ? ChevronUpIcon : ChevronDownIcon;
+  const errorLabel =
+    entry.exitCode !== undefined && entry.exitCode !== 0 ? `Exit ${entry.exitCode}` : "Failed";
+
+  const primary = displayCommand ? (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span className="block min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
+            {displayCommand}
+          </span>
+        }
+      />
+      <TooltipPopup side="top" className="max-w-lg">
+        <p className="break-all font-mono text-xs">{displayCommand}</p>
+      </TooltipPopup>
+    </Tooltip>
+  ) : (
+    <span className="block min-w-0 flex-1 truncate text-[11px] text-muted-foreground/60">
+      {entry.label}
+    </span>
+  );
+
+  const previewBody = renderedOutput ? (
+    <div className="relative overflow-hidden" style={{ maxHeight: "120px" }}>
+      <pre className="whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
+        {renderedOutput}
+      </pre>
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card/90 to-transparent" />
+    </div>
+  ) : null;
+
+  const expandedBody = renderedOutput ? (
+    <pre className="overflow-y-auto whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
+      {renderedOutput}
+    </pre>
+  ) : null;
 
   return (
-    <div
-      data-scroll-anchor-target
-      className={cn(
-        "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
-        STATUS_ACCENT[status],
-      )}
-    >
-      <Tooltip>
-        <TooltipTrigger render={<div className="flex items-center gap-2 px-3 py-1.5" />}>
-          <TerminalIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
-          {displayCommand ? (
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/80">
-              {displayCommand}
-            </span>
-          ) : (
-            <span className="min-w-0 flex-1 text-[11px] text-muted-foreground/60">
-              {entry.label}
-            </span>
-          )}
-          <CommandStatusBadge entry={entry} status={status} />
-        </TooltipTrigger>
-        {displayCommand && (
-          <TooltipPopup side="top" className="max-w-lg">
-            <p className="break-all font-mono text-xs">{displayCommand}</p>
-          </TooltipPopup>
-        )}
-      </Tooltip>
-
-      {renderedOutput && !expanded && (
-        <div
-          ref={previewRef}
-          className="relative overflow-hidden border-t border-border/20"
-          style={{ maxHeight: `${PREVIEW_MAX_HEIGHT_PX}px` }}
-        >
-          <pre className="whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
-            {renderedOutput}
-          </pre>
-          {previewOverflows && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-card/90 to-transparent" />
-          )}
-        </div>
-      )}
-
-      {renderedOutput && expanded && (
-        <div className="border-t border-border/20">
-          <pre className="overflow-y-auto whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
-            {renderedOutput}
-          </pre>
-        </div>
-      )}
-
-      {hasMoreContent && (
-        <button
-          type="button"
-          data-scroll-anchor-ignore
-          className="flex w-full items-center justify-center gap-1.5 border-t border-border/30 py-1.5 text-[10px] text-muted-foreground/50 transition-colors hover:bg-muted/20 hover:text-muted-foreground/70"
-          onClick={() => setExpanded((prev) => !prev)}
-        >
-          <ExpandIcon className="size-3" />
-          <span>{expanded ? "Hide output" : "Show full output"}</span>
-        </button>
-      )}
-    </div>
+    <ToolCard
+      tool="bash"
+      status={statusToToolStatus(status)}
+      primary={primary}
+      preview={previewBody}
+      expanded={expandedBody}
+      defaultState="preview"
+      isPendingApproval={isPendingApproval}
+      statusLabels={{ running: "Running", success: "Success", error: errorLabel }}
+    />
   );
 });

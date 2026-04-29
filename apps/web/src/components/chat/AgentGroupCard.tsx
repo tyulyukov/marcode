@@ -1,4 +1,3 @@
-import { BotIcon } from "lucide-react";
 import { memo, useCallback } from "react";
 import type { ProviderKind } from "@marcode/contracts";
 import {
@@ -11,6 +10,8 @@ import {
 import { normalizeCompactToolLabel } from "./MessagesTimeline.logic";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ToolCard } from "./_shared/ToolCard";
+import type { ToolStatusKind } from "./_shared/StatusBadge";
 
 interface AgentGroupCardProps {
   agentGroup: AgentGroup;
@@ -33,11 +34,11 @@ function formatAgentTaskType(taskType: string | null): string | null {
 function agentTaskStatusDotColor(status: AgentTaskSummary["status"]): string {
   switch (status) {
     case "running":
-      return "bg-amber-400/70";
+      return "bg-warning/70";
     case "failed":
-      return "bg-rose-400/70";
+      return "bg-destructive/70";
     case "completed":
-      return "bg-emerald-500/70";
+      return "bg-success/70";
     case "stopped":
       return "bg-muted-foreground/40";
   }
@@ -59,6 +60,13 @@ function agentTaskMeta(task: AgentTaskSummary, provider: ProviderKind): string {
   if (provider === "cursor" && task.durationMs !== null)
     parts.push(formatDuration(task.durationMs));
   return parts.join(" · ");
+}
+
+function deriveAgentGroupStatus(agentGroup: AgentGroup): ToolStatusKind {
+  const tasks = agentGroup.tasks;
+  if (tasks.some((t) => t.status === "running")) return "running";
+  if (tasks.some((t) => t.status === "failed")) return "error";
+  return "success";
 }
 
 const AgentTaskRow = memo(function AgentTaskRow(props: {
@@ -116,7 +124,7 @@ const AgentTaskRow = memo(function AgentTaskRow(props: {
               <p
                 className={cn(
                   "truncate pl-[9px] text-[10px] leading-4",
-                  isRunning ? "text-amber-400/70" : "text-muted-foreground/50",
+                  isRunning ? "text-warning-foreground/80" : "text-muted-foreground/50",
                 )}
               >
                 {activityLine}
@@ -138,24 +146,30 @@ const AgentTaskRow = memo(function AgentTaskRow(props: {
 export const AgentGroupCard = memo(function AgentGroupCard(props: AgentGroupCardProps) {
   const { agentGroup, label, provider, onTaskSelect } = props;
   const tasks = agentGroup.tasks;
+  const status = deriveAgentGroupStatus(agentGroup);
+
+  const primary = (
+    <span className="block min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
+      {label}
+    </span>
+  );
+
+  const expandedBody = (
+    <div className="space-y-1 px-2 py-1.5">
+      {tasks.map((task) => (
+        <AgentTaskRow key={task.taskId} task={task} provider={provider} onSelect={onTaskSelect} />
+      ))}
+    </div>
+  );
 
   return (
-    <div
-      data-scroll-anchor-target
-      className="overflow-hidden rounded-xl border border-border/40 bg-card/25"
-    >
-      <div className="flex items-center gap-2 px-3 py-1.5">
-        <BotIcon className="size-3.5 shrink-0 text-violet-400/60" />
-        <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-foreground/80">
-          {label}
-        </span>
-      </div>
-
-      <div className="space-y-1 border-t border-border/20 px-2 py-1.5">
-        {tasks.map((task) => (
-          <AgentTaskRow key={task.taskId} task={task} provider={provider} onSelect={onTaskSelect} />
-        ))}
-      </div>
-    </div>
+    <ToolCard
+      tool="agent"
+      status={status}
+      primary={primary}
+      expanded={expandedBody}
+      defaultState="expanded"
+      hideChevron
+    />
   );
 });

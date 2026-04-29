@@ -1,14 +1,9 @@
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  EyeIcon,
-  SearchIcon,
-  ShieldQuestionIcon,
-} from "lucide-react";
-import { memo, useState } from "react";
-import { cn } from "~/lib/utils";
+import { EyeIcon, SearchIcon } from "lucide-react";
+import { memo } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import type { WorkLogEntry } from "../../session-logic";
+import { ToolCard } from "./_shared/ToolCard";
+import type { ToolStatusKind } from "./_shared/StatusBadge";
 
 interface ExplorationCardProps {
   entries: ReadonlyArray<WorkLogEntry>;
@@ -375,9 +370,12 @@ function ExplorationEntryRow(props: { entry: WorkLogEntry }) {
   );
 }
 
+function deriveStatus(isLive: boolean): ToolStatusKind {
+  return isLive ? "running" : "success";
+}
+
 export const ExplorationCard = memo(function ExplorationCard(props: ExplorationCardProps) {
   const { entries, isLive, isPendingApproval = false, summaryOnly = false } = props;
-  const [expanded, setExpanded] = useState(false);
 
   if (entries.length === 0) return null;
 
@@ -390,72 +388,32 @@ export const ExplorationCard = memo(function ExplorationCard(props: ExplorationC
   const summary = headerParts.join(", ");
 
   const verb = isLive ? "Exploring" : "Explored";
-  const ToggleIcon = expanded ? ChevronDownIcon : ChevronRightIcon;
+  const status = deriveStatus(isLive);
 
-  if (summaryOnly) {
-    return (
-      <div
-        data-scroll-anchor-target
-        className={cn(
-          "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
-          isLive ? "border-l-blue-400/40" : "border-l-blue-400/20",
-        )}
-      >
-        <div className="flex w-full items-center gap-2 px-3 py-1.5 text-left">
-          <SearchIcon className="size-3.5 shrink-0 text-blue-400/50" />
-          <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">
-            {verb} {summary}
-          </span>
-          {isPendingApproval ? (
-            <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
-              <ShieldQuestionIcon className="size-3" />
-              Approval requested
-            </span>
-          ) : (
-            isLive && (
-              <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400/60" />
-            )
-          )}
-        </div>
-      </div>
-    );
-  }
+  const primary = (
+    <span className="block min-w-0 flex-1 truncate text-[11px] text-foreground/80">
+      {verb} {summary}
+    </span>
+  );
+
+  const expandedBody = (
+    <div className="px-2 py-1">
+      {entries.map((entry) => (
+        <ExplorationEntryRow key={entry.id} entry={entry} />
+      ))}
+    </div>
+  );
 
   return (
-    <div
-      data-scroll-anchor-target
-      className={cn(
-        "overflow-hidden rounded-xl border border-border/40 border-l-2 bg-card/25",
-        isLive ? "border-l-blue-400/40" : "border-l-blue-400/20",
-      )}
-    >
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors duration-100 hover:bg-muted/20"
-      >
-        <ToggleIcon className="size-3 shrink-0 text-muted-foreground/50" />
-        <SearchIcon className="size-3.5 shrink-0 text-blue-400/50" />
-        <span className="min-w-0 flex-1 truncate text-[11px] text-foreground/80">
-          {verb} {summary}
-        </span>
-        {isPendingApproval ? (
-          <span className="flex items-center gap-1 text-[10px] text-blue-400/70">
-            <ShieldQuestionIcon className="size-3" />
-            Approval requested
-          </span>
-        ) : (
-          isLive && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-blue-400/60" />
-        )}
-      </button>
-
-      {expanded && (
-        <div className="border-t border-border/20 px-2 py-1">
-          {entries.map((entry) => (
-            <ExplorationEntryRow key={entry.id} entry={entry} />
-          ))}
-        </div>
-      )}
-    </div>
+    <ToolCard
+      tool="exploration"
+      status={status}
+      primary={primary}
+      expanded={summaryOnly ? undefined : expandedBody}
+      defaultState="collapsed"
+      isPendingApproval={isPendingApproval}
+      hideChevron={summaryOnly}
+      statusLabels={{ running: "Exploring", success: "Done", error: "Failed" }}
+    />
   );
 });

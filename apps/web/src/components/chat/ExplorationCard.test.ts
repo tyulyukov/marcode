@@ -105,7 +105,7 @@ describe("ExplorationCard", () => {
     );
 
     expect(markup).toContain("<button");
-    expect(markup).toContain("lucide-chevron-right");
+    expect(markup).toContain("lucide-chevron-down");
     expect(markup).toContain("Explored 1 file");
   });
 
@@ -119,7 +119,6 @@ describe("ExplorationCard", () => {
     );
 
     expect(markup).not.toContain("<button");
-    expect(markup).not.toContain("lucide-chevron-right");
     expect(markup).not.toContain("lucide-chevron-down");
     expect(markup).toContain("Exploring 1 file");
     expect(markup).not.toContain("Read apps/web/src/App.tsx");

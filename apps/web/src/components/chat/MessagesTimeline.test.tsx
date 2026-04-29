@@ -354,9 +354,9 @@ describe("MessagesTimeline", () => {
     );
 
     expect(claudeMarkup).toContain("<button");
-    expect(claudeMarkup).toContain("lucide-chevron-right");
+    expect(claudeMarkup).toContain("lucide-chevron-down");
     expect(cursorMarkup).not.toContain("<button");
-    expect(cursorMarkup).not.toContain("lucide-chevron-right");
+    expect(cursorMarkup).not.toContain("lucide-chevron-down");
     expect(cursorMarkup).toContain("Explored 1 file");
   });
 });
