@@ -31,6 +31,7 @@ import {
   type ProjectSetupScriptRunnerInput,
   type ProjectSetupScriptRunnerShape,
 } from "../../project/Services/ProjectSetupScriptRunner.ts";
+import { JiraContextCollector } from "../../jira/Services/JiraContextCollector.ts";
 
 interface FakeGhScenario {
   prListSequence?: string[];
@@ -84,6 +85,12 @@ interface FakeGitTextGeneration {
     message: string;
     modelSelection: ModelSelection;
   }) => Effect.Effect<{ title: string }, TextGenerationError>;
+  classifyImplementingJiraTickets: (input: {
+    cwd: string;
+    message: string;
+    jiraTickets: ReadonlyArray<unknown>;
+    modelSelection: ModelSelection;
+  }) => Effect.Effect<{ implementingKeys: ReadonlyArray<string> }, TextGenerationError>;
 }
 
 type FakePullRequest = NonNullable<FakeGhScenario["pullRequest"]>;
@@ -226,6 +233,10 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
       Effect.succeed({
         title: "Implement stacked git actions",
       }),
+    classifyImplementingJiraTickets: () =>
+      Effect.succeed({
+        implementingKeys: [],
+      }),
     ...overrides,
   };
 
@@ -269,6 +280,17 @@ function createTextGeneration(overrides: Partial<FakeGitTextGeneration> = {}): T
           (cause) =>
             new TextGenerationError({
               operation: "generateThreadTitle",
+              detail: "fake text generation failed",
+              ...(cause !== undefined ? { cause } : {}),
+            }),
+        ),
+      ),
+    classifyImplementingJiraTickets: (input) =>
+      implementation.classifyImplementingJiraTickets(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({
+              operation: "classifyImplementingJiraTickets",
               detail: "fake text generation failed",
               ...(cause !== undefined ? { cause } : {}),
             }),
@@ -671,6 +693,9 @@ function makeManager(input?: {
         runForThread: () => Effect.succeed({ status: "no-script" as const }),
       },
     ),
+    Layer.succeed(JiraContextCollector, {
+      forThread: () => Effect.succeed([]),
+    }),
     gitCoreLayer,
     serverSettingsLayer,
   ).pipe(Layer.provideMerge(NodeServices.layer));

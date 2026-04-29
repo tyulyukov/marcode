@@ -217,6 +217,7 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     additionalDirectories: [...(thread.additionalDirectories ?? [])],
+    implementingJiraTicketKeys: [...(thread.implementingJiraTicketKeys ?? [])],
     turnDiffSummaries: thread.checkpoints.map(mapTurnDiffSummary),
     activities: thread.activities.map((activity) => ({ ...activity })),
   };
@@ -247,6 +248,7 @@ function mapThreadShell(
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     additionalDirectories: [...(thread.additionalDirectories ?? [])],
+    implementingJiraTicketKeys: [...(thread.implementingJiraTicketKeys ?? [])],
   };
   const session = thread.session ? mapSession(thread.session) : null;
   const turnState: ThreadTurnState = {
@@ -291,6 +293,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     branch: thread.branch,
     worktreePath: thread.worktreePath,
     additionalDirectories: thread.additionalDirectories,
+    implementingJiraTicketKeys: thread.implementingJiraTicketKeys,
   };
 }
 
@@ -344,7 +347,8 @@ function threadShellsEqual(left: ThreadShell | undefined, right: ThreadShell): b
     left.updatedAt === right.updatedAt &&
     left.branch === right.branch &&
     left.worktreePath === right.worktreePath &&
-    left.additionalDirectories === right.additionalDirectories
+    left.additionalDirectories === right.additionalDirectories &&
+    left.implementingJiraTicketKeys === right.implementingJiraTicketKeys
   );
 }
 
@@ -1360,6 +1364,7 @@ function applyEnvironmentOrchestrationEvent(
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
           additionalDirectories: [],
+          implementingJiraTicketKeys: [],
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -1406,6 +1411,9 @@ function applyEnvironmentOrchestrationEvent(
           : {}),
         ...(event.payload.additionalDirectories !== undefined
           ? { additionalDirectories: [...event.payload.additionalDirectories] }
+          : {}),
+        ...(event.payload.implementingJiraTicketKeys !== undefined
+          ? { implementingJiraTicketKeys: [...event.payload.implementingJiraTicketKeys] }
           : {}),
         updatedAt: event.payload.updatedAt,
       }));

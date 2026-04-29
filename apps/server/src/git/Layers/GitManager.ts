@@ -35,6 +35,9 @@ import { TextGeneration } from "../Services/TextGeneration.ts";
 import { ProjectSetupScriptRunner } from "../../project/Services/ProjectSetupScriptRunner.ts";
 import { extractBranchNameFromRemoteRef } from "../remoteRefs.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { JiraContextCollector } from "../../jira/Services/JiraContextCollector.ts";
+import type { JiraTicketContext } from "@marcode/shared/jiraContext";
+import type { ThreadId } from "@marcode/contracts";
 import type { GitManagerServiceError } from "@marcode/contracts";
 
 const COMMIT_TIMEOUT_MS = 10 * 60_000;
@@ -483,6 +486,12 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const textGeneration = yield* TextGeneration;
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
   const serverSettingsService = yield* ServerSettingsService;
+  const jiraContextCollector = yield* JiraContextCollector;
+
+  const resolveJiraTickets = (
+    threadId: ThreadId | undefined,
+  ): Effect.Effect<ReadonlyArray<JiraTicketContext>, never> =>
+    threadId === undefined ? Effect.succeed([]) : jiraContextCollector.forThread(threadId);
 
   const createProgressEmitter = (
     input: { cwd: string; action: GitStackedAction },
@@ -1057,6 +1066,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       includeBranch?: boolean;
       filePaths?: readonly string[];
       modelSelection: ModelSelection;
+      jiraTickets?: ReadonlyArray<JiraTicketContext>;
     }) {
       const context = yield* gitCore.prepareCommitContext(input.cwd, input.filePaths);
       if (!context) {
@@ -1083,6 +1093,9 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           stagedPatch: limitContext(context.stagedPatch, 50_000),
           ...(input.includeBranch ? { includeBranch: true } : {}),
           modelSelection: input.modelSelection,
+          ...(input.jiraTickets && input.jiraTickets.length > 0
+            ? { jiraTickets: input.jiraTickets }
+            : {}),
         })
         .pipe(Effect.map((result) => sanitizeCommitMessage(result)));
 
@@ -1105,6 +1118,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     filePaths?: readonly string[],
     progressReporter?: GitActionProgressReporter,
     actionId?: string,
+    jiraTickets?: ReadonlyArray<JiraTicketContext>,
   ) {
     const emit = (event: GitActionProgressPayload) =>
       progressReporter && actionId
@@ -1132,6 +1146,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         ...(commitMessage ? { commitMessage } : {}),
         ...(filePaths ? { filePaths } : {}),
         modelSelection,
+        ...(jiraTickets && jiraTickets.length > 0 ? { jiraTickets } : {}),
       });
     }
     if (!suggestion) {
@@ -1213,6 +1228,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     cwd: string,
     fallbackBranch: string | null,
     emit: GitActionProgressEmitter,
+    jiraTickets?: ReadonlyArray<JiraTicketContext>,
   ) {
     const details = yield* gitCore.statusDetails(cwd);
     const branch = details.branch ?? fallbackBranch;
@@ -1262,6 +1278,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       diffSummary: limitContext(rangeContext.diffSummary, 20_000),
       diffPatch: limitContext(rangeContext.diffPatch, 60_000),
       modelSelection,
+      ...(jiraTickets && jiraTickets.length > 0 ? { jiraTickets } : {}),
     });
 
     const detectedHostProvider = yield* detectHostProvider(cwd);
@@ -1520,6 +1537,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     branch: string | null,
     commitMessage?: string,
     filePaths?: readonly string[],
+    jiraTickets?: ReadonlyArray<JiraTicketContext>,
   ) {
     const suggestion = yield* resolveCommitAndBranchSuggestion({
       cwd,
@@ -1528,6 +1546,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       ...(filePaths ? { filePaths } : {}),
       includeBranch: true,
       modelSelection,
+      ...(jiraTickets && jiraTickets.length > 0 ? { jiraTickets } : {}),
     });
     if (!suggestion) {
       return yield* gitManagerError(
@@ -1621,6 +1640,8 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           ),
         );
 
+        const jiraTickets = yield* resolveJiraTickets(input.threadId);
+
         if (input.featureBranch) {
           yield* Ref.set(currentPhase, Option.some("branch"));
           yield* progress.emit({
@@ -1634,6 +1655,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
             initialStatus.branch,
             input.commitMessage,
             input.filePaths,
+            jiraTickets,
           );
           branchStep = result.branchStep;
           commitMessageForStep = result.resolvedCommitMessage;
@@ -1658,6 +1680,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
                   input.filePaths,
                   options?.progressReporter,
                   progress.actionId,
+                  jiraTickets,
                 ),
               ),
             )
@@ -1686,7 +1709,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
                 Effect.flatMap(() =>
-                  runPrStep(modelSelection, input.cwd, currentBranch, progress.emit),
+                  runPrStep(modelSelection, input.cwd, currentBranch, progress.emit, jiraTickets),
                 ),
               )
           : { status: "skipped_not_requested" as const };

@@ -6,6 +6,7 @@
 import { Schema } from "effect";
 
 import { TextGenerationError } from "@marcode/contracts";
+import type { JiraTicketContext } from "@marcode/shared/jiraContext";
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -167,6 +168,31 @@ export function sanitizeThreadTitle(raw: string): string {
   }
 
   return `${normalized.slice(0, 47).trimEnd()}...`;
+}
+
+/**
+ * Restrict the model's classifier output to keys that actually appeared in the
+ * input list. Guards against hallucinated keys, normalizes case, and dedups.
+ */
+export function filterToAllowedKeys(
+  candidate: ReadonlyArray<string>,
+  allowed: ReadonlyArray<JiraTicketContext>,
+): ReadonlyArray<string> {
+  const allowedByUpper = new Map<string, string>();
+  for (const ticket of allowed) {
+    allowedByUpper.set(ticket.issueKey.toUpperCase(), ticket.issueKey);
+  }
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of candidate) {
+    const upper = raw.toUpperCase();
+    const canonical = allowedByUpper.get(upper);
+    if (!canonical) continue;
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    result.push(canonical);
+  }
+  return result;
 }
 
 /** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */

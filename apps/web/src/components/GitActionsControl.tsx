@@ -55,6 +55,7 @@ import { readEnvironmentApi } from "~/environmentApi";
 import { readLocalApi } from "~/localApi";
 import { useStore } from "~/store";
 import { createThreadSelectorByRef } from "~/storeSelectors";
+import { GitActionsJiraChips } from "./GitActionsJiraChips";
 
 interface GitActionsControlProps {
   gitCwd: string | null;
@@ -666,6 +667,7 @@ export default function GitActionsControl({
         ...(commitMessage ? { commitMessage } : {}),
         ...(featureBranch ? { featureBranch } : {}),
         ...(filePaths ? { filePaths } : {}),
+        ...(activeThreadRef?.threadId ? { threadId: activeThreadRef.threadId } : {}),
         onProgress: applyProgressEvent,
       });
 
@@ -908,6 +910,9 @@ export default function GitActionsControl({
         </Button>
       ) : (
         <Group aria-label="Git actions" className="shrink-0">
+          <GitActionsJiraChips
+            implementingJiraTicketKeys={activeServerThread?.implementingJiraTicketKeys}
+          />
           {quickActionDisabledReason ? (
             <Popover>
               <PopoverTrigger

@@ -329,6 +329,9 @@ export function projectEvent(
             ...(payload.additionalDirectories !== undefined
               ? { additionalDirectories: payload.additionalDirectories }
               : {}),
+            ...(payload.implementingJiraTicketKeys !== undefined
+              ? { implementingJiraTicketKeys: payload.implementingJiraTicketKeys }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),

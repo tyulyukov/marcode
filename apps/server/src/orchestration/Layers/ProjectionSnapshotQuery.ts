@@ -74,6 +74,7 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     additionalDirectories: Schema.fromJsonString(Schema.Array(Schema.String)),
+    implementingJiraTicketKeys: Schema.fromJsonString(Schema.Array(Schema.String)),
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -272,6 +273,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           additional_directories_json AS "additionalDirectories",
+          implementing_jira_ticket_keys_json AS "implementingJiraTicketKeys",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -594,6 +596,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           branch,
           worktree_path AS "worktreePath",
           additional_directories_json AS "additionalDirectories",
+          implementing_jira_ticket_keys_json AS "implementingJiraTicketKeys",
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -933,6 +936,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 branch: row.branch,
                 worktreePath: row.worktreePath,
                 additionalDirectories: row.additionalDirectories,
+                implementingJiraTicketKeys: row.implementingJiraTicketKeys as ReadonlyArray<
+                  OrchestrationThread["implementingJiraTicketKeys"][number]
+                >,
                 latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
@@ -1183,6 +1189,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     branch: row.branch,
                     worktreePath: row.worktreePath,
                     additionalDirectories: row.additionalDirectories,
+                    implementingJiraTicketKeys: row.implementingJiraTicketKeys as ReadonlyArray<
+                      OrchestrationThreadShell["implementingJiraTicketKeys"][number]
+                    >,
                     latestTurn: latestTurnByThread.get(row.threadId) ?? null,
                     createdAt: row.createdAt,
                     updatedAt: row.updatedAt,
@@ -1280,6 +1289,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         additionalDirectories: threadRow.value.additionalDirectories,
+        implementingJiraTicketKeys: threadRow.value.implementingJiraTicketKeys as ReadonlyArray<
+          OrchestrationThreadShell["implementingJiraTicketKeys"][number]
+        >,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,

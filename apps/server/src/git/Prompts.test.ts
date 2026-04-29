@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBranchNamePrompt,
+  buildClassifyImplementingJiraTicketsPrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
@@ -55,6 +56,65 @@ describe("buildCommitMessagePrompt", () => {
 
     expect(result.prompt).toContain("Branch: (detached)");
   });
+
+  it("omits the Jira section entirely when jiraTickets is missing or empty", () => {
+    const baseline = buildCommitMessagePrompt({
+      branch: "main",
+      stagedSummary: "M a.ts",
+      stagedPatch: "diff",
+      includeBranch: false,
+    });
+    const empty = buildCommitMessagePrompt({
+      branch: "main",
+      stagedSummary: "M a.ts",
+      stagedPatch: "diff",
+      includeBranch: false,
+      jiraTickets: [],
+    });
+
+    expect(baseline.prompt).toBe(empty.prompt);
+    expect(baseline.prompt).not.toContain("Jira tickets:");
+    expect(baseline.prompt).not.toContain("Refs:");
+    expect(baseline.prompt).not.toContain("[PROJECT-111]");
+  });
+
+  it("treats the Jira section as context-only and forbids ticket key in commit subject/body", () => {
+    const result = buildCommitMessagePrompt({
+      branch: "main",
+      stagedSummary: "M a.ts",
+      stagedPatch: "diff",
+      includeBranch: true,
+      jiraTickets: [
+        {
+          issueKey: "PROJECT-111",
+          summary: "Add login flow",
+          status: "In Progress",
+          issueType: "Task",
+          priority: "High",
+          assignee: "Maks",
+          description: "Login is missing — implement /login endpoint and form.",
+          url: "https://example.atlassian.net/browse/PROJECT-111",
+        },
+      ],
+    });
+
+    expect(result.prompt).toContain("Jira tickets:");
+    expect(result.prompt).toContain("[PROJECT-111] Add login flow");
+    expect(result.prompt).toContain("Status: In Progress");
+    expect(result.prompt).toContain("URL: https://example.atlassian.net/browse/PROJECT-111");
+    // Branch slug rule still applies (branch generation is allowed to engrave keys).
+    expect(result.prompt).toContain("PROJECT-111-add-login");
+    // Context-only rule is enforced verbatim.
+    expect(result.prompt).toContain("listed for CONTEXT only");
+    expect(result.prompt).toContain(
+      "Do NOT include the ticket key anywhere in the commit subject or body",
+    );
+    expect(result.prompt).toContain(
+      "No `Refs:` trailer, no `[KEY]` prefix, no parenthesized suffix",
+    );
+    // Should NOT instruct adding any structural ticket reference.
+    expect(result.prompt).not.toContain("## Tickets");
+  });
 });
 
 describe("buildPrContentPrompt", () => {
@@ -78,6 +138,56 @@ describe("buildPrContentPrompt", () => {
     expect(result.prompt).toContain("Diff patch:");
     expect(result.prompt).toContain("export function login()");
   });
+
+  it("omits the Jira section entirely when jiraTickets is missing", () => {
+    const baseline = buildPrContentPrompt({
+      baseBranch: "main",
+      headBranch: "feature/auth",
+      commitSummary: "feat: add login page",
+      diffSummary: "3 files changed",
+      diffPatch: "diff",
+    });
+
+    expect(baseline.prompt).not.toContain("Jira tickets:");
+    expect(baseline.prompt).not.toContain("PROJECT-111");
+    expect(baseline.prompt).not.toContain("## Tickets");
+  });
+
+  it("instructs body to weave Jira description into ## Summary, mandates ticket key in title, no Refs trailer", () => {
+    const result = buildPrContentPrompt({
+      baseBranch: "main",
+      headBranch: "feature/auth",
+      commitSummary: "feat: add login page",
+      diffSummary: "3 files changed",
+      diffPatch: "diff",
+      jiraTickets: [
+        {
+          issueKey: "PROJECT-111",
+          summary: "Add login flow",
+          status: "In Progress",
+          issueType: "Task",
+          priority: undefined,
+          assignee: undefined,
+          description: "Users can't log in.",
+          url: "https://example.atlassian.net/browse/PROJECT-111",
+        },
+      ],
+    });
+
+    expect(result.prompt).toContain("Jira tickets:");
+    expect(result.prompt).toContain("[PROJECT-111] Add login flow");
+    // Title-key requirement is mandatory.
+    expect(result.prompt).toContain("PR title MUST include the implemented ticket key");
+    expect(result.prompt).toContain("non-negotiable");
+    // Body rule must instruct using ticket details to inform Summary.
+    expect(result.prompt).toContain("inform the 'why' inside the existing `## Summary`");
+    // No sidecar block.
+    expect(result.prompt).toContain("Do NOT add a `## Tickets` heading");
+    // No Refs trailer engraved (the rule explicitly forbids one).
+    expect(result.prompt).not.toContain("Refs: PROJECT-111");
+    expect(result.prompt).toContain("Do NOT add");
+    expect(result.prompt).toContain("`Refs:` trailer");
+  });
 });
 
 describe("buildBranchNamePrompt", () => {
@@ -89,6 +199,49 @@ describe("buildBranchNamePrompt", () => {
     expect(result.prompt).toContain("User message:");
     expect(result.prompt).toContain("Fix the login timeout bug");
     expect(result.prompt).not.toContain("Attachment metadata:");
+  });
+
+  it("omits the Jira section when jiraTickets is missing or empty", () => {
+    const result = buildBranchNamePrompt({
+      message: "Fix the login timeout bug",
+      jiraTickets: [],
+    });
+    expect(result.prompt).not.toContain("Jira tickets:");
+    expect(result.prompt).not.toContain("PROJECT-111");
+  });
+
+  it("instructs the model to engrave one or more keys WITHOUT the marcode/ or feature/ prefix", () => {
+    const result = buildBranchNamePrompt({
+      message: "Fix the login timeout bug",
+      jiraTickets: [
+        {
+          issueKey: "PROJECT-111",
+          summary: "Fix login timeout",
+          status: "Open",
+          issueType: "Bug",
+          priority: undefined,
+          assignee: undefined,
+          description: undefined,
+          url: undefined,
+        },
+        {
+          issueKey: "PROJECT-222",
+          summary: "Improve session retention",
+          status: "Open",
+          issueType: "Task",
+          priority: undefined,
+          assignee: undefined,
+          description: undefined,
+          url: undefined,
+        },
+      ],
+    });
+
+    expect(result.prompt).toContain("Jira tickets:");
+    expect(result.prompt).toContain("[PROJECT-111] Fix login timeout");
+    expect(result.prompt).toContain("[PROJECT-222] Improve session retention");
+    expect(result.prompt).toContain("PROJECT-111-PROJECT-222-add-login");
+    expect(result.prompt).toContain("Do not include any prefix like `feature/` or `marcode/`");
   });
 
   it("includes attachment metadata when attachments are provided", () => {
@@ -201,6 +354,52 @@ describe("sanitizeCommitSubject", () => {
 
   it("returns plain text subject as-is", () => {
     expect(sanitizeCommitSubject("feat: add editing")).toBe("feat: add editing");
+  });
+});
+
+describe("buildClassifyImplementingJiraTicketsPrompt", () => {
+  const refTicket = {
+    issueKey: "OTHER-99",
+    summary: "Old fix pattern",
+    status: "Closed",
+    issueType: "Bug",
+    priority: undefined,
+    assignee: undefined,
+    description: "Resolved last quarter via approach X.",
+    url: "https://example.atlassian.net/browse/OTHER-99",
+  };
+  const implTicket = {
+    issueKey: "PROJECT-111",
+    summary: "Add login flow",
+    status: "In Progress",
+    issueType: "Task",
+    priority: undefined,
+    assignee: undefined,
+    description: "Users can't log in.",
+    url: "https://example.atlassian.net/browse/PROJECT-111",
+  };
+
+  it("instructs the model to treat a single mentioned ticket as potentially reference-only", () => {
+    const result = buildClassifyImplementingJiraTicketsPrompt({
+      message: "fix the login bug the same way we fixed @jira:OTHER-99",
+      jiraTickets: [refTicket],
+    });
+
+    expect(result.prompt).toContain("A SINGLE ticket can also be reference-only");
+    expect(result.prompt).toContain("default to EXCLUDING the ticket");
+    expect(result.prompt).toContain("Allowed keys: OTHER-99");
+    expect(result.prompt).toContain("[OTHER-99] Old fix pattern");
+    expect(result.prompt).toContain("fix the login bug the same way we fixed @jira:OTHER-99");
+  });
+
+  it("lists every input key under Allowed keys for hallucination guard", () => {
+    const result = buildClassifyImplementingJiraTicketsPrompt({
+      message: "implement @jira:PROJECT-111, see @jira:OTHER-99 for context",
+      jiraTickets: [implTicket, refTicket],
+    });
+
+    expect(result.prompt).toContain("Allowed keys: PROJECT-111, OTHER-99");
+    expect(result.prompt).toContain("Do not invent new keys");
   });
 });
 

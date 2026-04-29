@@ -22,11 +22,13 @@ import {
 } from "../Services/TextGeneration.ts";
 import {
   buildBranchNamePrompt,
+  buildClassifyImplementingJiraTicketsPrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
 } from "../Prompts.ts";
 import {
+  filterToAllowedKeys,
   normalizeCliError,
   sanitizeCommitSubject,
   sanitizePrBody,
@@ -138,7 +140,8 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "classifyImplementingJiraTickets";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -286,6 +289,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       stagedSummary: input.stagedSummary,
       stagedPatch: input.stagedPatch,
       includeBranch: input.includeBranch === true,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
 
     if (input.modelSelection.provider !== "codex") {
@@ -321,6 +325,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
       commitSummary: input.commitSummary,
       diffSummary: input.diffSummary,
       diffPatch: input.diffPatch,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
 
     if (input.modelSelection.provider !== "codex") {
@@ -354,6 +359,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     const { prompt, outputSchema } = buildBranchNamePrompt({
       message: input.message,
       attachments: input.attachments,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
 
     if (input.modelSelection.provider !== "codex") {
@@ -387,6 +393,7 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     const { prompt, outputSchema } = buildThreadTitlePrompt({
       message: input.message,
       attachments: input.attachments,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
 
     if (input.modelSelection.provider !== "codex") {
@@ -410,11 +417,42 @@ const makeCodexTextGeneration = Effect.gen(function* () {
     } satisfies ThreadTitleGenerationResult;
   });
 
+  const classifyImplementingJiraTickets: TextGenerationShape["classifyImplementingJiraTickets"] =
+    Effect.fn("CodexTextGeneration.classifyImplementingJiraTickets")(function* (input) {
+      if (input.modelSelection.provider !== "codex") {
+        return yield* new TextGenerationError({
+          operation: "classifyImplementingJiraTickets",
+          detail: "Invalid model selection.",
+        });
+      }
+      if (input.jiraTickets.length === 0) {
+        return { implementingKeys: [] };
+      }
+
+      const { prompt, outputSchema } = buildClassifyImplementingJiraTicketsPrompt({
+        message: input.message,
+        jiraTickets: input.jiraTickets,
+      });
+
+      const generated = yield* runCodexJson({
+        operation: "classifyImplementingJiraTickets",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        implementingKeys: filterToAllowedKeys(generated.implementingKeys, input.jiraTickets),
+      };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    classifyImplementingJiraTickets,
   } satisfies TextGenerationShape;
 });
 

@@ -85,6 +85,7 @@ describe("orchestration projector", () => {
         branch: null,
         worktreePath: null,
         additionalDirectories: [],
+        implementingJiraTicketKeys: [],
         latestTurn: null,
         createdAt: now,
         updatedAt: now,

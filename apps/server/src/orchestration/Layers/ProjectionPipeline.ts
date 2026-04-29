@@ -576,6 +576,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
             additionalDirectories: [],
+            implementingJiraTicketKeys: [],
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -637,6 +638,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : {}),
             ...(event.payload.additionalDirectories !== undefined
               ? { additionalDirectories: event.payload.additionalDirectories }
+              : {}),
+            ...(event.payload.implementingJiraTicketKeys !== undefined
+              ? { implementingJiraTicketKeys: event.payload.implementingJiraTicketKeys }
               : {}),
             updatedAt: event.payload.updatedAt,
           });

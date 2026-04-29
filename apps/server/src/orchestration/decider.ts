@@ -327,6 +327,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.additionalDirectories !== undefined
             ? { additionalDirectories: command.additionalDirectories }
             : {}),
+          ...(command.implementingJiraTicketKeys !== undefined
+            ? { implementingJiraTicketKeys: command.implementingJiraTicketKeys }
+            : {}),
           updatedAt: occurredAt,
         },
       };

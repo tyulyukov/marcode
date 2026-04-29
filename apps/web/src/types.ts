@@ -115,6 +115,12 @@ export interface Thread {
   branch: string | null;
   worktreePath: string | null;
   additionalDirectories: string[];
+  /**
+   * Jira ticket keys the user is actively implementing in this thread, as
+   * classified by the auxiliary agent at first turn. Drives the chip near git
+   * actions and is the filter for branch/commit/PR auxiliary generators.
+   */
+  implementingJiraTicketKeys: string[];
   turnDiffSummaries: TurnDiffSummary[];
   activities: OrchestrationThreadActivity[];
 }
@@ -135,6 +141,7 @@ export interface ThreadShell {
   branch: string | null;
   worktreePath: string | null;
   additionalDirectories: string[];
+  implementingJiraTicketKeys: string[];
 }
 
 export interface ThreadTurnState {

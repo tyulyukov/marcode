@@ -1,6 +1,6 @@
 import { Effect, Option, Schema, SchemaIssue, Struct } from "effect";
 import { ProviderOptionSelections } from "./model.ts";
-import { JiraBoardReference } from "./jira.ts";
+import { JiraBoardReference, JiraIssueKey } from "./jira.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import {
   ApprovalRequestId,
@@ -324,6 +324,16 @@ export const OrchestrationThread = Schema.Struct({
   additionalDirectories: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  /**
+   * Jira ticket keys the user is actively implementing in this thread, as
+   * classified by the auxiliary agent at first turn (and refreshed when the
+   * mention set changes). Used by branch-name / commit / PR generators to
+   * engrave only the implementing tickets — reference-only mentions do NOT
+   * land here.
+   */
+  implementingJiraTicketKeys: Schema.Array(JiraIssueKey).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -374,6 +384,9 @@ export const OrchestrationThreadShell = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   additionalDirectories: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  implementingJiraTicketKeys: Schema.Array(JiraIssueKey).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
@@ -513,6 +526,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   additionalDirectories: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  implementingJiraTicketKeys: Schema.optional(Schema.Array(JiraIssueKey)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -859,6 +873,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   additionalDirectories: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  implementingJiraTicketKeys: Schema.optional(Schema.Array(JiraIssueKey)),
   updatedAt: IsoDateTime,
 });
 

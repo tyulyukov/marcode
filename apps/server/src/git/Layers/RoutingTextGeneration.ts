@@ -95,6 +95,8 @@ const makeRoutingTextGeneration = Effect.gen(function* () {
     generatePrContent: (input) => withFallback((impl) => impl.generatePrContent, input),
     generateBranchName: (input) => withFallback((impl) => impl.generateBranchName, input),
     generateThreadTitle: (input) => withFallback((impl) => impl.generateThreadTitle, input),
+    classifyImplementingJiraTickets: (input) =>
+      withFallback((impl) => impl.classifyImplementingJiraTickets, input),
   } satisfies TextGenerationShape;
 });
 

@@ -9,6 +9,7 @@
 import { Context } from "effect";
 import type { Effect } from "effect";
 import type { ChatAttachment, ModelSelection } from "@marcode/contracts";
+import type { JiraTicketContext } from "@marcode/shared/jiraContext";
 
 import type { TextGenerationError } from "@marcode/contracts";
 
@@ -24,6 +25,12 @@ export interface CommitMessageGenerationInput {
   includeBranch?: boolean;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
+  /**
+   * Jira tickets referenced in the source thread, if any. The prompt instructs
+   * the model to engrave keys in the subject/body trailer only for tickets the
+   * diff actually implements; missing/empty list ⇒ today's behavior.
+   */
+  jiraTickets?: ReadonlyArray<JiraTicketContext>;
 }
 
 export interface CommitMessageGenerationResult {
@@ -42,6 +49,8 @@ export interface PrContentGenerationInput {
   diffPatch: string;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
+  /** Jira tickets referenced in the source thread (see CommitMessageGenerationInput). */
+  jiraTickets?: ReadonlyArray<JiraTicketContext>;
 }
 
 export interface PrContentGenerationResult {
@@ -55,6 +64,8 @@ export interface BranchNameGenerationInput {
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
+  /** Jira tickets referenced in the source thread; engraved into the slug when present. */
+  jiraTickets?: ReadonlyArray<JiraTicketContext>;
 }
 
 export interface BranchNameGenerationResult {
@@ -67,10 +78,36 @@ export interface ThreadTitleGenerationInput {
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
+  /** Jira tickets referenced in the source thread; may be folded into the title. */
+  jiraTickets?: ReadonlyArray<JiraTicketContext>;
 }
 
 export interface ThreadTitleGenerationResult {
   title: string;
+}
+
+export interface ClassifyImplementingJiraTicketsInput {
+  cwd: string;
+  /**
+   * The user's message text used as the classification signal — typically the
+   * first user message in a thread, or the most recent message that introduced
+   * new mentions.
+   */
+  message: string;
+  /**
+   * All Jira tickets referenced in the thread so far. The classifier picks a
+   * subset that the user is actively implementing.
+   */
+  jiraTickets: ReadonlyArray<JiraTicketContext>;
+  modelSelection: ModelSelection;
+}
+
+export interface ClassifyImplementingJiraTicketsResult {
+  /**
+   * Subset of input ticket keys the user is actively implementing. Tickets
+   * mentioned for context only are excluded.
+   */
+  implementingKeys: ReadonlyArray<string>;
 }
 
 export interface TextGenerationService {
@@ -80,6 +117,9 @@ export interface TextGenerationService {
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
   generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
+  classifyImplementingJiraTickets(
+    input: ClassifyImplementingJiraTicketsInput,
+  ): Promise<ClassifyImplementingJiraTicketsResult>;
 }
 
 /**
@@ -113,6 +153,15 @@ export interface TextGenerationShape {
   readonly generateThreadTitle: (
     input: ThreadTitleGenerationInput,
   ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
+
+  /**
+   * Given the user's message text and a list of mentioned Jira tickets, return
+   * the subset of ticket keys the user is actively implementing in this work
+   * (vs. tickets mentioned purely for context/reference).
+   */
+  readonly classifyImplementingJiraTickets: (
+    input: ClassifyImplementingJiraTicketsInput,
+  ) => Effect.Effect<ClassifyImplementingJiraTicketsResult, TextGenerationError>;
 }
 
 /**

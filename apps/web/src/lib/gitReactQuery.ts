@@ -171,6 +171,7 @@ export function gitRunStackedActionMutationOptions(input: {
       commitMessage,
       featureBranch,
       filePaths,
+      threadId,
       onProgress,
     }: {
       actionId: string;
@@ -178,6 +179,7 @@ export function gitRunStackedActionMutationOptions(input: {
       commitMessage?: string;
       featureBranch?: boolean;
       filePaths?: string[];
+      threadId?: ThreadId;
       onProgress?: (event: GitActionProgressEvent) => void;
     }) => {
       if (!input.cwd || !input.environmentId) throw new Error("Git action is unavailable.");
@@ -189,6 +191,7 @@ export function gitRunStackedActionMutationOptions(input: {
           ...(commitMessage ? { commitMessage } : {}),
           ...(featureBranch ? { featureBranch: true } : {}),
           ...(filePaths && filePaths.length > 0 ? { filePaths } : {}),
+          ...(threadId ? { threadId } : {}),
         },
         ...(onProgress ? [{ onProgress }] : []),
       );

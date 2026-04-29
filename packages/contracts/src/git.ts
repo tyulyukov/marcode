@@ -127,6 +127,13 @@ export const GitRunStackedActionInput = Schema.Struct({
   filePaths: Schema.optional(
     Schema.Array(TrimmedNonEmptyStringSchema).check(Schema.isMinLength(1)),
   ),
+  /**
+   * When provided, the server resolves Jira ticket context from this thread's
+   * messages and feeds it to the auxiliary text generators (commit, branch, PR
+   * content). The client never ships ticket descriptions directly; this id is
+   * the only Jira-related field on the wire to keep the trust boundary intact.
+   */
+  threadId: Schema.optional(ThreadId),
 });
 export type GitRunStackedActionInput = typeof GitRunStackedActionInput.Type;
 

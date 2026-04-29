@@ -27,6 +27,11 @@ import { TextGeneration } from "../../git/Services/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import {
+  extractTrailingJiraContexts,
+  parseJiraContextEntry,
+  type JiraTicketContext,
+} from "@marcode/shared/jiraContext";
+import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
 } from "../Services/ProviderCommandReactor.ts";
@@ -493,6 +498,73 @@ const make = Effect.gen(function* () {
     };
   });
 
+  const collectFirstTurnJiraTickets = (messageText: string): ReadonlyArray<JiraTicketContext> => {
+    const extracted = extractTrailingJiraContexts(messageText);
+    if (extracted.contextCount === 0) return [];
+    const seen = new Map<string, JiraTicketContext>();
+    for (const entry of extracted.contexts) {
+      const parsed = parseJiraContextEntry(entry, { maxDescriptionChars: 1_000 });
+      if (!parsed) continue;
+      if (seen.has(parsed.issueKey)) continue;
+      seen.set(parsed.issueKey, parsed);
+    }
+    return Array.from(seen.values());
+  };
+
+  /**
+   * Run the implementing-vs-reference classifier over the user's first message
+   * + mentioned tickets, persist the resulting implementing keys on the thread
+   * via `thread.meta.update`, and return the implementing-only subset for the
+   * branch-rename / title-gen calls.
+   *
+   * Even a single mentioned ticket goes through the classifier — the user
+   * might have linked one ticket purely as reference (e.g. "fix this bug the
+   * same way we did in OTHER-PROJ-42") and that ticket must NOT leak into the
+   * branch / commit / PR. The only short-circuit is the zero-mentions case.
+   */
+  const maybeClassifyAndPersistImplementingJiraTickets = (input: {
+    readonly threadId: ThreadId;
+    readonly cwd: string;
+    readonly messageText: string;
+    readonly mentionedTickets: ReadonlyArray<JiraTicketContext>;
+  }): Effect.Effect<ReadonlyArray<JiraTicketContext>, never> =>
+    Effect.gen(function* () {
+      if (input.mentionedTickets.length === 0) {
+        return [] as ReadonlyArray<JiraTicketContext>;
+      }
+
+      const { textGenerationModelSelection: modelSelection } =
+        yield* serverSettingsService.getSettings;
+
+      const classified = yield* textGeneration.classifyImplementingJiraTickets({
+        cwd: input.cwd,
+        message: input.messageText,
+        jiraTickets: input.mentionedTickets,
+        modelSelection,
+      });
+      const implementingKeys = classified.implementingKeys;
+
+      yield* orchestrationEngine.dispatch({
+        type: "thread.meta.update",
+        commandId: serverCommandId("implementing-jira-tickets-classified"),
+        threadId: input.threadId,
+        implementingJiraTicketKeys: implementingKeys as ReadonlyArray<
+          import("@marcode/contracts").JiraIssueKey
+        >,
+      });
+
+      const implementingSet = new Set(implementingKeys);
+      return input.mentionedTickets.filter((ticket) => implementingSet.has(ticket.issueKey));
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("provider command reactor failed to classify implementing Jira tickets", {
+          threadId: input.threadId,
+          cwd: input.cwd,
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as(input.mentionedTickets)),
+      ),
+    );
+
   const maybeGenerateAndRenameWorktreeBranchForFirstTurn = Effect.fn(
     "maybeGenerateAndRenameWorktreeBranchForFirstTurn",
   )(function* (input: {
@@ -501,6 +573,7 @@ const make = Effect.gen(function* () {
     readonly worktreePath: string | null;
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
+    readonly jiraTickets: ReadonlyArray<JiraTicketContext>;
   }) {
     if (!input.branch || !input.worktreePath) {
       return;
@@ -512,6 +585,7 @@ const make = Effect.gen(function* () {
     const oldBranch = input.branch;
     const cwd = input.worktreePath;
     const attachments = input.attachments ?? [];
+    const jiraTickets = input.jiraTickets;
     yield* Effect.gen(function* () {
       const { textGenerationModelSelection: modelSelection } =
         yield* serverSettingsService.getSettings;
@@ -521,6 +595,7 @@ const make = Effect.gen(function* () {
         message: input.messageText,
         ...(attachments.length > 0 ? { attachments } : {}),
         modelSelection,
+        ...(jiraTickets.length > 0 ? { jiraTickets } : {}),
       });
       if (!generated) return;
 
@@ -555,8 +630,10 @@ const make = Effect.gen(function* () {
       readonly messageText: string;
       readonly attachments?: ReadonlyArray<ChatAttachment>;
       readonly titleSeed?: string;
+      readonly jiraTickets: ReadonlyArray<JiraTicketContext>;
     }) {
       const attachments = input.attachments ?? [];
+      const jiraTickets = input.jiraTickets;
       yield* Effect.gen(function* () {
         const { textGenerationModelSelection: modelSelection } =
           yield* serverSettingsService.getSettings;
@@ -566,6 +643,7 @@ const make = Effect.gen(function* () {
           message: input.messageText,
           ...(attachments.length > 0 ? { attachments } : {}),
           modelSelection,
+          ...(jiraTickets.length > 0 ? { jiraTickets } : {}),
         });
         if (!generated) return;
 
@@ -633,20 +711,36 @@ const make = Effect.gen(function* () {
         ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
       };
 
-      yield* maybeGenerateAndRenameWorktreeBranchForFirstTurn({
-        threadId: event.payload.threadId,
-        branch: thread.branch,
-        worktreePath: thread.worktreePath,
-        ...generationInput,
-      }).pipe(Effect.forkScoped);
-
-      if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
-        yield* maybeGenerateThreadTitleForFirstTurn({
+      // Run classification + persistence FIRST (forked) so both downstream
+      // generators see the implementing-only ticket subset. Classification
+      // emits a `thread.meta.update` event so the chip + later commit/PR
+      // action can read the result from the read model.
+      yield* Effect.gen(function* () {
+        const mentionedTickets = collectFirstTurnJiraTickets(message.text);
+        const implementingTickets = yield* maybeClassifyAndPersistImplementingJiraTickets({
           threadId: event.payload.threadId,
           cwd: generationCwd,
+          messageText: message.text,
+          mentionedTickets,
+        });
+
+        yield* maybeGenerateAndRenameWorktreeBranchForFirstTurn({
+          threadId: event.payload.threadId,
+          branch: thread.branch,
+          worktreePath: thread.worktreePath,
           ...generationInput,
+          jiraTickets: implementingTickets,
         }).pipe(Effect.forkScoped);
-      }
+
+        if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
+          yield* maybeGenerateThreadTitleForFirstTurn({
+            threadId: event.payload.threadId,
+            cwd: generationCwd,
+            ...generationInput,
+            jiraTickets: implementingTickets,
+          }).pipe(Effect.forkScoped);
+        }
+      }).pipe(Effect.forkScoped);
     }
 
     const handleTurnStartFailure = (cause: Cause.Cause<unknown>) => {

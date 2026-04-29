@@ -86,6 +86,7 @@ function makeReadModel(
       branch: null,
       worktreePath: null,
       additionalDirectories: [],
+      implementingJiraTicketKeys: [],
       createdAt: now,
       updatedAt: now,
       archivedAt: null,

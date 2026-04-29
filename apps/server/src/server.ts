@@ -53,6 +53,7 @@ import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScrip
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import { JiraTokenServiceLive } from "./jira/Layers/JiraTokenService.ts";
 import { JiraApiClientLive } from "./jira/Layers/JiraApiClient.ts";
+import { JiraContextCollectorLive } from "./jira/Layers/JiraContextCollector.ts";
 import {
   jiraAttachmentProxyRouteLayer,
   jiraAuthRouteLayer,
@@ -201,6 +202,7 @@ const GitManagerLayerLive = GitManagerLive.pipe(
   Layer.provideMerge(GitCoreLive),
   Layer.provideMerge(RoutingGitHostCliLayerLive),
   Layer.provideMerge(RoutingTextGenerationLive),
+  Layer.provideMerge(JiraContextCollectorLive),
 );
 
 const GitLayerLive = Layer.empty.pipe(

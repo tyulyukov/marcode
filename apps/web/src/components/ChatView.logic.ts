@@ -55,6 +55,7 @@ export function buildLocalDraftThread(
     branch: draftThread.branch,
     worktreePath: draftThread.worktreePath,
     additionalDirectories: [...additionalDirectories],
+    implementingJiraTicketKeys: [],
     turnDiffSummaries: [],
     activities: [],
     proposedPlans: [],

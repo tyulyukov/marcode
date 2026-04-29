@@ -91,6 +91,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     branch: null,
     worktreePath: null,
     additionalDirectories: [],
+    implementingJiraTicketKeys: [],
     ...overrides,
   };
 }
@@ -138,6 +139,7 @@ function makeState(thread: Thread): AppState {
         branch: thread.branch,
         worktreePath: thread.worktreePath,
         additionalDirectories: thread.additionalDirectories,
+        implementingJiraTicketKeys: thread.implementingJiraTicketKeys,
       },
     },
     threadSessionById: {
@@ -403,6 +405,7 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     checkpoints: [],
     session: null,
     additionalDirectories: [],
+    implementingJiraTicketKeys: [],
     ...overrides,
   } satisfies OrchestrationReadModel["threads"][number];
 }
@@ -557,6 +560,7 @@ describe("store read model sync", () => {
           branch: "feature/renamed",
           worktreePath: null,
           additionalDirectories: [],
+          implementingJiraTicketKeys: [],
           latestTurn: null,
           createdAt: "2026-02-13T00:00:00.000Z",
           updatedAt: "2026-02-13T00:00:02.000Z",
@@ -1372,6 +1376,9 @@ describe("shell events are authoritative for sidebar summary flags", () => {
         branch: thread.branch,
         worktreePath: thread.worktreePath,
         additionalDirectories: thread.additionalDirectories,
+        implementingJiraTicketKeys: thread.implementingJiraTicketKeys as unknown as ReadonlyArray<
+          OrchestrationThreadShell["implementingJiraTicketKeys"][number]
+        >,
         latestTurn: thread.latestTurn,
         createdAt: thread.createdAt,
         updatedAt: "2026-02-27T00:00:02.000Z",

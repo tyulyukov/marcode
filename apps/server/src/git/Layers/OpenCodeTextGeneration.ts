@@ -14,6 +14,7 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   buildBranchNamePrompt,
+  buildClassifyImplementingJiraTicketsPrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
@@ -21,6 +22,7 @@ import {
 import { type TextGenerationShape, TextGeneration } from "../Services/TextGeneration.ts";
 import {
   extractJsonObject,
+  filterToAllowedKeys,
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
@@ -154,7 +156,8 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "classifyImplementingJiraTickets";
   }) =>
     sharedServerMutex.withPermit(
       Effect.gen(function* () {
@@ -263,7 +266,8 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "classifyImplementingJiraTickets";
     readonly cwd: string;
     readonly prompt: string;
     readonly outputSchemaJson: S;
@@ -392,6 +396,7 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
       stagedSummary: input.stagedSummary,
       stagedPatch: input.stagedPatch,
       includeBranch: input.includeBranch === true,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
     const generated = yield* runOpenCodeJson({
       operation: "generateCommitMessage",
@@ -426,6 +431,7 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
       commitSummary: input.commitSummary,
       diffSummary: input.diffSummary,
       diffPatch: input.diffPatch,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
     const generated = yield* runOpenCodeJson({
       operation: "generatePrContent",
@@ -454,6 +460,7 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
     const { prompt, outputSchema } = buildBranchNamePrompt({
       message: input.message,
       attachments: input.attachments,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
     const generated = yield* runOpenCodeJson({
       operation: "generateBranchName",
@@ -482,6 +489,7 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
     const { prompt, outputSchema } = buildThreadTitlePrompt({
       message: input.message,
       attachments: input.attachments,
+      ...(input.jiraTickets ? { jiraTickets: input.jiraTickets } : {}),
     });
     const generated = yield* runOpenCodeJson({
       operation: "generateThreadTitle",
@@ -497,11 +505,42 @@ const makeOpenCodeTextGeneration = Effect.gen(function* () {
     };
   });
 
+  const classifyImplementingJiraTickets: TextGenerationShape["classifyImplementingJiraTickets"] =
+    Effect.fn("OpenCodeTextGeneration.classifyImplementingJiraTickets")(function* (input) {
+      if (input.modelSelection.provider !== "opencode") {
+        return yield* new TextGenerationError({
+          operation: "classifyImplementingJiraTickets",
+          detail: "Invalid model selection.",
+        });
+      }
+      if (input.jiraTickets.length === 0) {
+        return { implementingKeys: [] };
+      }
+
+      const { prompt, outputSchema } = buildClassifyImplementingJiraTicketsPrompt({
+        message: input.message,
+        jiraTickets: input.jiraTickets,
+      });
+
+      const generated = yield* runOpenCodeJson({
+        operation: "classifyImplementingJiraTickets",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      return {
+        implementingKeys: filterToAllowedKeys(generated.implementingKeys, input.jiraTickets),
+      };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    classifyImplementingJiraTickets,
   } satisfies TextGenerationShape;
 });
 

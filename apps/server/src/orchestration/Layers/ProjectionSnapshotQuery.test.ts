@@ -284,6 +284,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branch: null,
           worktreePath: null,
           additionalDirectories: [],
+          implementingJiraTicketKeys: [],
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",
@@ -397,6 +398,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           branch: null,
           worktreePath: null,
           additionalDirectories: [],
+          implementingJiraTicketKeys: [],
           latestTurn: {
             turnId: asTurnId("turn-1"),
             state: "completed",

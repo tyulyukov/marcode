@@ -239,6 +239,7 @@ const makeThread = (input?: {
   branch: null,
   worktreePath: null,
   additionalDirectories: [],
+  implementingJiraTicketKeys: [],
   turnDiffSummaries: [],
   activities: [],
 });
@@ -286,6 +287,7 @@ function setStoreThreads(threads: ReadonlyArray<ReturnType<typeof makeThread>>) 
           branch: thread.branch,
           worktreePath: thread.worktreePath,
           additionalDirectories: thread.additionalDirectories,
+          implementingJiraTicketKeys: thread.implementingJiraTicketKeys,
         },
       ]),
     ),
@@ -484,6 +486,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       branch: null,
       worktreePath: null,
       additionalDirectories: [],
+      implementingJiraTicketKeys: [],
       turnDiffSummaries: [],
       activities: [],
     });
@@ -521,6 +524,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       branch: null,
       worktreePath: null,
       additionalDirectories: [],
+      implementingJiraTicketKeys: [],
       turnDiffSummaries: [],
       activities: [],
     });
@@ -564,6 +568,7 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
       branch: null,
       worktreePath: null,
       additionalDirectories: [],
+      implementingJiraTicketKeys: [],
       turnDiffSummaries: [],
       activities: [],
     });
