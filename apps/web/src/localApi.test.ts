@@ -10,10 +10,12 @@ import {
   type ServerProvider,
   type TerminalEvent,
   ThreadId,
+  ClientSettingsSchema,
 } from "@marcode/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ContextMenuItem } from "@marcode/contracts";
+import type { ClientSettings, ContextMenuItem } from "@marcode/contracts";
+import { Schema } from "effect";
 
 const showContextMenuFallbackMock =
   vi.fn<
@@ -544,28 +546,18 @@ describe("wsApi", () => {
   });
 
   it("reads and writes persistence through the desktop bridge when available", async () => {
-    const clientSettings = {
+    const clientSettings: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
-      favorites: [],
-      sidebarProjectGroupingMode: "repository_path" as const,
+      sidebarProjectGroupingMode: "repository_path",
       sidebarProjectGroupingOverrides: {
-        "environment-local:/tmp/project": "separate" as const,
+        "environment-local:/tmp/project": "separate",
       },
-      sidebarProjectSortOrder: "manual" as const,
-      sidebarThreadSortOrder: "created_at" as const,
-      timestampFormat: "24-hour" as const,
-      turnNotificationMode: "off" as const,
-      turnNotificationSoundId: "default",
-      turnNotificationCustomSounds: [],
-      turnNotificationAdvancedSounds: false,
-      turnNotificationSoundMap: {
-        "turn-events": "default",
-        "approval-needed": "default",
-        "user-input-needed": "default",
-      },
-    };
+      sidebarProjectSortOrder: "manual",
+      sidebarThreadSortOrder: "created_at",
+      timestampFormat: "24-hour",
+    });
     const getClientSettings = vi.fn().mockResolvedValue({
       ...clientSettings,
     });
@@ -611,28 +603,18 @@ describe("wsApi", () => {
   it("falls back to browser storage for persistence when the desktop bridge is missing", async () => {
     const { createLocalApi } = await import("./localApi");
     const api = createLocalApi(rpcClientMock as never);
-    const clientSettings = {
+    const clientSettings: ClientSettings = Schema.decodeSync(ClientSettingsSchema)({
       confirmThreadArchive: true,
       confirmThreadDelete: false,
       diffWordWrap: true,
-      favorites: [],
-      sidebarProjectGroupingMode: "repository_path" as const,
+      sidebarProjectGroupingMode: "repository_path",
       sidebarProjectGroupingOverrides: {
-        "environment-local:/tmp/project": "separate" as const,
+        "environment-local:/tmp/project": "separate",
       },
-      sidebarProjectSortOrder: "manual" as const,
-      sidebarThreadSortOrder: "created_at" as const,
-      timestampFormat: "24-hour" as const,
-      turnNotificationMode: "off" as const,
-      turnNotificationSoundId: "default",
-      turnNotificationCustomSounds: [],
-      turnNotificationAdvancedSounds: false,
-      turnNotificationSoundMap: {
-        "turn-events": "default",
-        "approval-needed": "default",
-        "user-input-needed": "default",
-      },
-    };
+      sidebarProjectSortOrder: "manual",
+      sidebarThreadSortOrder: "created_at",
+      timestampFormat: "24-hour",
+    });
 
     await api.persistence.setClientSettings(clientSettings);
     await api.persistence.setSavedEnvironmentRegistry([

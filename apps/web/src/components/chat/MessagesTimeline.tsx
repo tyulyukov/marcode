@@ -61,6 +61,8 @@ import { ExplorationCard } from "./ExplorationCard";
 import { WebSearchCard } from "./WebSearchCard";
 import { WebFetchCard } from "./WebFetchCard";
 import { McpToolCallCard } from "./McpToolCallCard";
+import { selectUserMessageMinimapEntries } from "./ChatMinimap.logic";
+import { ChatMinimap } from "./ChatMinimap";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -74,6 +76,8 @@ import { JiraTaskInlineChip } from "./JiraTaskInlineChip";
 import { SelectionReplyToolbar } from "./SelectionReplyToolbar";
 import { extractLeadingQuotedContexts, type QuotedContext } from "~/lib/quotedContext";
 import { UserMessageQuotedContextLabel } from "./UserMessageQuotedContextLabel";
+import { useSettings } from "~/hooks/useSettings";
+import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
 
@@ -280,6 +284,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       }),
     [timelineEntries, completionDividerBeforeEntryId, isWorking, activeTurnStartedAt],
   );
+  const minimapEntries = useMemo(() => selectUserMessageMinimapEntries(rows), [rows]);
+  const hideChatMinimap = useSettings((s) => s.hideChatMinimap);
 
   const knownMessageIdsRef = useRef<Set<string>>(new Set());
   const pendingRevealRef = useRef<Set<string>>(new Set());
@@ -549,22 +555,28 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   return (
     <TimelineRowCtx.Provider value={sharedState}>
-      <LegendList<MessagesTimelineRow>
-        ref={listRef}
-        data={rows}
-        keyExtractor={keyExtractor}
-        renderItem={renderItem}
-        estimatedItemSize={160}
-        getEstimatedItemSize={estimateRowSize}
-        initialScrollAtEnd
-        maintainScrollAtEnd
-        maintainScrollAtEndThreshold={0.1}
-        maintainVisibleContentPosition
-        onScroll={handleScroll}
-        className="h-full overflow-x-hidden overscroll-y-contain"
-        ListHeaderComponent={<div className="h-3 sm:h-4" />}
-        ListFooterComponent={<div className="h-3 sm:h-4" />}
-      />
+      <div className="@container/chat relative h-full">
+        <LegendList<MessagesTimelineRow>
+          ref={listRef}
+          data={rows}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          estimatedItemSize={160}
+          getEstimatedItemSize={estimateRowSize}
+          initialScrollAtEnd
+          maintainScrollAtEnd
+          maintainScrollAtEndThreshold={0.1}
+          maintainVisibleContentPosition
+          onScroll={handleScroll}
+          className={cn(
+            "h-full overflow-x-hidden overscroll-y-contain",
+            hideChatMinimap ? null : "pr-2",
+          )}
+          ListHeaderComponent={<div className="h-3 sm:h-4" />}
+          ListFooterComponent={<div className="h-3 sm:h-4" />}
+        />
+        <ChatMinimap listRef={listRef} entries={minimapEntries} threadKey={threadId} />
+      </div>
     </TimelineRowCtx.Provider>
   );
 });
