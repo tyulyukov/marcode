@@ -161,6 +161,14 @@ className = "pr-3 sm:pr-5 pl-[90px]";
 
 The same applies to `py-*` vs `pt-*`/`pb-*`.
 
+## Landing Dockerfile: Workspace `package.json` Coverage
+
+`apps/landing/Dockerfile` runs `bun install --frozen-lockfile` against the whole monorepo. Because the root `package.json` declares `apps/*`, `packages/*`, and `scripts` as workspaces, bun walks the entire workspace graph in `bun.lock` — every `workspace:*` reference must resolve, even ones the landing app does not import.
+
+**Rule:** the deps stage must `COPY` a `package.json` for every workspace listed in root `package.json`. Currently that means `apps/{server,web,desktop,landing}`, `packages/{client-runtime,contracts,effect-acp,effect-codex-app-server,shared}`, and `scripts`.
+
+When adding, renaming, or removing a workspace package, update the deps stage in `apps/landing/Dockerfile` in the same commit. Otherwise Railway builds fail with `error: <pkg>@workspace:* failed to resolve` at the install step.
+
 ## Reference Repos
 
 - Open-source Codex repo: https://github.com/openai/codex

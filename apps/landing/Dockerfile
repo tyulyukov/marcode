@@ -6,7 +6,10 @@ COPY apps/server/package.json ./apps/server/package.json
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/desktop/package.json ./apps/desktop/package.json
 COPY apps/landing/package.json ./apps/landing/package.json
+COPY packages/client-runtime/package.json ./packages/client-runtime/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
+COPY packages/effect-acp/package.json ./packages/effect-acp/package.json
+COPY packages/effect-codex-app-server/package.json ./packages/effect-codex-app-server/package.json
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY scripts/package.json ./scripts/package.json
 
