@@ -2,10 +2,11 @@ import Image from "next/image";
 import type { DetectedOS } from "~/lib/detectOS";
 import type { Release } from "~/lib/github";
 import { DownloadButton } from "./DownloadButton";
+import { AppPreview } from "./AppPreview/AppPreview";
 
 export function Hero({ os, release }: { os: DetectedOS; release: Release | null }) {
   return (
-    <section className="relative flex min-h-[85vh] flex-col items-center justify-center overflow-hidden px-6 py-24">
+    <section className="relative flex flex-col items-center justify-center overflow-hidden px-6 pt-24 pb-12">
       {/* Decorative circles (BRAND.md: circle = core element) */}
       <div className="pointer-events-none absolute -left-32 -top-32 size-96 rounded-full bg-fresh-syntax/5 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-48 -right-24 size-[500px] rounded-full bg-curious-sky/5 blur-3xl" />
@@ -38,6 +39,11 @@ export function Hero({ os, release }: { os: DetectedOS; release: Release | null 
         </p>
 
         <DownloadButton serverOS={os} serverRelease={release} />
+      </div>
+
+      {/* Interactive app preview */}
+      <div className="relative z-10 mx-auto mt-16 w-full max-w-5xl px-2 sm:px-0">
+        <AppPreview />
       </div>
     </section>
   );
