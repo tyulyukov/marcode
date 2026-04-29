@@ -135,6 +135,18 @@ interface CursorSessionContext {
   // "Terminal". Stash whatever we learn from the permission request here,
   // keyed by `toolCallId`, so we can re-inject it into the tool_call event
   // and show the user the actual command that ran.
+  //
+  // KNOWN LIMITATION: when a shell command matches the user's allowlist in
+  // `~/.cursor/cli-config.json` (`Shell(ls)`, `Shell(rg)`, …), Cursor skips
+  // `request_permission` entirely AND still ships an empty `rawInput:{}` on
+  // the `tool_call` — so we have *no* channel to recover the command text.
+  // Confirmed Cursor server-side bug (Mohit, Cursor team, forum.cursor.com
+  // /t/acp-tool-call-events-for-mcp-tools-contain-no-tool-identity-title-
+  // rawinput-empty/155896): "tool_call event is emitted before tool
+  // arguments are fully parsed, and a deduplication guard prevents it from
+  // being re-emitted once the full data is available". The web-side
+  // CommandExecutionCard renders a "Command text unavailable" placeholder
+  // with a tooltip pointing users at the cli-config.json workaround.
   readonly toolCallHints: Map<string, { readonly command?: string; readonly title?: string }>;
   // Terminals spawned via Cursor's `terminal/create` request, keyed by
   // terminalId. Cursor later references these in `session/update` tool_call
@@ -388,17 +400,30 @@ export function resolveTerminalHintFromToolCall(
   return undefined;
 }
 
-function selectAutoApprovedPermissionOption(
+// Prefer `allow_once` over `allow_always` so Full-Access auto-approval does
+// not mutate the user's persistent `~/.cursor/cli-config.json` allowlist.
+//
+// `allow_always` makes Cursor write `Shell(<commandBase>)` (or equivalent) to
+// the cli-config permissions array, which means the *next* invocation of that
+// command base never triggers `session/request_permission` — and since
+// Cursor's `tool_call` event ships an empty `rawInput:{}` and the generic
+// title `"Terminal"`, losing the permission event also loses the only channel
+// that carries the actual command text. The CommandExecutionCard then degrades
+// to "Ran command" with no detail. `allow_once` keeps every invocation routed
+// through `request_permission`, so `applyToolCallHint` keeps populating the
+// command on every run. Falls back to `allow_always` only if the agent did
+// not advertise `allow_once`.
+export function selectAutoApprovedPermissionOption(
   request: EffectAcpSchema.RequestPermissionRequest,
 ): string | undefined {
-  const allowAlwaysOption = request.options.find((option) => option.kind === "allow_always");
-  if (typeof allowAlwaysOption?.optionId === "string" && allowAlwaysOption.optionId.trim()) {
-    return allowAlwaysOption.optionId.trim();
-  }
-
   const allowOnceOption = request.options.find((option) => option.kind === "allow_once");
   if (typeof allowOnceOption?.optionId === "string" && allowOnceOption.optionId.trim()) {
     return allowOnceOption.optionId.trim();
+  }
+
+  const allowAlwaysOption = request.options.find((option) => option.kind === "allow_always");
+  if (typeof allowAlwaysOption?.optionId === "string" && allowAlwaysOption.optionId.trim()) {
+    return allowAlwaysOption.optionId.trim();
   }
 
   return undefined;

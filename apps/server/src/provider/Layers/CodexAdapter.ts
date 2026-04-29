@@ -411,6 +411,13 @@ function buildItemData(item: CodexLifecycleItem): NormalizedItemData {
 interface SubagentTaskState {
   started: boolean;
   terminated: boolean;
+  /**
+   * Cached subagent description (first line of the spawn prompt). Stored when
+   * `task.started` is emitted so subsequent child-thread events can synthesize
+   * `task.progress` events without re-deriving it. `task.progress`'s payload
+   * requires a non-empty `description`.
+   */
+  description?: string;
 }
 export type SubagentTaskTracker = Map<string, SubagentTaskState>;
 
@@ -508,6 +515,9 @@ function buildSubagentTaskEvents(
           },
         });
         state.started = true;
+        if (description) {
+          state.description = description;
+        }
       }
     }
 
@@ -534,6 +544,197 @@ function buildSubagentTaskEvents(
   }
 
   return events;
+}
+
+/**
+ * Read the original `threadId` from a Codex notification payload. The runtime
+ * rewrites `event.threadId` to the canonical (parent) thread for child-thread
+ * notifications so they flow through the same stream, but the original
+ * provider thread id is preserved on the raw payload. We use that to detect
+ * subagent activity at the adapter layer.
+ */
+function readOriginThreadId(payload: ProviderEvent["payload"]): string | undefined {
+  if (payload === undefined || payload === null || typeof payload !== "object") {
+    return undefined;
+  }
+  const value = (payload as { readonly threadId?: unknown }).threadId;
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * Locate the `SubagentTaskState` for a child thread, given its origin
+ * `threadId`. Returns the canonical `taskId` (subagent thread id) plus the
+ * cached description so callers can synthesize `task.progress` events without
+ * re-walking the tracker.
+ */
+function findSubagentByOriginThreadId(
+  tracker: SubagentTaskTracker,
+  canonicalThreadId: ThreadId,
+  originThreadId: string,
+): { readonly taskId: string; readonly description: string } | undefined {
+  const state = tracker.get(`${canonicalThreadId}|${originThreadId}`);
+  if (!state || !state.started || state.terminated) {
+    return undefined;
+  }
+  return {
+    taskId: originThreadId,
+    description: state.description ?? "Subagent task",
+  };
+}
+
+type ChildItemStarted = EffectCodexSchema.V2ItemStartedNotification["item"];
+type ChildItemCompleted = EffectCodexSchema.V2ItemCompletedNotification["item"];
+
+/**
+ * Map a child-thread item type onto a short tool-name label for
+ * `task.progress.lastToolName`. The AgentGroupCard renders this as
+ * "Using {label}" while the subagent is mid-tool.
+ */
+function subagentLastToolName(item: ChildItemStarted | ChildItemCompleted): string | undefined {
+  if (!("type" in item)) return undefined;
+  switch (item.type) {
+    case "commandExecution":
+      return "Shell";
+    case "fileChange":
+      return "Edit";
+    case "webSearch":
+      return "WebSearch";
+    case "mcpToolCall":
+      return `mcp__${sanitizeMcpSegment(item.server)}__${sanitizeMcpSegment(item.tool)}`;
+    case "dynamicToolCall":
+      return item.tool;
+    case "reasoning":
+      return "Thinking";
+    case "agentMessage":
+    case "plan":
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Derive a one-line activity summary from a completed child-thread item. Used
+ * for `task.progress.summary` so the AgentGroupCard's activity row stays in
+ * sync with what the subagent is actually doing.
+ */
+function subagentItemSummary(item: ChildItemCompleted): string | undefined {
+  if (!("type" in item)) return undefined;
+  switch (item.type) {
+    case "commandExecution":
+      return trimText(item.command);
+    case "fileChange": {
+      const firstPath =
+        item.changes && item.changes.length > 0 ? trimText(item.changes[0]?.path) : undefined;
+      return firstPath ?? "File change";
+    }
+    case "webSearch":
+      return trimText(item.query);
+    case "mcpToolCall":
+      return `${sanitizeMcpSegment(item.server)}/${sanitizeMcpSegment(item.tool)}`;
+    case "dynamicToolCall":
+      return trimText(item.tool);
+    case "agentMessage":
+      return trimText(item.text);
+    case "reasoning": {
+      const summaryLine =
+        item.summary && item.summary.length > 0 ? trimText(item.summary[0]) : undefined;
+      if (summaryLine) return summaryLine;
+      const contentLine =
+        item.content && item.content.length > 0 ? trimText(item.content[0]) : undefined;
+      return contentLine;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Translate a child-thread notification into `task.progress` events keyed on
+ * the parent's subagent task id. Returns:
+ *   - `undefined` if the event did NOT originate from a known subagent thread
+ *     (caller should fall through to normal mapping). This includes the
+ *     parent's own events.
+ *   - `[]` if the event came from a known subagent but does not carry useful
+ *     progress signal (caller should drop it so subagent items don't leak
+ *     into the parent transcript).
+ *   - One or more `task.progress` events otherwise.
+ *
+ * We detect child-thread events purely via `subagentTaskTracker` membership.
+ * Comparing `payload.threadId` to `canonicalThreadId` would be wrong — those
+ * are different namespaces (the marcode `ThreadId` vs Codex's provider
+ * thread UUID), and they never match even for the parent's own events.
+ *
+ * We only emit progress at item boundaries (`item/started` for `lastToolName`,
+ * `item/completed` for `summary`) — translating every text/output delta would
+ * make the activity row flicker and offers no incremental UX value.
+ */
+function buildSubagentProgressEvents(
+  event: ProviderEvent,
+  canonicalThreadId: ThreadId,
+  subagentTaskTracker: SubagentTaskTracker,
+): ReadonlyArray<ProviderRuntimeEvent> | undefined {
+  if (event.kind !== "notification") {
+    return undefined;
+  }
+  const originThreadId = readOriginThreadId(event.payload);
+  if (!originThreadId) {
+    return undefined;
+  }
+  const subagent = findSubagentByOriginThreadId(
+    subagentTaskTracker,
+    canonicalThreadId,
+    originThreadId,
+  );
+  if (!subagent) {
+    return undefined;
+  }
+
+  const base = runtimeEventBase(event, canonicalThreadId);
+  const taskId = RuntimeTaskId.make(subagent.taskId);
+  const description = subagent.description;
+
+  if (event.method === "item/started") {
+    const payload = readPayload(EffectCodexSchema.V2ItemStartedNotification, event.payload);
+    const item = payload?.item;
+    if (!item) return [];
+    const lastToolName = subagentLastToolName(item);
+    if (!lastToolName) return [];
+    return [
+      {
+        ...base,
+        type: "task.progress",
+        payload: {
+          taskId,
+          description,
+          lastToolName,
+        },
+      },
+    ];
+  }
+
+  if (event.method === "item/completed") {
+    const payload = readPayload(EffectCodexSchema.V2ItemCompletedNotification, event.payload);
+    const item = payload?.item;
+    if (!item) return [];
+    const summary = subagentItemSummary(item);
+    const lastToolName = subagentLastToolName(item);
+    if (!summary && !lastToolName) return [];
+    return [
+      {
+        ...base,
+        type: "task.progress",
+        payload: {
+          taskId,
+          description,
+          ...(summary ? { summary } : {}),
+          ...(lastToolName ? { lastToolName } : {}),
+        },
+      },
+    ];
+  }
+
+  return [];
 }
 
 function toRequestTypeFromMethod(method: string): CanonicalRequestType {
@@ -871,6 +1072,16 @@ function mapToRuntimeEvents(
         },
       },
     ];
+  }
+
+  // Codex routes child-thread notifications through the parent's stream with
+  // the parent's `threadId` (see `CodexSessionRuntime.handleRawNotification`),
+  // so to the rest of `mapToRuntimeEvents` they look like the parent's own
+  // items. Translate those into `task.progress` events for the AgentGroupCard
+  // and suppress the normal mapping so the parent transcript stays clean.
+  const subagentEvents = buildSubagentProgressEvents(event, canonicalThreadId, subagentTaskTracker);
+  if (subagentEvents !== undefined) {
+    return subagentEvents;
   }
 
   if (event.method === "item/requestApproval/decision" && event.requestId) {

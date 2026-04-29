@@ -649,6 +649,12 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         );
 
         const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+        // Full-Access auto-approval prefers `allow-once` over `allow-always` so
+        // it does not mutate `~/.cursor/cli-config.json`. Persisting the
+        // allowlist would suppress future `session/request_permission` events,
+        // which is the only channel that carries the actual command text — so
+        // the CommandExecutionCard would degrade to "Ran command" with no
+        // detail. See selectAutoApprovedPermissionOption in CursorAdapter.ts.
         const permissionResponse = requests.find(
           (entry) =>
             !("method" in entry) &&
@@ -660,7 +666,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
             "outcome" in entry.result.outcome &&
             entry.result.outcome.outcome === "selected" &&
             "optionId" in entry.result.outcome &&
-            entry.result.outcome.optionId === "allow-always",
+            entry.result.outcome.optionId === "allow-once",
         );
         assert.isDefined(permissionResponse);
 
