@@ -19,6 +19,7 @@ interface AgentGroupCardProps {
   isLive: boolean;
   provider: ProviderKind;
   onTaskSelect: (taskId: string) => void;
+  isLatestTurn?: boolean;
 }
 
 function formatAgentTaskType(taskType: string | null): string | null {

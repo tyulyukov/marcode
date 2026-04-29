@@ -40,6 +40,7 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       entry: WorkLogEntry;
+      readonly isLatestTurn?: boolean;
     }
   | {
       kind: "exploration";
@@ -47,6 +48,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       entries: WorkLogEntry[];
       isLive: boolean;
+      readonly isLatestTurn?: boolean;
     }
   | {
       kind: "agent-group";
@@ -54,6 +56,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       entry: WorkLogEntry;
       isLive: boolean;
+      readonly isLatestTurn?: boolean;
     }
   | {
       kind: "command";
@@ -61,6 +64,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       entry: WorkLogEntry;
       isLive: boolean;
+      readonly isLatestTurn?: boolean;
     }
   | {
       kind: "web-search";
@@ -68,6 +72,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       entry: WorkLogEntry;
       isLive: boolean;
+      readonly isLatestTurn?: boolean;
     }
   | {
       kind: "web-fetch";
@@ -75,6 +80,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       entry: WorkLogEntry;
       isLive: boolean;
+      readonly isLatestTurn?: boolean;
     }
   | {
       kind: "mcp-tool";
@@ -82,6 +88,7 @@ export type MessagesTimelineRow =
       createdAt: string;
       entry: WorkLogEntry;
       isLive: boolean;
+      readonly isLatestTurn?: boolean;
     }
   | { kind: "working"; id: string; createdAt: string | null };
 
@@ -409,6 +416,23 @@ export function deriveMessagesTimelineRows(input: {
         timelineEntry.message.role === "assistant" &&
         terminalAssistantMessageIds.has(timelineEntry.message.id),
     });
+  }
+
+  for (let i = nextRows.length - 1; i >= 0; i--) {
+    const r = nextRows[i];
+    if (!r) break;
+    if (r.kind === "message" && r.message.role === "user") break;
+    if (
+      r.kind === "file-change" ||
+      r.kind === "exploration" ||
+      r.kind === "agent-group" ||
+      r.kind === "command" ||
+      r.kind === "web-search" ||
+      r.kind === "web-fetch" ||
+      r.kind === "mcp-tool"
+    ) {
+      nextRows[i] = { ...r, isLatestTurn: true };
+    }
   }
 
   if (input.isWorking) {

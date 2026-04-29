@@ -44,9 +44,16 @@ const INLINE_DIFF_CSS = `
   background-color: var(--diffs-bg) !important;
 }
 
+[data-file],
+[data-virtualizer-buffer] {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
 pre[data-diff] {
   font-size: 11px !important;
   line-height: 18px !important;
+  margin: 0 !important;
 }
 `;
 
@@ -94,10 +101,11 @@ interface FileChangeCardProps {
   cwd: string | undefined;
   isLive?: boolean;
   isPendingApproval?: boolean;
+  isLatestTurn?: boolean;
 }
 
 export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCardProps) {
-  const { diffPreviews, cwd, isPendingApproval = false } = props;
+  const { diffPreviews, cwd, isPendingApproval = false, isLatestTurn = false } = props;
 
   if (diffPreviews.length === 0) return null;
 
@@ -184,7 +192,7 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
       meta={meta}
       body={body}
       {...(expandedBody !== undefined ? { expandedBody } : {})}
-      defaultState="preview"
+      defaultState={isLatestTurn ? "preview" : "collapsed"}
       isPendingApproval={isPendingApproval}
     />
   );

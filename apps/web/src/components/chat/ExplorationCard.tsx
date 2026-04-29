@@ -9,6 +9,7 @@ interface ExplorationCardProps {
   isLive: boolean;
   isPendingApproval?: boolean;
   summaryOnly?: boolean;
+  isLatestTurn?: boolean;
 }
 
 const READ_TOOL_NAMES = new Set(["read", "cat", "head", "tail", "view", "view_file", "read_file"]);

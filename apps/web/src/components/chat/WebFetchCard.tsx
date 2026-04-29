@@ -8,6 +8,7 @@ import type { ToolStatusKind } from "./_shared/StatusBadge";
 interface WebFetchCardProps {
   entry: WorkLogEntry;
   isLive: boolean;
+  isLatestTurn?: boolean;
 }
 
 const HTTP_ERROR_PATTERN = /^Request failed with status code \d{3}/;
@@ -55,7 +56,7 @@ function formatUrlDisplay(url: string): string {
 }
 
 export const WebFetchCard = memo(function WebFetchCard(props: WebFetchCardProps) {
-  const { entry } = props;
+  const { entry, isLatestTurn = false } = props;
 
   const status = deriveToolStatus(entry);
   const url = useMemo(() => deriveUrl(entry), [entry]);
@@ -104,7 +105,7 @@ export const WebFetchCard = memo(function WebFetchCard(props: WebFetchCardProps)
       status={status}
       primary={primary}
       body={body}
-      defaultState="collapsed"
+      defaultState={isLatestTurn ? "preview" : "collapsed"}
       statusLabels={{ running: "Fetching", success: "Fetched", error: "Failed" }}
     />
   );

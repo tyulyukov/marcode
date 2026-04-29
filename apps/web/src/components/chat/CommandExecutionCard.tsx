@@ -11,6 +11,7 @@ interface CommandExecutionCardProps {
   isLive: boolean;
   threadId: string;
   isPendingApproval?: boolean;
+  isLatestTurn?: boolean;
 }
 
 type CommandStatus = "running" | "error" | "success" | "approval";
@@ -90,7 +91,7 @@ function statusToToolStatus(status: CommandStatus): ToolStatusKind {
 export const CommandExecutionCard = memo(function CommandExecutionCard(
   props: CommandExecutionCardProps,
 ) {
-  const { entry, threadId, isPendingApproval = false } = props;
+  const { entry, threadId, isPendingApproval = false, isLatestTurn = false } = props;
 
   const status = deriveCommandStatus(entry, isPendingApproval);
   const liveOutput = useRuntimeToolOutput(threadId, entry.itemId);
@@ -139,7 +140,7 @@ export const CommandExecutionCard = memo(function CommandExecutionCard(
       status={statusToToolStatus(status)}
       primary={primary}
       body={body}
-      defaultState="preview"
+      defaultState={isLatestTurn ? "preview" : "collapsed"}
       isPendingApproval={isPendingApproval}
       statusLabels={{ running: "Running", success: "Success", error: errorLabel }}
     />

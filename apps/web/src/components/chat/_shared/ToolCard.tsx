@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Collapsible, CollapsiblePanel } from "~/components/ui/collapsible";
 import { cn } from "~/lib/utils";
@@ -53,7 +53,7 @@ export function ToolCard(props: ToolCardProps) {
   const [bodyOverflows, setBodyOverflows] = useState(false);
   const previewRef = useRef<HTMLDivElement | null>(null);
 
-  const { state, toggleOpen, expandFully } = useToolCardState({
+  const { state, toggleOpen, expandFully, setState } = useToolCardState({
     defaultState: anyBody ? defaultState : "collapsed",
     bodyAvailable,
   });
@@ -136,7 +136,14 @@ export function ToolCard(props: ToolCardProps) {
                   {showFullCtaVisible && <ShowFullButton onClick={expandFully} />}
                 </div>
               )}
-              {showExpanded && (expandedBodyAvailable ? expandedBody : body)}
+              {showExpanded && (
+                <>
+                  {expandedBodyAvailable ? expandedBody : body}
+                  {bodyAvailable && (
+                    <HideButton onClick={() => setState(bodyAvailable ? "preview" : "collapsed")} />
+                  )}
+                </>
+              )}
             </div>
           </CollapsiblePanel>
         </Collapsible>
@@ -170,6 +177,33 @@ function ShowFullButton({ onClick }: { onClick: () => void }) {
       >
         <ChevronDownIcon className="size-3 transition-transform duration-200 group-hover:translate-y-[1px]" />
         Show full
+      </span>
+    </button>
+  );
+}
+
+function HideButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      data-scroll-anchor-ignore
+      onClick={onClick}
+      className={cn(
+        "group flex w-full cursor-pointer items-center justify-center",
+        "border-t border-border/15 pt-1.5 pb-2",
+        "transition-colors duration-200",
+      )}
+      aria-label="Show less"
+    >
+      <span
+        className={cn(
+          "flex items-center gap-1 text-[10px] tracking-wide",
+          "text-muted-foreground/40 transition-colors duration-200",
+          "group-hover:text-muted-foreground/80",
+        )}
+      >
+        <ChevronUpIcon className="size-3 transition-transform duration-200 group-hover:-translate-y-[1px]" />
+        Show less
       </span>
     </button>
   );

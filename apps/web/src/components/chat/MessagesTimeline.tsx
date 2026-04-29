@@ -648,11 +648,29 @@ function TimelineRowContent({ row }: { row: TimelineRow }) {
 
       {row.kind === "command" && <CommandRow row={row} />}
 
-      {row.kind === "web-search" && <WebSearchCard entry={row.entry} isLive={row.isLive} />}
+      {row.kind === "web-search" && (
+        <WebSearchCard
+          entry={row.entry}
+          isLive={row.isLive}
+          isLatestTurn={row.isLatestTurn ?? false}
+        />
+      )}
 
-      {row.kind === "web-fetch" && <WebFetchCard entry={row.entry} isLive={row.isLive} />}
+      {row.kind === "web-fetch" && (
+        <WebFetchCard
+          entry={row.entry}
+          isLive={row.isLive}
+          isLatestTurn={row.isLatestTurn ?? false}
+        />
+      )}
 
-      {row.kind === "mcp-tool" && <McpToolCallCard entry={row.entry} isLive={row.isLive} />}
+      {row.kind === "mcp-tool" && (
+        <McpToolCallCard
+          entry={row.entry}
+          isLive={row.isLive}
+          isLatestTurn={row.isLatestTurn ?? false}
+        />
+      )}
 
       {row.kind === "message" && row.message.role === "user" && <UserMessageRow row={row} />}
 
@@ -682,6 +700,7 @@ function FileChangeRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "fil
       diffPreviews={row.entry.diffPreviews ?? []}
       cwd={ctx.workspaceRoot}
       isPendingApproval={isPendingApproval}
+      isLatestTurn={row.isLatestTurn ?? false}
     />
   );
 }
@@ -698,6 +717,7 @@ function ExplorationRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "ex
       isLive={row.isLive}
       isPendingApproval={isPendingApproval}
       summaryOnly={ctx.provider === "cursor"}
+      isLatestTurn={row.isLatestTurn ?? false}
     />
   );
 }
@@ -712,6 +732,7 @@ function AgentGroupRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "age
       isLive={row.isLive}
       provider={ctx.provider}
       onTaskSelect={ctx.onSubagentSelect}
+      isLatestTurn={row.isLatestTurn ?? false}
     />
   );
 }
@@ -729,6 +750,7 @@ function CommandRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "comman
       isLive={row.isLive}
       threadId={ctx.threadId}
       isPendingApproval={isPendingApproval}
+      isLatestTurn={row.isLatestTurn ?? false}
     />
   );
 }

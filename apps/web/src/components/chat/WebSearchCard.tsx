@@ -8,6 +8,7 @@ import type { ToolStatusKind } from "./_shared/StatusBadge";
 interface WebSearchCardProps {
   entry: WorkLogEntry;
   isLive: boolean;
+  isLatestTurn?: boolean;
 }
 
 function deriveToolStatus(entry: WorkLogEntry): ToolStatusKind {
@@ -37,7 +38,7 @@ function deriveSearchQuery(entry: WorkLogEntry): string | null {
 }
 
 export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardProps) {
-  const { entry } = props;
+  const { entry, isLatestTurn = false } = props;
 
   const status = deriveToolStatus(entry);
   const query = useMemo(() => deriveSearchQuery(entry), [entry]);
@@ -79,7 +80,7 @@ export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardPro
       status={status}
       primary={primary}
       body={body}
-      defaultState="collapsed"
+      defaultState={isLatestTurn ? "preview" : "collapsed"}
       statusLabels={{ running: "Searching", success: "Done", error: "Failed" }}
     />
   );

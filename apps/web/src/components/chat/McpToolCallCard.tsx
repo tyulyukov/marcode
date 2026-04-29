@@ -8,6 +8,7 @@ import type { ToolStatusKind } from "./_shared/StatusBadge";
 interface McpToolCallCardProps {
   entry: WorkLogEntry;
   isLive: boolean;
+  isLatestTurn?: boolean;
 }
 
 function deriveToolStatus(entry: WorkLogEntry): ToolStatusKind {
@@ -78,7 +79,7 @@ function summarizeInput(input: Record<string, unknown> | undefined): string | nu
 }
 
 export const McpToolCallCard = memo(function McpToolCallCard(props: McpToolCallCardProps) {
-  const { entry } = props;
+  const { entry, isLatestTurn = false } = props;
 
   const status = deriveToolStatus(entry);
   const parsed = useMemo(() => parseMcpToolName(entry), [entry.toolName, entry.toolInput]);
@@ -122,7 +123,7 @@ export const McpToolCallCard = memo(function McpToolCallCard(props: McpToolCallC
       primary={primary}
       meta={meta}
       body={body}
-      defaultState="collapsed"
+      defaultState={isLatestTurn ? "preview" : "collapsed"}
       statusLabels={{ running: "Running", success: "Done", error: "Failed" }}
     />
   );
