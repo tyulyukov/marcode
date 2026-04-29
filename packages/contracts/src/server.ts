@@ -83,6 +83,43 @@ export const ServerProviderSkill = Schema.Struct({
 });
 export type ServerProviderSkill = typeof ServerProviderSkill.Type;
 
+export const ServerProviderVersionAdvisoryStatus = Schema.Literals([
+  "unknown",
+  "current",
+  "behind_latest",
+]);
+export type ServerProviderVersionAdvisoryStatus = typeof ServerProviderVersionAdvisoryStatus.Type;
+
+export const ServerProviderVersionAdvisory = Schema.Struct({
+  status: ServerProviderVersionAdvisoryStatus,
+  currentVersion: Schema.NullOr(TrimmedNonEmptyString),
+  latestVersion: Schema.NullOr(TrimmedNonEmptyString),
+  updateCommand: Schema.NullOr(TrimmedNonEmptyString),
+  canUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  checkedAt: Schema.NullOr(IsoDateTime),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ServerProviderVersionAdvisory = typeof ServerProviderVersionAdvisory.Type;
+
+export const ServerProviderUpdateStatus = Schema.Literals([
+  "idle",
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "unchanged",
+]);
+export type ServerProviderUpdateStatus = typeof ServerProviderUpdateStatus.Type;
+
+export const ServerProviderUpdateState = Schema.Struct({
+  status: ServerProviderUpdateStatus,
+  startedAt: Schema.NullOr(IsoDateTime),
+  finishedAt: Schema.NullOr(IsoDateTime),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+  output: Schema.NullOr(Schema.String.check(Schema.isMaxLength(10_000))),
+});
+export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
+
 export const ServerProvider = Schema.Struct({
   provider: ProviderKind,
   displayName: Schema.optional(TrimmedNonEmptyString),
@@ -100,6 +137,8 @@ export const ServerProvider = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
+  updateState: Schema.optionalKey(ServerProviderUpdateState),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 
@@ -242,3 +281,21 @@ export const ServerProviderUpdatedPayload = Schema.Struct({
   providers: ServerProviders,
 });
 export type ServerProviderUpdatedPayload = typeof ServerProviderUpdatedPayload.Type;
+
+export const ServerProviderUpdateInput = Schema.Struct({
+  provider: ProviderKind,
+});
+export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
+
+export class ServerProviderUpdateError extends Schema.TaggedErrorClass<ServerProviderUpdateError>()(
+  "ServerProviderUpdateError",
+  {
+    provider: ProviderKind,
+    reason: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect),
+  },
+) {
+  override get message(): string {
+    return `Provider update failed for ${this.provider}: ${this.reason}`;
+  }
+}

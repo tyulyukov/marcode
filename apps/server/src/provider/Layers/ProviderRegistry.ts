@@ -3,7 +3,7 @@
  *
  * @module ProviderRegistryLive
  */
-import type { ProviderKind, ServerProvider } from "@marcode/contracts";
+import type { ProviderKind, ServerProvider, ServerProviderUpdateState } from "@marcode/contracts";
 import { Effect, Equal, FileSystem, Layer, Path, PubSub, Ref, Stream } from "effect";
 
 import { ServerConfig } from "../../config.ts";
@@ -71,6 +71,30 @@ export const mergeProviderSnapshot = (
         ...nextProvider,
         models: mergeProviderModels(previousProvider.models, nextProvider.models),
       };
+
+export const mergeProviderSnapshots = (
+  previousProviders: ReadonlyArray<ServerProvider>,
+  nextProviders: ReadonlyArray<ServerProvider>,
+): ReadonlyArray<ServerProvider> => {
+  const mergedProviders = new Map(
+    previousProviders.map((provider) => [provider.provider, provider] as const),
+  );
+
+  for (const provider of nextProviders) {
+    mergedProviders.set(
+      provider.provider,
+      mergeProviderSnapshot(mergedProviders.get(provider.provider), provider),
+    );
+  }
+
+  return orderProviderSnapshots([...mergedProviders.values()]);
+};
+
+export const selectProvidersByKind = (
+  providers: ReadonlyArray<ServerProvider>,
+  providerKinds: ReadonlySet<ProviderKind>,
+): ReadonlyArray<ServerProvider> =>
+  providers.filter((provider) => providerKinds.has(provider.provider));
 
 export const haveProvidersChanged = (
   previousProviders: ReadonlyArray<ServerProvider>,
@@ -143,6 +167,24 @@ const ProviderRegistryLiveBase = Layer.effect(
       ),
     );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(cachedProviders);
+    const updateStatesRef = yield* Ref.make<ReadonlyMap<ProviderKind, ServerProviderUpdateState>>(
+      new Map(),
+    );
+
+    const applyProviderUpdateState = Effect.fn("applyProviderUpdateState")(function* (
+      provider: ServerProvider,
+    ) {
+      const updateStates = yield* Ref.get(updateStatesRef);
+      const updateState = updateStates.get(provider.provider);
+      if (!updateState) {
+        const { updateState: _updateState, ...providerWithoutUpdateState } = provider;
+        return providerWithoutUpdateState;
+      }
+      return {
+        ...provider,
+        updateState,
+      };
+    });
 
     const persistProvider = (provider: ServerProvider) =>
       writeProviderStatusCache({
@@ -161,30 +203,31 @@ const ProviderRegistryLiveBase = Layer.effect(
         readonly publish?: boolean;
       },
     ) {
-      const [previousProviders, providers] = yield* Ref.modify(
-        providersRef,
-        (previousProviders) => {
-          const mergedProviders = new Map(
-            previousProviders.map((provider) => [provider.provider, provider] as const),
-          );
-
-          for (const provider of nextProviders) {
-            mergedProviders.set(
-              provider.provider,
-              mergeProviderSnapshot(mergedProviders.get(provider.provider), provider),
-            );
-          }
-
-          const providers = orderProviderSnapshots([...mergedProviders.values()]);
-          return [[previousProviders, providers] as const, providers];
+      const nextProvidersWithUpdateState = yield* Effect.forEach(
+        nextProviders,
+        applyProviderUpdateState,
+        {
+          concurrency: "unbounded",
         },
+      );
+      const [previousProviders, providers] = yield* Ref.modify(providersRef, (previousProviders) =>
+        ((providers) => [[previousProviders, providers] as const, providers])(
+          mergeProviderSnapshots(previousProviders, nextProvidersWithUpdateState),
+        ),
       );
 
       if (haveProvidersChanged(previousProviders, providers)) {
-        yield* Effect.forEach(nextProviders, persistProvider, {
-          concurrency: "unbounded",
-          discard: true,
-        });
+        const updatedProviderKinds = new Set(
+          nextProvidersWithUpdateState.map((provider) => provider.provider),
+        );
+        yield* Effect.forEach(
+          selectProvidersByKind(providers, updatedProviderKinds),
+          persistProvider,
+          {
+            concurrency: "unbounded",
+            discard: true,
+          },
+        );
         if (options?.publish !== false) {
           yield* PubSub.publish(changesPubSub, providers);
         }
@@ -200,6 +243,32 @@ const ProviderRegistryLiveBase = Layer.effect(
       },
     ) {
       return yield* upsertProviders([provider], options);
+    });
+
+    const setProviderUpdateState = Effect.fn("setProviderUpdateState")(function* (
+      provider: ProviderKind,
+      state: ServerProviderUpdateState | null,
+    ) {
+      yield* Ref.update(updateStatesRef, (previous) => {
+        const next = new Map(previous);
+        if (state === null || state.status === "idle") {
+          next.delete(provider);
+          return next;
+        }
+        next.set(provider, state);
+        return next;
+      });
+
+      const existingProviders = yield* Ref.get(providersRef);
+      const existingProvider = existingProviders.find(
+        (candidate) => candidate.provider === provider,
+      );
+      if (!existingProvider) {
+        return existingProviders;
+      }
+
+      const nextProvider = yield* applyProviderUpdateState(existingProvider);
+      return yield* syncProvider(nextProvider);
     });
 
     const refresh = Effect.fn("refresh")(function* (provider?: ProviderKind) {
@@ -245,6 +314,7 @@ const ProviderRegistryLiveBase = Layer.effect(
           Effect.tapError(Effect.logError),
           Effect.orElseSucceed(() => [] as ReadonlyArray<ServerProvider>),
         ),
+      setProviderUpdateState,
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
       },

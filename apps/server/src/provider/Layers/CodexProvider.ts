@@ -28,6 +28,10 @@ import { ServerSettingsError } from "@marcode/contracts";
 import { createModelCapabilities } from "@marcode/shared/model";
 
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import {
+  enrichProviderSnapshotWithVersionAdvisory,
+  getProviderVersionLifecycle,
+} from "../providerVersionLifecycle.ts";
 import { buildServerProvider } from "../providerSnapshot.ts";
 import { CodexProvider } from "../Services/CodexProvider.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
@@ -503,6 +507,7 @@ export const CodexProviderLive = Layer.effect(
     );
 
     return yield* makeManagedServerProvider<CodexSettings>({
+      versionLifecycle: getProviderVersionLifecycle(PROVIDER),
       getSettings: serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providers.codex),
         Effect.orDie,
@@ -513,6 +518,14 @@ export const CodexProviderLive = Layer.effect(
       haveSettingsChanged: (previous, next) => !Equal.equals(previous, next),
       initialSnapshot: makePendingCodexProvider,
       checkProvider,
+      enrichSnapshot: ({ snapshot, publishSnapshot }) =>
+        Effect.promise(() => enrichProviderSnapshotWithVersionAdvisory(snapshot)).pipe(
+          Effect.flatMap((enrichedSnapshot) =>
+            Equal.equals(enrichedSnapshot, snapshot)
+              ? Effect.void
+              : publishSnapshot(enrichedSnapshot),
+          ),
+        ),
       refreshInterval: Duration.minutes(5),
     });
   }),

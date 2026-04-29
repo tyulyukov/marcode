@@ -31,6 +31,10 @@ import {
   type CommandResult,
 } from "../providerSnapshot.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import {
+  enrichProviderSnapshotWithVersionAdvisory,
+  getProviderVersionLifecycle,
+} from "../providerVersionLifecycle.ts";
 import { CursorProvider } from "../Services/CursorProvider.ts";
 import { AcpSessionRuntime } from "../acp/AcpSessionRuntime.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -1169,6 +1173,7 @@ export const CursorProviderLive = Layer.effect(
     );
 
     return yield* makeManagedServerProvider<CursorSettings>({
+      versionLifecycle: getProviderVersionLifecycle(PROVIDER),
       getSettings: serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providers.cursor),
         Effect.orDie,
@@ -1180,37 +1185,58 @@ export const CursorProviderLive = Layer.effect(
       initialSnapshot: buildInitialCursorProviderSnapshot,
       checkProvider,
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) => {
-        if (
-          !settings.enabled ||
-          snapshot.auth.status === "unauthenticated" ||
-          !snapshot.models.some((model) => !model.isCustom && !hasCursorModelCapabilities(model))
-        ) {
-          return Effect.void;
-        }
+        const enrichVersionAdvisory = Effect.promise(() =>
+          enrichProviderSnapshotWithVersionAdvisory(snapshot),
+        ).pipe(
+          Effect.flatMap((enrichedSnapshot) =>
+            Equal.equals(enrichedSnapshot, snapshot)
+              ? Effect.succeed(enrichedSnapshot)
+              : publishSnapshot(enrichedSnapshot).pipe(Effect.as(enrichedSnapshot)),
+          ),
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Cursor version advisory enrichment failed", {
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as(snapshot)),
+          ),
+        );
 
-        return discoverCursorModelCapabilitiesViaAcp(settings, snapshot.models).pipe(
-          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          Effect.flatMap((discoveredModels) => {
-            if (discoveredModels.length === 0) {
+        return enrichVersionAdvisory.pipe(
+          Effect.flatMap((baseSnapshot) => {
+            if (
+              !settings.enabled ||
+              baseSnapshot.auth.status === "unauthenticated" ||
+              !baseSnapshot.models.some(
+                (model) => !model.isCustom && !hasCursorModelCapabilities(model),
+              )
+            ) {
               return Effect.void;
             }
 
-            return publishSnapshot({
-              ...snapshot,
-              models: providerModelsFromSettings(
-                discoveredModels,
-                PROVIDER,
-                settings.customModels,
-                EMPTY_CAPABILITIES,
+            return discoverCursorModelCapabilitiesViaAcp(settings, baseSnapshot.models).pipe(
+              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+              Effect.flatMap((discoveredModels) => {
+                if (discoveredModels.length === 0) {
+                  return Effect.void;
+                }
+
+                return publishSnapshot({
+                  ...baseSnapshot,
+                  models: providerModelsFromSettings(
+                    discoveredModels,
+                    PROVIDER,
+                    settings.customModels,
+                    EMPTY_CAPABILITIES,
+                  ),
+                });
+              }),
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Cursor ACP background capability enrichment failed", {
+                  models: baseSnapshot.models.map((model) => model.slug),
+                  cause: Cause.pretty(cause),
+                }).pipe(Effect.asVoid),
               ),
-            });
+            );
           }),
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Cursor ACP background capability enrichment failed", {
-              models: snapshot.models.map((model) => model.slug),
-              cause: Cause.pretty(cause),
-            }).pipe(Effect.asVoid),
-          ),
         );
       },
       refreshInterval: CURSOR_REFRESH_INTERVAL,

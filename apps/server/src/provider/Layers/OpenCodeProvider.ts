@@ -12,6 +12,10 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
+  enrichProviderSnapshotWithVersionAdvisory,
+  getProviderVersionLifecycle,
+} from "../providerVersionLifecycle.ts";
+import {
   buildServerProvider,
   nonEmptyTrimmed,
   parseGenericCliVersion,
@@ -486,6 +490,7 @@ export const OpenCodeProviderLive = Layer.effect(
     );
 
     return yield* makeManagedServerProvider<OpenCodeSettings>({
+      versionLifecycle: getProviderVersionLifecycle(PROVIDER),
       getSettings: getProviderSettings.pipe(Effect.orDie),
       streamSettings: serverSettings.streamChanges.pipe(
         Stream.map((settings) => settings.providers.opencode),
@@ -500,6 +505,14 @@ export const OpenCodeProviderLive = Layer.effect(
           }),
         ),
       ),
+      enrichSnapshot: ({ snapshot, publishSnapshot }) =>
+        Effect.promise(() => enrichProviderSnapshotWithVersionAdvisory(snapshot)).pipe(
+          Effect.flatMap((enrichedSnapshot) =>
+            Equal.equals(enrichedSnapshot, snapshot)
+              ? Effect.void
+              : publishSnapshot(enrichedSnapshot),
+          ),
+        ),
     });
   }),
 );

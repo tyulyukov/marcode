@@ -2,6 +2,8 @@ import {
   ArchiveIcon,
   ArchiveX,
   ChevronDownIcon,
+  CopyIcon,
+  DownloadIcon,
   InfoIcon,
   LoaderIcon,
   PlayIcon,
@@ -13,7 +15,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PROVIDER_DISPLAY_NAMES,
   type ScopedThreadRef,
@@ -21,6 +23,8 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   ThreadId,
+  type ServerProviderUpdateState,
+  type ServerProviderVersionAdvisory,
 } from "@marcode/contracts";
 import { scopeThreadRef } from "@marcode/client-runtime";
 import {
@@ -43,6 +47,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
 import { isElectron } from "../../env";
+import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
@@ -233,6 +238,104 @@ function getProviderSummary(provider: ServerProvider | undefined) {
 function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
   return version.startsWith("v") ? version : `v${version}`;
+}
+
+function getProviderVersionAdvisoryPresentation(
+  advisory: ServerProviderVersionAdvisory | undefined,
+) {
+  if (!advisory || advisory.status === "current" || advisory.status === "unknown") {
+    return null;
+  }
+
+  const label = "Update available";
+  const version = advisory.latestVersion;
+  const versionLabel = getProviderVersionLabel(version);
+
+  return {
+    label,
+    detail:
+      advisory.message ??
+      (versionLabel
+        ? `${label}: install ${versionLabel}.`
+        : `${label}: install the latest provider version.`),
+    updateCommand: advisory.updateCommand,
+    canUpdate: advisory.canUpdate,
+    emphasis: "normal" as const,
+  };
+}
+
+function getProviderUpdateStatePresentation(updateState: ServerProviderUpdateState | undefined) {
+  if (!updateState) {
+    return null;
+  }
+
+  switch (updateState.status) {
+    case "queued":
+      return {
+        detail: updateState.message ?? "Waiting to update provider.",
+        emphasis: "normal" as const,
+      };
+    case "running":
+      return {
+        detail: "Updating provider...",
+        emphasis: "normal" as const,
+      };
+    case "succeeded":
+      return {
+        detail: "Up to date.",
+        emphasis: "success" as const,
+      };
+    case "failed":
+      return {
+        detail: updateState.message ?? "Provider update failed.",
+        emphasis: "danger" as const,
+      };
+    case "unchanged":
+      return {
+        detail:
+          updateState.message ??
+          "Update command completed, but T3 Code still detects an outdated provider version.",
+        emphasis: "strong" as const,
+      };
+    case "idle":
+      return null;
+  }
+}
+
+function getProviderAdvisoryDetail(input: {
+  readonly versionAdvisory: ReturnType<typeof getProviderVersionAdvisoryPresentation>;
+  readonly updateStatePresentation: ReturnType<typeof getProviderUpdateStatePresentation>;
+  readonly updateState: ServerProviderUpdateState | undefined;
+}): string | null {
+  if (
+    (input.updateState?.status === "failed" || input.updateState?.status === "unchanged") &&
+    input.updateStatePresentation?.detail &&
+    input.versionAdvisory?.detail
+  ) {
+    return `${input.updateStatePresentation.detail} ${input.versionAdvisory.detail}`;
+  }
+  if (
+    input.updateState?.status === "queued" ||
+    input.updateState?.status === "running" ||
+    input.updateState?.status === "failed"
+  ) {
+    return input.updateStatePresentation?.detail ?? input.versionAdvisory?.detail ?? null;
+  }
+  if (input.updateState?.status === "succeeded") {
+    return input.versionAdvisory?.detail ?? input.updateStatePresentation?.detail ?? null;
+  }
+  return input.versionAdvisory?.detail ?? input.updateStatePresentation?.detail ?? null;
+}
+
+function getProviderAdvisoryEmphasis(input: {
+  readonly versionAdvisory: ReturnType<typeof getProviderVersionAdvisoryPresentation>;
+  readonly updateStatePresentation: ReturnType<typeof getProviderUpdateStatePresentation>;
+  readonly updateState: ServerProviderUpdateState | undefined;
+}) {
+  if (input.updateState?.status === "succeeded" && input.versionAdvisory) {
+    return input.versionAdvisory.emphasis;
+  }
+  return input.updateStatePresentation?.emphasis ?? input.versionAdvisory?.emphasis ?? "normal";
 }
 
 function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
@@ -952,7 +1055,11 @@ function TurnNotificationSettingsSection({
   );
 }
 
-export function GeneralSettingsPanel() {
+export function GeneralSettingsPanel({
+  initialScrollTarget,
+}: {
+  initialScrollTarget?: "providers";
+} = {}) {
   const { theme, setTheme } = useTheme();
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
@@ -1002,8 +1109,41 @@ export function GeneralSettingsPanel() {
     Partial<Record<ProviderKind, string | null>>
   >({});
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
+  const [updatingProviders, setUpdatingProviders] = useState<
+    Partial<Record<ProviderKind, boolean>>
+  >({});
   const refreshingRef = useRef(false);
   const modelListRefs = useRef<Partial<Record<ProviderKind, HTMLDivElement | null>>>({});
+  const { copyToClipboard } = useCopyToClipboard<{ providerName: string }>({
+    onCopy: ({ providerName }) => {
+      toastManager.add({
+        type: "success",
+        title: `${providerName} update command copied`,
+        description: "Run it in a terminal when you are ready to update.",
+      });
+    },
+    onError: (error, { providerName }) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: `Could not copy ${providerName} update command`,
+          description: error.message,
+        }),
+      );
+    },
+  });
+  useEffect(() => {
+    if (initialScrollTarget !== "providers") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-settings-section="providers"]')?.scrollIntoView({
+        block: "start",
+        behavior: "smooth",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initialScrollTarget]);
   const refreshProviders = useCallback(() => {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
@@ -1016,6 +1156,23 @@ export function GeneralSettingsPanel() {
       .finally(() => {
         refreshingRef.current = false;
         setIsRefreshingProviders(false);
+      });
+  }, []);
+  const updateProvider = useCallback((provider: ProviderKind, providerName: string) => {
+    setUpdatingProviders((existing) => ({ ...existing, [provider]: true }));
+    void ensureLocalApi()
+      .server.updateProvider({ provider })
+      .catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: `Could not update ${providerName}`,
+            description: error instanceof Error ? error.message : "Unknown update error.",
+          }),
+        );
+      })
+      .finally(() => {
+        setUpdatingProviders((existing) => ({ ...existing, [provider]: false }));
       });
   }, []);
 
@@ -1232,6 +1389,9 @@ export function GeneralSettingsPanel() {
       statusStyle: PROVIDER_STATUS_STYLES[statusKey],
       summary,
       versionLabel: getProviderVersionLabel(liveProvider?.version),
+      versionAdvisory: getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory),
+      updateState: liveProvider?.updateState,
+      updateStatePresentation: getProviderUpdateStatePresentation(liveProvider?.updateState),
     };
   });
 
@@ -1552,6 +1712,8 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection
+        data-settings-section="providers"
+        className="scroll-mt-4"
         title="Providers"
         headerAction={
           <div className="flex items-center gap-1.5">
@@ -1585,6 +1747,24 @@ export function GeneralSettingsPanel() {
           const customModelError = customModelErrorByProvider[providerCard.provider] ?? null;
           const providerDisplayName =
             PROVIDER_DISPLAY_NAMES[providerCard.provider] ?? providerCard.title;
+          const versionAdvisory = providerCard.versionAdvisory;
+          const updateCommand = versionAdvisory?.updateCommand ?? null;
+          const updateStatePresentation = providerCard.updateStatePresentation;
+          const isUpdatingProvider =
+            providerCard.updateState?.status === "queued" ||
+            providerCard.updateState?.status === "running" ||
+            updatingProviders[providerCard.provider] === true;
+          const canRunProviderUpdate = versionAdvisory?.canUpdate === true;
+          const advisoryDetail = getProviderAdvisoryDetail({
+            versionAdvisory,
+            updateStatePresentation,
+            updateState: providerCard.updateState,
+          });
+          const advisoryEmphasis = getProviderAdvisoryEmphasis({
+            versionAdvisory,
+            updateStatePresentation,
+            updateState: providerCard.updateState,
+          });
 
           return (
             <div key={providerCard.provider} className="border-t border-border first:border-t-0">
@@ -1631,6 +1811,62 @@ export function GeneralSettingsPanel() {
                       {providerCard.summary.headline}
                       {providerCard.summary.detail ? ` - ${providerCard.summary.detail}` : null}
                     </p>
+                    {advisoryDetail ? (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                        <span
+                          className={cn(
+                            advisoryEmphasis === "strong" && "text-warning",
+                            advisoryEmphasis === "success" && "text-success",
+                            advisoryEmphasis === "danger" && "text-destructive",
+                            advisoryEmphasis === "normal" && "text-muted-foreground",
+                          )}
+                        >
+                          {advisoryDetail}
+                        </span>
+                        {updateCommand ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={
+                                <Button
+                                  type="button"
+                                  size="xs"
+                                  variant="ghost"
+                                  className="h-5 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                  onClick={() =>
+                                    copyToClipboard(updateCommand, {
+                                      providerName: providerDisplayName,
+                                    })
+                                  }
+                                >
+                                  <CopyIcon className="size-3" />
+                                  Copy command
+                                </Button>
+                              }
+                            />
+                            <TooltipPopup side="top">{updateCommand}</TooltipPopup>
+                          </Tooltip>
+                        ) : null}
+                        {canRunProviderUpdate ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            className="h-5 gap-1 px-1.5 text-[11px]"
+                            disabled={isUpdatingProvider}
+                            onClick={() =>
+                              updateProvider(providerCard.provider, providerDisplayName)
+                            }
+                          >
+                            {isUpdatingProvider ? (
+                              <LoaderIcon className="size-3 animate-spin" />
+                            ) : (
+                              <DownloadIcon className="size-3" />
+                            )}
+                            Update
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
                     <Button

@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type ComponentPropsWithoutRef,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -38,9 +39,19 @@ import {
 export type ThreadToastData = {
   threadRef?: ScopedThreadRef | null;
   threadId?: ThreadId | null;
+  leadingIcon?: ReactNode;
   tooltipStyle?: boolean;
   dismissAfterVisibleMs?: number;
   hideCopyButton?: boolean;
+  secondaryActionProps?: ComponentPropsWithoutRef<"button">;
+  secondaryActionVariant?:
+    | "default"
+    | "destructive"
+    | "destructive-outline"
+    | "ghost"
+    | "link"
+    | "outline"
+    | "secondary";
   /** Optional extra body shown after toggling “Show details” (e.g. a list of pending RPCs). */
   expandableContent?: ReactNode;
   expandableLabels?: { expand?: string; collapse?: string };
@@ -232,6 +243,7 @@ interface ToastBodyDescriptor {
   readonly Icon: ToastIconComponent | null | undefined;
   readonly stackedActionLayout: boolean;
   readonly actionVariant: NonNullable<ThreadToastData["actionVariant"]>;
+  readonly secondaryActionVariant: NonNullable<ThreadToastData["secondaryActionVariant"]>;
   readonly copyErrorText: string | null;
   readonly hasTrailingControls: boolean;
   readonly inlineContentEndPad: string;
@@ -248,16 +260,21 @@ function deriveToastBodyDescriptor(toast: {
     toast.actionProps !== undefined && toast.data?.actionLayout === "stacked-end";
   const actionVariant: NonNullable<ThreadToastData["actionVariant"]> =
     toast.data?.actionVariant ?? "default";
+  const secondaryActionVariant: NonNullable<ThreadToastData["secondaryActionVariant"]> =
+    toast.data?.secondaryActionVariant ?? "outline";
   const copyErrorText =
     toast.type === "error" && typeof toast.description === "string" && !toast.data?.hideCopyButton
       ? toast.description
       : null;
-  const hasTrailingControls = copyErrorText !== null || toast.actionProps !== undefined;
+  const hasSecondaryAction = toast.data?.secondaryActionProps !== undefined;
+  const hasTrailingControls =
+    copyErrorText !== null || toast.actionProps !== undefined || hasSecondaryAction;
   const inlineContentEndPad = hasTrailingControls ? "pr-6" : "pr-10";
   return {
     Icon,
     stackedActionLayout,
     actionVariant,
+    secondaryActionVariant,
     copyErrorText,
     hasTrailingControls,
     inlineContentEndPad,
@@ -277,22 +294,35 @@ function ToastBodyContent({
   copyErrorText,
   actionProps,
   actionVariant,
+  secondaryActionVariant,
   hasTrailingControls,
   toastData,
   toastDescription,
   toastType,
 }: ToastBodyContentProps) {
+  const secondaryActionProps = toastData?.secondaryActionProps;
+  const leadingIcon = toastData?.leadingIcon;
+  const { className: secondaryActionClassName, ...secondaryActionRest } =
+    secondaryActionProps ?? {};
+
   return (
     <>
       <div className={cn("flex min-w-0 gap-2", !stackedActionLayout && "flex-1")}>
-        {Icon && (
+        {leadingIcon ? (
+          <div
+            className="flex h-lh w-4 shrink-0 items-center justify-center"
+            data-slot="toast-icon"
+          >
+            {leadingIcon}
+          </div>
+        ) : Icon ? (
           <div
             className="[&>svg]:h-lh [&>svg]:w-4 [&_svg]:pointer-events-none [&_svg]:shrink-0"
             data-slot="toast-icon"
           >
             <Icon className="in-data-[type=loading]:animate-spin in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80" />
           </div>
-        )}
+        ) : null}
         <div
           className={cn(
             "flex min-h-0 min-w-0 flex-1 flex-col gap-0.5",
@@ -315,6 +345,16 @@ function ToastBodyContent({
           )}
         >
           {copyErrorText !== null ? <CopyErrorButton text={copyErrorText} /> : null}
+          {secondaryActionProps ? (
+            <button
+              {...secondaryActionRest}
+              className={cn(
+                buttonVariants({ size: "xs", variant: secondaryActionVariant }),
+                secondaryActionClassName,
+              )}
+              type="button"
+            />
+          ) : null}
           {actionProps ? (
             <Toast.Action
               className={cn(buttonVariants({ size: "xs", variant: actionVariant }), "shrink-0")}

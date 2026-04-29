@@ -39,6 +39,10 @@ import {
 } from "../providerSnapshot.ts";
 import { compareCliVersions } from "../cliVersion.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import {
+  enrichProviderSnapshotWithVersionAdvisory,
+  getProviderVersionLifecycle,
+} from "../providerVersionLifecycle.ts";
 import { ClaudeProvider } from "../Services/ClaudeProvider.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ServerSettingsError } from "@marcode/contracts";
@@ -914,6 +918,7 @@ export const ClaudeProviderLive = Layer.effect(
     );
 
     return yield* makeManagedServerProvider<ClaudeSettings>({
+      versionLifecycle: getProviderVersionLifecycle(PROVIDER),
       getSettings: serverSettings.getSettings.pipe(
         Effect.map((settings) => settings.providers.claudeAgent),
         Effect.orDie,
@@ -924,6 +929,14 @@ export const ClaudeProviderLive = Layer.effect(
       haveSettingsChanged: (previous, next) => !Equal.equals(previous, next),
       initialSnapshot: makePendingClaudeProvider,
       checkProvider,
+      enrichSnapshot: ({ snapshot, publishSnapshot }) =>
+        Effect.promise(() => enrichProviderSnapshotWithVersionAdvisory(snapshot)).pipe(
+          Effect.flatMap((enrichedSnapshot) =>
+            Equal.equals(enrichedSnapshot, snapshot)
+              ? Effect.void
+              : publishSnapshot(enrichedSnapshot),
+          ),
+        ),
     });
   }),
 );
