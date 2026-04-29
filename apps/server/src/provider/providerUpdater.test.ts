@@ -1,9 +1,10 @@
 import { describe, it, assert } from "@effect/vitest";
 import type { ProviderKind, ServerProvider, ServerProviderUpdateState } from "@marcode/contracts";
-import { ServerProviderUpdateError } from "@marcode/contracts";
+import { DEFAULT_SERVER_SETTINGS, ServerProviderUpdateError } from "@marcode/contracts";
 import { Cause, Effect, Exit, Fiber, Ref, Schema, Stream } from "effect";
 
 import type { ProcessRunResult } from "../processRunner.ts";
+import type { ServerSettingsShape } from "../serverSettings.ts";
 import type { ProviderRegistryShape } from "./Services/ProviderRegistry.ts";
 import { makeProviderUpdater, type ProviderUpdateRunner } from "./providerUpdater.ts";
 
@@ -118,6 +119,54 @@ describe("providerUpdater", () => {
         (yield* Ref.get(updateStatesRef)).map((state) => state.status),
         ["queued", "running", "succeeded"],
       );
+    }),
+  );
+
+  it.effect("runs a configured provider update command", () =>
+    Effect.gen(function* () {
+      const { registry } = yield* makeRegistry({
+        ...baseProvider,
+        provider: "opencode",
+      });
+      const calls: Array<{
+        command: string;
+        args: ReadonlyArray<string>;
+        shell: boolean | undefined;
+      }> = [];
+      const serverSettings: ServerSettingsShape = {
+        start: Effect.void,
+        ready: Effect.void,
+        getSettings: Effect.succeed({
+          ...DEFAULT_SERVER_SETTINGS,
+          providers: {
+            ...DEFAULT_SERVER_SETTINGS.providers,
+            opencode: {
+              ...DEFAULT_SERVER_SETTINGS.providers.opencode,
+              updateCommand: "pnpm add -g opencode-ai@latest",
+            },
+          },
+        }),
+        updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
+        streamChanges: Stream.empty,
+      };
+      const updater = yield* makeProviderUpdater({
+        providerRegistry: registry,
+        serverSettings,
+        runUpdate: async (command, args, options) => {
+          calls.push({ command, args, shell: options?.shell });
+          return okResult("updated");
+        },
+      });
+
+      yield* updater.updateProvider("opencode");
+
+      assert.deepStrictEqual(calls, [
+        {
+          command: "pnpm add -g opencode-ai@latest",
+          args: [],
+          shell: true,
+        },
+      ]);
     }),
   );
 

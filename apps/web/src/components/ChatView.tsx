@@ -226,6 +226,7 @@ import {
 } from "../lib/jiraReactQuery";
 import { ComposerAttachmentsPopover } from "./chat/ComposerAttachmentsPopover";
 import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
+import { deriveLatestProviderUsageSnapshot } from "../lib/providerUsage";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -237,6 +238,7 @@ import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { type LegendListRef } from "@legendapp/list/react";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ContextWindowMeter } from "./chat/ContextWindowMeter";
+import { ProviderUsageMeter } from "./chat/ProviderUsageMeter";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { ProviderModelPicker } from "./chat/ProviderModelPicker";
 import { getModelPickerOpen } from "../modelPickerOpenState";
@@ -317,6 +319,14 @@ const threadPlanCatalogCache = new LRUCache<{
   proposedPlans: Thread["proposedPlans"];
   entry: ThreadPlanCatalogEntry;
 }>(MAX_THREAD_PLAN_CATALOG_CACHE_ENTRIES, MAX_THREAD_PLAN_CATALOG_CACHE_MEMORY_BYTES);
+
+function deriveActiveThreadActivityIso(thread: Thread): string {
+  for (let i = thread.messages.length - 1; i >= 0; i--) {
+    const message = thread.messages[i];
+    if (message?.role === "user") return message.createdAt;
+  }
+  return thread.updatedAt ?? thread.createdAt;
+}
 
 function estimateThreadPlanCatalogEntrySize(thread: Thread): number {
   return Math.max(
@@ -1123,6 +1133,10 @@ export default function ChatView({
   );
   const activeContextWindow = useMemo(
     () => deriveLatestContextWindowSnapshot(activeThread?.activities ?? []),
+    [activeThread?.activities],
+  );
+  const activeProviderUsage = useMemo(
+    () => deriveLatestProviderUsageSnapshot(activeThread?.activities ?? []),
     [activeThread?.activities],
   );
   useEffect(() => {
@@ -4765,18 +4779,20 @@ export default function ChatView({
           isElectron && !sidebarVisible ? "pr-3 sm:pr-5 pl-[90px]" : "px-3 sm:px-5",
           isElectron
             ? cn(
-                "drag-region flex h-[52px] items-center wco:h-[env(titlebar-area-height)]",
+                "drag-region flex h-[72px] items-center wco:h-[env(titlebar-area-height)]",
                 reserveTitleBarControlInset &&
                   "wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
               )
-            : "py-2 sm:py-3",
+            : "py-5 sm:py-6",
         )}
       >
         <ChatHeader
           activeThreadId={activeThread.id}
           activeThreadEnvironmentId={activeThreadEnvironmentId!}
           activeThreadTitle={activeThread.title}
+          activeThreadActivityAt={deriveActiveThreadActivityIso(activeThread)}
           activeProjectName={activeProject?.name}
+          activeProjectCwd={activeProject?.cwd ?? null}
           isGitRepo={isGitRepo}
           openInCwd={gitCwd}
           activeProjectScripts={activeProject?.scripts}
@@ -5211,6 +5227,9 @@ export default function ChatView({
                         }
                         className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                       >
+                        {activeProviderUsage ? (
+                          <ProviderUsageMeter usage={activeProviderUsage} />
+                        ) : null}
                         {activeContextWindow ? (
                           <ContextWindowMeter usage={activeContextWindow} />
                         ) : null}

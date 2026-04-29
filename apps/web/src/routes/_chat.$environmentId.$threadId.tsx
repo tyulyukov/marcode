@@ -234,11 +234,11 @@ function ChatThreadRouteView() {
   const threadThreadId = threadRef?.threadId ?? null;
 
   useEffect(() => {
-    if (!threadEnvironmentId || !threadThreadId) {
+    if (!threadEnvironmentId || !threadThreadId || !threadExists) {
       return;
     }
     return retainThreadDetailSubscription(threadEnvironmentId, threadThreadId);
-  }, [threadEnvironmentId, threadThreadId]);
+  }, [threadEnvironmentId, threadThreadId, threadExists]);
 
   if (!threadRef || !bootstrapComplete || !routeThreadExists) {
     return null;

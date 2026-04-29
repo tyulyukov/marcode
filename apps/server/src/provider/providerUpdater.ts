@@ -10,6 +10,7 @@ import * as Semaphore from "effect/Semaphore";
 
 import type { ProcessRunResult } from "../processRunner.ts";
 import { runProcess } from "../processRunner.ts";
+import type { ServerSettingsShape } from "../serverSettings.ts";
 import type { ProviderRegistryShape } from "./Services/ProviderRegistry.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
@@ -22,6 +23,7 @@ const UPDATE_OUTPUT_MAX_BYTES = 10_000;
 export type ProviderUpdateRunner = (
   command: string,
   args: ReadonlyArray<string>,
+  options?: { readonly shell?: boolean },
 ) => Promise<ProcessRunResult>;
 
 export interface ProviderUpdaterShape {
@@ -35,12 +37,13 @@ interface VerifiedProviderRefresh {
   readonly verifiedProvider: ServerProvider | undefined;
 }
 
-const defaultRunner: ProviderUpdateRunner = (command, args) =>
+const defaultRunner: ProviderUpdateRunner = (command, args, options) =>
   runProcess(command, args, {
     timeoutMs: UPDATE_TIMEOUT_MS,
     maxBufferBytes: UPDATE_OUTPUT_MAX_BYTES,
     outputMode: "truncate",
     allowNonZeroExit: true,
+    shell: options?.shell,
   });
 
 function trimNullable(value: string): string | null {
@@ -95,6 +98,7 @@ function makeUpdateState(input: {
 
 export const makeProviderUpdater = Effect.fn("makeProviderUpdater")(function* (input: {
   readonly providerRegistry: ProviderRegistryShape;
+  readonly serverSettings?: ServerSettingsShape;
   readonly runUpdate?: ProviderUpdateRunner;
 }) {
   const runningProvidersRef = yield* Ref.make<ReadonlySet<ProviderKind>>(new Set());
@@ -165,7 +169,22 @@ export const makeProviderUpdater = Effect.fn("makeProviderUpdater")(function* (i
   const updateProvider: ProviderUpdaterShape["updateProvider"] = (provider) =>
     Effect.gen(function* () {
       const lifecycle = getProviderVersionLifecycle(provider);
-      const updateExecutable = lifecycle.updateExecutable;
+      const settings = input.serverSettings
+        ? yield* input.serverSettings.getSettings.pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Provider update command settings lookup failed", {
+                provider,
+                cause: Cause.pretty(cause),
+              }).pipe(Effect.as(null)),
+            ),
+          )
+        : null;
+      const configuredCommand = settings?.providers[provider].updateCommand.trim() ?? "";
+      const hasConfiguredCommand = configuredCommand.length > 0;
+      const updateExecutable = hasConfiguredCommand
+        ? configuredCommand
+        : lifecycle.updateExecutable;
+      const updateArgs = hasConfiguredCommand ? [] : lifecycle.updateArgs;
       const updateLockKey = lifecycle.updateLockKey;
       if (!updateExecutable || !updateLockKey) {
         return yield* new ServerProviderUpdateError({
@@ -212,7 +231,9 @@ export const makeProviderUpdater = Effect.fn("makeProviderUpdater")(function* (i
         );
 
         const result = yield* Effect.promise<ProcessRunResult>(() =>
-          runUpdate(updateExecutable, lifecycle.updateArgs),
+          runUpdate(updateExecutable, updateArgs, {
+            shell: hasConfiguredCommand,
+          }),
         );
         const finishedAt = new Date().toISOString();
         if (result.timedOut || result.code !== 0) {
@@ -236,9 +257,9 @@ export const makeProviderUpdater = Effect.fn("makeProviderUpdater")(function* (i
             startedAt,
             finishedAt,
             message: couldNotVerify
-              ? "Update command completed, but T3 Code could not verify the provider version."
+              ? "Update command completed, but MarCode could not verify the provider version."
               : stillOutdated
-                ? "Update command completed, but T3 Code still detects an outdated provider version."
+                ? "Update command completed, but MarCode still detects an outdated provider version."
                 : "Provider updated.",
             output: commandOutput(result),
           }),

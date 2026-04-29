@@ -53,6 +53,24 @@ function getProviderUpdatedDescription(providerCount: number): string {
     : "New sessions will use the updated providers.";
 }
 
+function getProviderUpdateOutputSummary(
+  provider: Pick<ServerProvider, "updateState">,
+): string | null {
+  const output = provider.updateState?.output?.trim();
+  if (!output) {
+    return null;
+  }
+  const firstLine = output
+    .split(/\r?\n/)
+    .find((line) => line.trim().length > 0)
+    ?.trim();
+  if (!firstLine) {
+    return null;
+  }
+  const truncated = firstLine.length > 180 ? `${firstLine.slice(0, 177)}...` : firstLine;
+  return `Command output: ${truncated}`;
+}
+
 function getProviderFailedUpdateTitle(
   provider: Pick<ServerProvider, "provider" | "versionAdvisory">,
 ): string {
@@ -162,6 +180,10 @@ export function getProviderUpdateProgressToastView(input: {
     (provider) => provider.updateState?.status === "unchanged",
   );
   if (unchangedProviders.length > 0) {
+    const singleOutputSummary =
+      unchangedProviders.length === 1
+        ? getProviderUpdateOutputSummary(unchangedProviders[0]!)
+        : null;
     return {
       phase: "unchanged",
       type: "warning",
@@ -169,9 +191,11 @@ export function getProviderUpdateProgressToastView(input: {
         unchangedProviders.length === 1
           ? "Provider still needs an update"
           : "Providers still need updates",
-      description: `${formatProviderList(unchangedProviders)} ${
-        unchangedProviders.length === 1 ? "still appears" : "still appear"
-      } outdated. Check provider settings for details.`,
+      description:
+        singleOutputSummary ??
+        `${formatProviderList(unchangedProviders)} ${
+          unchangedProviders.length === 1 ? "still appears" : "still appear"
+        } outdated. Check provider settings for details.`,
     };
   }
 
@@ -364,6 +388,8 @@ export function getProviderUpdateSidebarPillView(
   if (unchangedProviders.length > 0) {
     const unchangedProvider = unchangedProviders[0]!;
     const unchangedProviderName = PROVIDER_DISPLAY_NAMES[unchangedProvider.provider];
+    const singleOutputSummary =
+      unchangedProviders.length === 1 ? getProviderUpdateOutputSummary(unchangedProvider) : null;
     terminalCandidates.push({
       key: `unchanged:${unchangedProviders
         .map(
@@ -377,9 +403,11 @@ export function getProviderUpdateSidebarPillView(
         unchangedProviders.length === 1
           ? `${unchangedProviderName} still needs an update`
           : `${unchangedProviders.length} providers still need updates`,
-      description: `${formatProviderList(unchangedProviders)} ${
-        unchangedProviders.length === 1 ? "still appears" : "still appear"
-      } outdated. Review provider settings for details.`,
+      description:
+        singleOutputSummary ??
+        `${formatProviderList(unchangedProviders)} ${
+          unchangedProviders.length === 1 ? "still appears" : "still appear"
+        } outdated. Review provider settings for details.`,
       dismissible: true,
     });
   }
@@ -445,8 +473,14 @@ function getProviderUpdateInitialToastTitle(
 function getFailedProviderUpdateDescription(providers: ReadonlyArray<ServerProvider>): string {
   if (providers.length === 1) {
     const provider = providers[0]!;
+    const outputSummary = getProviderUpdateOutputSummary(provider);
     if (provider.updateState?.message) {
-      return provider.updateState.message;
+      return outputSummary
+        ? `${provider.updateState.message} ${outputSummary}`
+        : provider.updateState.message;
+    }
+    if (outputSummary) {
+      return outputSummary;
     }
   }
   return `${formatProviderList(providers)} failed to update. Check provider settings for details.`;

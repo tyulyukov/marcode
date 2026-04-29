@@ -131,6 +131,7 @@ export const CodexSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("codex"),
   homePath: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  updateCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type CodexSettings = typeof CodexSettings.Type;
@@ -138,6 +139,7 @@ export type CodexSettings = typeof CodexSettings.Type;
 export const ClaudeSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   binaryPath: makeBinaryPathSetting("claude"),
+  updateCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   launchArgs: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
@@ -147,6 +149,7 @@ export const CursorSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   binaryPath: makeBinaryPathSetting("agent"),
   apiEndpoint: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  updateCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type CursorSettings = typeof CursorSettings.Type;
@@ -155,6 +158,7 @@ export const OpenCodeSettings = Schema.Struct({
   binaryPath: makeBinaryPathSetting("opencode"),
   serverUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   serverPassword: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  updateCommand: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
@@ -243,12 +247,14 @@ const CodexSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   homePath: Schema.optionalKey(Schema.String),
+  updateCommand: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
+  updateCommand: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
   launchArgs: Schema.optionalKey(Schema.String),
 });
@@ -257,6 +263,7 @@ const CursorSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   apiEndpoint: Schema.optionalKey(Schema.String),
+  updateCommand: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
@@ -265,6 +272,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
   binaryPath: Schema.optionalKey(Schema.String),
   serverUrl: Schema.optionalKey(Schema.String),
   serverPassword: Schema.optionalKey(Schema.String),
+  updateCommand: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 

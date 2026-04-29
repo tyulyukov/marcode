@@ -1,0 +1,286 @@
+- main [ref=e2]:
+    - generic [ref=e3]:
+        - generic [ref=e4]:
+            - img "MarCode" [ref=e5]
+            - heading "The best way to orchestrate your agents" [level=1] [ref=e6]
+            - paragraph [ref=e7]: A lightweight, blazing-fast interface for your AI agents. Run multiple sessions, manage context, and ship faster — all from a single window.
+            - generic [ref=e8]:
+                - link "Download for macOS" [ref=e9] [cursor=pointer]:
+                    - /url: https://github.com/tyulyukov/marcode/releases/download/v1.1.0/MarCode-1.1.0-arm64.dmg
+                    - button "Download for macOS" [ref=e10]:
+                        - img [ref=e11]
+                        - text: Download for macOS
+                        - img [ref=e14]
+                - generic [ref=e17]:
+                    - generic [ref=e18]: Free & Open Source
+                    - generic [ref=e19]: ·
+                    - generic [ref=e20]: v1.1.0
+                    - generic [ref=e21]: ·
+                    - link "All platforms" [ref=e22] [cursor=pointer]:
+                        - /url: https://github.com/tyulyukov/marcode/releases
+        - generic [ref=e26]:
+            - complementary [ref=e27]:
+                - generic [ref=e33]:
+                    - generic [ref=e34]: MarCode
+                    - generic [ref=e35]: BETA
+                - button [ref=e37]:
+                    - img [ref=e38]
+                    - generic [ref=e41]: Search
+                    - generic [ref=e42]: ⌘K
+                - generic [ref=e43]:
+                    - generic [ref=e44]: Projects
+                    - generic [ref=e45]:
+                        - button "Sort projects" [ref=e46]:
+                            - img [ref=e47]
+                        - button "New thread" [ref=e50]:
+                            - img [ref=e51]
+                - generic [ref=e52]:
+                    - generic [ref=e53]:
+                        - button "adbraze-backend 1" [expanded] [ref=e54]:
+                            - img [ref=e55]
+                            - img [ref=e58]
+                            - generic [ref=e62]: adbraze-backend
+                            - generic [ref=e63]: "1"
+                        - generic [ref=e66]:
+                            - button "Audit BullMQ worker concurrency before campaign launch Terminal running 2m ago" [ref=e67]:
+                                - generic [ref=e71]: Audit BullMQ worker concurrency before campaign launch
+                                - generic [ref=e72]:
+                                    - generic "Terminal running" [ref=e73]:
+                                        - img [ref=e74]
+                                    - generic [ref=e77]: 2m ago
+                            - button "Add idempotency keys to Facebook webhook ingestion 11m ago" [ref=e78]:
+                                - generic [ref=e81]: Add idempotency keys to Facebook webhook ingestion
+                                - generic [ref=e83]: 11m ago
+                    - generic [ref=e84]:
+                        - button "adbraze-frontend" [expanded] [ref=e85]:
+                            - img [ref=e86]
+                            - img [ref=e89]
+                            - generic [ref=e91]: adbraze-frontend
+                        - generic [ref=e92]:
+                            - button "Migrate task-manager kanban to standalone components 5m ago" [ref=e93]:
+                                - img [ref=e94]
+                                - generic [ref=e100]: Migrate task-manager kanban to standalone components
+                                - generic [ref=e102]: 5m ago
+                            - button "Find unsubscribed RxJS leaks in CoreModule services 1h ago" [ref=e103]:
+                                - img [ref=e104]
+                                - generic [ref=e110]: Find unsubscribed RxJS leaks in CoreModule services
+                                - generic [ref=e112]: 1h ago
+                    - generic [ref=e113]:
+                        - button "marketing-event 1" [expanded] [ref=e114]:
+                            - img [ref=e115]
+                            - img [ref=e118]
+                            - generic [ref=e120]: marketing-event
+                            - generic [ref=e121]: "1"
+                        - generic [ref=e124]:
+                            - button "Dedupe Facebook CAPI events before pixel fires Remote 8m ago" [ref=e125]:
+                                - generic [ref=e129]: Dedupe Facebook CAPI events before pixel fires
+                                - generic [ref=e130]:
+                                    - img "Remote" [ref=e131]
+                                    - generic [ref=e133]: 8m ago
+                            - button "Replay marketing-event DLQ without re-firing TikTok events 37m ago" [ref=e134]:
+                                - generic [ref=e137]: Replay marketing-event DLQ without re-firing TikTok events
+                                - generic [ref=e139]: 37m ago
+                    - generic [ref=e140]:
+                        - button "M marcode-landing 1" [expanded] [ref=e141]:
+                            - img [ref=e142]
+                            - generic [ref=e145]: M
+                            - generic [ref=e146]: marcode-landing
+                            - generic [ref=e147]: "1"
+                        - generic [ref=e150]:
+                            - button "Rebuild the AppPreview to match the real MarCode UI just now" [ref=e151]:
+                                - img [ref=e152]
+                                - generic [ref=e159]: Rebuild the AppPreview to match the real MarCode UI
+                                - generic [ref=e161]: just now
+                            - button "Surface provider rate limit usage in composer 13h ago" [ref=e162]:
+                                - img [ref=e163]
+                                - generic [ref=e169]: Surface provider rate limit usage in composer
+                                - generic [ref=e171]: 13h ago
+                - generic [ref=e172]:
+                    - generic [ref=e173]: MT
+                    - generic [ref=e174]:
+                        - generic [ref=e175]: maksym.tyulyukov
+                        - generic [ref=e176]: v0.42.0
+                    - button "Settings" [ref=e177]:
+                        - img [ref=e178]
+            - main [ref=e181]:
+                - generic [ref=e182]:
+                    - generic [ref=e183]:
+                        - generic [ref=e185]: Audit BullMQ worker concurrency before campaign launch
+                        - generic [ref=e186]:
+                            - img [ref=e188]
+                            - generic [ref=e192]: adbraze-backend
+                            - generic [ref=e193]: ·
+                            - generic [ref=e194]: 2m ago
+                    - generic [ref=e195]: Working
+                    - generic [ref=e199]:
+                        - button "Terminal" [ref=e200]:
+                            - img [ref=e201]
+                        - button "Plan" [ref=e204]:
+                            - img [ref=e205]
+                        - button "Comments" [ref=e208]:
+                            - img [ref=e209]
+                - generic [ref=e212]:
+                    - generic [ref=e214]: Campaign-launch jobs are backing up during peak hours. Audit BullMQ concurrency across all 8 processors and propose fixes.
+                    - generic [ref=e215]:
+                        - generic [ref=e217]: M
+                        - generic [ref=e218]: Mapping every processor, its concurrency cap, and which Redis it shares before recommending fixes.
+                    - generic [ref=e219]:
+                        - img [ref=e221]
+                        - generic [ref=e223]:
+                            - generic [ref=e224]: Tool calls (3)
+                            - generic [ref=e225]:
+                                - generic [ref=e226]:
+                                    - img [ref=e227]
+                                    - generic [ref=e230]:
+                                        - generic [ref=e231]: Searched
+                                        - generic [ref=e232]: rg "@Processor|@OnWorkerEvent" src --type ts
+                                - generic [ref=e233]:
+                                    - img [ref=e234]
+                                    - generic [ref=e237]:
+                                        - generic [ref=e238]: Read file
+                                        - generic [ref=e239]: src/system/queue/queue.module.ts
+                                - generic [ref=e240]:
+                                    - img [ref=e241]
+                                    - generic [ref=e243]:
+                                        - generic [ref=e244]: Ran command
+                                        - generic [ref=e245]: ls src/*/processors/
+                    - generic [ref=e246]:
+                        - generic [ref=e248]: M
+                        - generic [ref=e249]: "Eight processors share a single Redis: media-preview, metadata-extraction, voice-dubbing, subtitles, creative-analysis, facebook-webhook, campaign-launch, task-manager. media-preview + creative-analysis are CPU-heavy (FFmpeg + Gemini) and can starve campaign-launch, which has to be sub-second. voice-dubbing has a 1 req/s limiter but no priority class."
+                    - generic [ref=e251]: What's the cleanest fix without splitting Redis?
+                    - generic [ref=e252]:
+                        - img [ref=e254]
+                        - generic [ref=e256]:
+                            - generic [ref=e257]: Tool calls (1)
+                            - generic [ref=e259]:
+                                - img [ref=e260]
+                                - generic [ref=e263]:
+                                    - generic [ref=e264]: Read file
+                                    - generic [ref=e265]: src/system/queue/concurrency.config.ts
+                    - generic [ref=e266]:
+                        - generic [ref=e268]: M
+                        - generic [ref=e269]: Combine bullmq job priority for campaign-launch with dedicated limiter buckets per CPU-heavy processor. I'll draft the diff once you approve the approach — three files, one new test.
+                    - generic [ref=e270]: Working...
+                - generic [ref=e272]:
+                    - generic [ref=e273]:
+                        - textbox "Send a message…" [ref=e274]
+                        - generic [ref=e275]:
+                            - button "Claude Sonnet 4.5" [ref=e276]:
+                                - generic [ref=e278]: Claude Sonnet 4.5
+                                - img [ref=e279]
+                            - button "Effort" [ref=e281]:
+                                - img [ref=e282]
+                                - generic [ref=e284]: Medium
+                                - img [ref=e285]
+                            - button "Access" [ref=e287]:
+                                - img [ref=e288]
+                                - generic [ref=e290]: Full access
+                                - img [ref=e291]
+                            - generic [ref=e293]:
+                                - button [ref=e294]:
+                                    - img [ref=e295]
+                                - button "New thread" [ref=e299]:
+                                    - img [ref=e300]
+                                - button [ref=e303]:
+                                    - generic [ref=e304]: Send
+                                    - img [ref=e305]
+                    - generic [ref=e308]:
+                        - img [ref=e309]
+                        - generic [ref=e311]: adbraze-backend
+                        - generic [ref=e312]: ·
+                        - img [ref=e313]
+                        - generic [ref=e317]: feat/queue-priority
+                        - generic [ref=e318]: ·
+                        - generic [ref=e319]:
+                            - img [ref=e320]
+                            - text: bun dev
+                        - generic [ref=e322]:
+                            - img [ref=e323]
+                            - generic [ref=e325]: Pull
+    - generic [ref=e326]:
+        - heading "Everything you need, nothing you don't" [level=2] [ref=e327]
+        - generic [ref=e328]:
+            - generic [ref=e330]:
+                - img [ref=e332]
+                - heading "One GUI for Your Agents" [level=3] [ref=e344]
+                - paragraph [ref=e345]: Claude Code, Codex — one interface for every coding agent. Pick your CLI, pick your model, and go.
+            - generic [ref=e347]:
+                - img [ref=e349]
+                - heading "Git-Integrated" [level=3] [ref=e353]
+                - paragraph [ref=e354]: Branch, commit, create PRs — all from the conversation. GitHub and GitLab supported.
+            - generic [ref=e356]:
+                - img [ref=e358]
+                - heading "Terminal Built-In" [level=3] [ref=e360]
+                - paragraph [ref=e361]: Attach terminal output as context. The agent sees what you see.
+            - generic [ref=e363]:
+                - img [ref=e365]
+                - heading "Rich Tool Display" [level=3] [ref=e369]
+                - paragraph [ref=e370]: Every tool call, subagent spawn, file edit, and shell command — rendered with a purpose-built UI, not raw JSON.
+            - generic [ref=e372]:
+                - img [ref=e374]
+                - heading "Fast by Default" [level=3] [ref=e376]
+                - paragraph [ref=e377]: Incremental streaming, structural sharing, fine-grained selectors, and dozens of optimizations under the hood. Zero jank, even under heavy load.
+            - generic [ref=e379]:
+                - img [ref=e381]
+                - heading "Secure Worktrees" [level=3] [ref=e384]
+                - paragraph [ref=e385]: Agents work in isolated git worktrees. Revert any checkpoint with one click.
+            - generic [ref=e387]:
+                - img [ref=e389]
+                - heading "Jira Integration" [level=3] [ref=e394]
+                - paragraph [ref=e395]: Mention tasks with @PROJ-123, browse sprints, paste URLs. Context flows automatically.
+    - generic [ref=e396]:
+        - heading "Up and running in minutes" [level=2] [ref=e397]
+        - generic [ref=e398]:
+            - generic [ref=e399]:
+                - generic [ref=e403]: "1"
+                - generic [ref=e406]:
+                    - heading "Download MarCode" [level=3] [ref=e407]
+                    - paragraph [ref=e408]: Grab the latest release for your OS from the button above — free, open source, available on macOS, Windows, and Linux.
+            - generic [ref=e409]:
+                - generic [ref=e413]: "2"
+                - generic [ref=e416]:
+                    - 'heading "macOS: Bypass Gatekeeper" [level=3] [ref=e417]'
+                    - paragraph [ref=e418]:
+                        - text: The app isn't signed with an Apple Developer certificate yet. After the first launch warning, go to System Settings → Privacy & Security → scroll down → Open Anyway. The code is
+                        - link "fully open source" [ref=e419] [cursor=pointer]:
+                            - /url: https://github.com/tyulyukov/marcode
+                            - text: fully open source
+                            - img [ref=e420]
+                        - text: — inspect it yourself.
+            - generic [ref=e424]:
+                - generic [ref=e428]: "3"
+                - generic [ref=e431]:
+                    - heading "Install a Git Host CLI" [level=3] [ref=e432]
+                    - paragraph [ref=e433]:
+                        - text: "For the full git integration experience (branches, PRs/MRs from chat), install and authenticate your host's CLI:"
+                        - generic [ref=e434]:
+                            - link "GitHub CLI" [ref=e435] [cursor=pointer]:
+                                - /url: https://cli.github.com
+                                - text: GitHub CLI
+                                - img [ref=e436]
+                            - link "GitLab CLI" [ref=e440] [cursor=pointer]:
+                                - /url: https://gitlab.com/gitlab-org/cli#installation
+                                - text: GitLab CLI
+                                - img [ref=e441]
+                        - generic [ref=e445]:
+                            - text: GitLab users — authenticate via
+                            - link "Personal Access Token" [ref=e446] [cursor=pointer]:
+                                - /url: https://docs.gitlab.com/security/token_overview.html#personal-access-tokens
+                                - text: Personal Access Token
+                                - img [ref=e447]
+                            - text: with at least
+                            - code [ref=e451]: api
+                            - text: and
+                            - code [ref=e452]: write_repository
+                            - text: scopes.
+            - generic [ref=e453]:
+                - generic [ref=e457]: "4"
+                - generic [ref=e458]:
+                    - heading "Connect Integrations" [level=3] [ref=e459]
+                    - paragraph [ref=e460]: Open settings to connect Jira, add your provider API keys, pick a model, and you're ready to ship.
+    - generic [ref=e462]:
+        - paragraph [ref=e463]: MarCode — Open source, built with care.
+        - link "GitHub" [ref=e464] [cursor=pointer]:
+            - /url: https://github.com/tyulyukov/marcode
+            - img [ref=e465]
+            - text: GitHub

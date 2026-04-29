@@ -262,6 +262,7 @@ const baseCursorSettings: CursorSettings = {
   enabled: true,
   binaryPath: "agent",
   apiEndpoint: "",
+  updateCommand: "",
   customModels: [],
 };
 
@@ -437,6 +438,7 @@ describe("discoverCursorModelsViaAcp", () => {
         enabled: true,
         binaryPath: wrapperPath,
         apiEndpoint: "",
+        updateCommand: "",
         customModels: [],
       }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
     );
@@ -461,6 +463,7 @@ describe("discoverCursorModelsViaAcp", () => {
         enabled: true,
         binaryPath: wrapperPath,
         apiEndpoint: "",
+        updateCommand: "",
         customModels: [],
       }).pipe(Effect.provide(NodeServices.layer)),
     );
@@ -495,6 +498,7 @@ describe("discoverCursorModelCapabilitiesViaAcp", () => {
           enabled: true,
           binaryPath: wrapperPath,
           apiEndpoint: "",
+          updateCommand: "",
           customModels: [],
         },
         existingModels,

@@ -161,7 +161,7 @@ describe("provider update launch notification logic", () => {
       phase: "failed",
       type: "error",
       title: "Provider update failed",
-      description: "command failed",
+      description: "command failed Command output: stderr",
     });
   });
 
@@ -183,7 +183,7 @@ describe("provider update launch notification logic", () => {
       phase: "failed",
       type: "error",
       title: "Codex v1.1.0 update failed",
-      description: "command failed",
+      description: "command failed Command output: stderr",
     });
   });
 
