@@ -37,7 +37,26 @@ Sections are ordered by action:
 
 ## Ported in the current cycle
 
-**Cycle:** 2026-04-24 · Baseline before cycle: `7c430aece` · Baseline after cycle: `ececcdcb1`
+**Cycle:** 2026-04-28 · Baseline before cycle: `7f04a4a11` · Baseline after cycle: `ef574febf`
+
+### PR #72 — upstream sync (2026-04-28)
+
+| Upstream                                               | Subject                                                    | New SHA     |
+| ------------------------------------------------------ | ---------------------------------------------------------- | ----------- |
+| [#2364](https://github.com/pingdotgg/t3code/pull/2364) | fix(release): use configured node for smoke manifest merge | `2f1e3cc3c` |
+| [#2372](https://github.com/pingdotgg/t3code/pull/2372) | Ignore stale WebSocket lifecycle events after reconnect    | `b408a6857` |
+
+**Conflict resolutions applied:** None — both upstream commits cherry-picked cleanly. Patch context for `wsTransport.ts` / `protocol.ts` / `wsTransport.test.ts` matched MarCode HEAD exactly; only delta is the rebrand strings (`@marcode/contracts`, `"Unable to connect to the MarCode server WebSocket."`), untouched by upstream. `release-smoke.ts` line 260 matched at offset (file is shorter in MarCode because of the removed nightly-channel block, but the heredoc context is identical).
+
+**Note on upstream's new `isActive` socket-session gate:** The new `WsProtocolLifecycleHandlers.isActive?` callback in `protocol.ts` lives at the **socket session** layer (per-session id check inside `WsTransport.createSession`). It is distinct from the existing **per-stream** `isActive` parameter on `runStreamOnSession` in `wsTransport.ts` — they don't collide functionally but a future reader could conflate them.
+
+**Bundled non-upstream commit (out-of-cycle, co-shipped):** `ef574febf feat(provider): subagent task events, cursor allow_once, ACP outgoing logging` — backfill subagent test coverage for `7f04a4a11` (`task.progress` with `lastToolName` / `summary`, child-thread delta suppression), Cursor `allow_once` preference for auto-approval (preserves command-text visibility against the empty-`rawInput` Cursor server bug), and `effect-acp` `sendNotification` rewired through `logProtocol` + JSON-RPC encoding to match request/response paths.
+
+---
+
+## Previous cycle: 2026-04-24
+
+**Baseline before cycle:** `7c430aece` · **Baseline after cycle:** `ececcdcb1`
 
 ### Direct-to-main (no PR, user-approved)
 
@@ -187,7 +206,7 @@ MarCode ships semver alphas (`1.0.0-alpha.*`), not nightly builds. Adopting nigh
 
 ## Pending real work
 
-_None as of 2026-04-24._ Both previously-listed rows (#1996 and #2246) landed in this cycle — #1996 across PRs #69 + #70, #2246 via PR #71. Re-run the `git cherry origin/main upstream/main` workflow at the top of this doc when starting a new cycle to populate this section.
+_None as of 2026-04-28._ The two upstream commits in this cycle (#2364 release-smoke node fix + #2372 stale WS lifecycle gate) landed via PR #72. Re-run the `git cherry origin/main upstream/main` workflow at the top of this doc when starting a new cycle to populate this section.
 
 ---
 

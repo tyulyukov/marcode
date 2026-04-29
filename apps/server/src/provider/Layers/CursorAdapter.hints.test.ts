@@ -6,8 +6,10 @@ import {
   applyToolCallHint,
   resolveEffectiveTurnId,
   resolveTerminalHintFromToolCall,
+  selectAutoApprovedPermissionOption,
 } from "./CursorAdapter.ts";
 import type { AcpToolCallState } from "../acp/AcpRuntimeModel.ts";
+import type * as EffectAcpSchema from "effect-acp/schema";
 
 // Cursor ACP only emits the real command text in `session/request_permission`
 // (the title is backtick-wrapped, e.g. `` `rg -i 'effect'` ``). The subsequent
@@ -159,5 +161,65 @@ describe("resolveEffectiveTurnId", () => {
         turns: [],
       }),
     ).toBeUndefined();
+  });
+});
+
+// Full-Access mode auto-approves Cursor's `session/request_permission` events
+// without prompting the user. The choice between the `allow_once` and
+// `allow_always` options is load-bearing: `allow_always` makes Cursor persist
+// `Shell(<commandBase>)` to `~/.cursor/cli-config.json`, which suppresses
+// future `request_permission` events for that command — and since Cursor's
+// `tool_call` event always ships an empty `rawInput:{}` and the generic title
+// "Terminal", losing the permission event also loses the only channel that
+// carries the actual command text. The CommandExecutionCard then degrades to
+// "Ran command" with no detail. Preferring `allow_once` keeps every
+// invocation routed through `request_permission`, so `applyToolCallHint`
+// keeps populating the command on every run.
+describe("selectAutoApprovedPermissionOption", () => {
+  const makeRequest = (
+    options: ReadonlyArray<{ readonly optionId: string; readonly kind: string }>,
+  ): EffectAcpSchema.RequestPermissionRequest =>
+    ({
+      sessionId: "s-1",
+      toolCall: { toolCallId: "t-1" },
+      options: options.map((o) => ({ ...o, name: o.optionId })),
+    }) as EffectAcpSchema.RequestPermissionRequest;
+
+  it("prefers `allow_once` over `allow_always` to avoid mutating cli-config", () => {
+    const optionId = selectAutoApprovedPermissionOption(
+      makeRequest([
+        { optionId: "always", kind: "allow_always" },
+        { optionId: "once", kind: "allow_once" },
+        { optionId: "reject", kind: "reject_once" },
+      ]),
+    );
+    expect(optionId).toBe("once");
+  });
+
+  it("falls back to `allow_always` when `allow_once` is not offered", () => {
+    const optionId = selectAutoApprovedPermissionOption(
+      makeRequest([
+        { optionId: "always", kind: "allow_always" },
+        { optionId: "reject", kind: "reject_once" },
+      ]),
+    );
+    expect(optionId).toBe("always");
+  });
+
+  it("returns undefined when neither allow option is offered", () => {
+    const optionId = selectAutoApprovedPermissionOption(
+      makeRequest([{ optionId: "reject", kind: "reject_once" }]),
+    );
+    expect(optionId).toBeUndefined();
+  });
+
+  it("ignores allow options with empty optionId", () => {
+    const optionId = selectAutoApprovedPermissionOption(
+      makeRequest([
+        { optionId: "", kind: "allow_once" },
+        { optionId: "always", kind: "allow_always" },
+      ]),
+    );
+    expect(optionId).toBe("always");
   });
 });

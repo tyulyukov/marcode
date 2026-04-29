@@ -1491,6 +1491,268 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
       assert.equal(events[0]?.type, "item.completed");
     }),
   );
+
+  // Once a subagent has been spawned, the Codex runtime forwards child-thread
+  // notifications through the parent's stream (rewriting `event.threadId` to
+  // the parent's, but preserving the original on `payload.threadId`). The
+  // adapter must translate those into `task.progress` events so the
+  // AgentGroupCard reflects live activity, and must NOT emit the normal
+  // `item.started` / `item.completed` mappings (which would otherwise pollute
+  // the parent transcript with the subagent's items).
+  it.effect("emits task.progress with lastToolName for child-thread item/started", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 3)).pipe(
+        Effect.forkChild,
+      );
+
+      // Spawn the subagent so the tracker registers it.
+      yield* runtime.emit({
+        id: asEventId("evt-spawn"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_progress"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_progress",
+            tool: "spawnAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["sub-thread-progress"],
+            agentsStates: { "sub-thread-progress": { status: "running" } },
+            prompt: "Investigate the cache layer",
+            model: "gpt-5.4",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      // Child-thread item/started for a shell command. The runtime has
+      // rewritten event.threadId to the parent's, but payload.threadId still
+      // points at the subagent thread.
+      yield* runtime.emit({
+        id: asEventId("evt-child-started"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/started",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("cmd_child_1"),
+        payload: {
+          threadId: "sub-thread-progress",
+          turnId: "child-turn-1",
+          item: {
+            type: "commandExecution",
+            id: "cmd_child_1",
+            command: "rg --files",
+            commandActions: [],
+            cwd: "/tmp",
+            status: "inProgress",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      // Parent's spawn produces item.completed + task.started. Child's
+      // item/started is suppressed and replaced by exactly one task.progress.
+      assert.equal(events.length, 3);
+      assert.equal(events[0]?.type, "item.completed");
+      assert.equal(events[1]?.type, "task.started");
+      const progress = events[2];
+      assert.equal(progress?.type, "task.progress");
+      if (progress?.type !== "task.progress") return;
+      assert.equal(progress.payload.taskId, "sub-thread-progress");
+      assert.equal(progress.payload.description, "Investigate the cache layer");
+      assert.equal(progress.payload.lastToolName, "Shell");
+      // No item.started leaked into the parent transcript.
+      assert.equal(
+        events.some((e) => e.type === "item.started"),
+        false,
+      );
+    }),
+  );
+
+  it.effect("emits task.progress with summary for child-thread item/completed", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 3)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-spawn-2"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_summary"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_summary",
+            tool: "spawnAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["sub-thread-summary"],
+            agentsStates: { "sub-thread-summary": { status: "running" } },
+            prompt: "Pick a random file and report it",
+            model: "gpt-5.4-mini",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      yield* runtime.emit({
+        id: asEventId("evt-child-completed"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("msg_child_1"),
+        payload: {
+          threadId: "sub-thread-summary",
+          turnId: "child-turn-1",
+          item: {
+            type: "agentMessage",
+            id: "msg_child_1",
+            text: "I'll read apps/server/src/config.ts now.",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      assert.equal(events.length, 3);
+      const progress = events[2];
+      assert.equal(progress?.type, "task.progress");
+      if (progress?.type !== "task.progress") return;
+      assert.equal(progress.payload.taskId, "sub-thread-summary");
+      assert.equal(progress.payload.description, "Pick a random file and report it");
+      assert.equal(progress.payload.summary, "I'll read apps/server/src/config.ts now.");
+      // The subagent's assistantMessage must not surface as the parent's own
+      // item.completed — that's what previously polluted the transcript.
+      const itemCompletedCount = events.filter((e) => e.type === "item.completed").length;
+      assert.equal(itemCompletedCount, 1); // only the parent's collabAgentToolCall
+    }),
+  );
+
+  it.effect("suppresses child-thread delta events to avoid polluting transcript", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-spawn-3"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("collab_delta"),
+        payload: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          item: {
+            type: "collabAgentToolCall",
+            id: "collab_delta",
+            tool: "spawnAgent",
+            status: "completed",
+            senderThreadId: "thread-1",
+            receiverThreadIds: ["sub-thread-delta"],
+            agentsStates: { "sub-thread-delta": { status: "running" } },
+            prompt: "Stream some text",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      // A child-thread agentMessage delta. We do NOT want this to flow through
+      // as a content.delta — that would render in the parent's transcript as
+      // if the parent assistant were speaking the subagent's words.
+      yield* runtime.emit({
+        id: asEventId("evt-child-delta"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/agentMessage/delta",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("msg_child_2"),
+        textDelta: "Hello from subagent",
+        payload: {
+          threadId: "sub-thread-delta",
+          turnId: "child-turn-1",
+          itemId: "msg_child_2",
+          delta: "Hello from subagent",
+        },
+      } satisfies ProviderEvent);
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      // Only the parent's spawn item.completed + task.started flow through.
+      // The child's delta is silently dropped.
+      assert.equal(events.length, 2);
+      assert.equal(
+        events.some((e) => e.type === "content.delta"),
+        false,
+      );
+    }),
+  );
+
+  // Regression guard: `payload.threadId` is the Codex provider's UUID, while
+  // `event.threadId` is marcode's `ThreadId` (set from `options.threadId`) —
+  // different namespaces that never match even for the parent's own events.
+  // Subagent detection MUST go via tracker membership only. A naive
+  // `payload.threadId !== canonicalThreadId` short-circuit would silently
+  // drop every parent notification, leaving the UI stuck on "Starting…".
+  it.effect("does not intercept parent events whose payload.threadId differs from canonical", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      // Parent's own assistant message — payload.threadId is the provider's
+      // UUID, distinct from marcode's "thread-1". No spawnAgent ever fired,
+      // so the tracker is empty; this MUST fall through to normal mapping.
+      yield* runtime.emit({
+        id: asEventId("evt-parent-msg"),
+        kind: "notification",
+        provider: "codex",
+        createdAt: new Date().toISOString(),
+        method: "item/completed",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("parent_msg"),
+        payload: {
+          threadId: "0197abcd-codex-provider-uuid",
+          turnId: "turn-1",
+          item: {
+            type: "agentMessage",
+            id: "parent_msg",
+            text: "I read the file.",
+          },
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+      assert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") return;
+      assert.equal(firstEvent.value.type, "item.completed");
+      if (firstEvent.value.type !== "item.completed") return;
+      assert.equal(firstEvent.value.itemId, "parent_msg");
+    }),
+  );
 });
 
 const scopedLifecycleRuntimeFactory = makeScopedRuntimeFactory();
