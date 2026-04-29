@@ -5179,13 +5179,9 @@ export default function ChatView({
 
                         {isComposerFooterCompact ? (
                           <CompactComposerControlsMenu
-                            activePlan={activePlan !== null}
                             interactionMode={interactionMode}
-                            planSidebarOpen={planSidebarOpen}
-                            planSidebarLabel={planSidebarLabel}
                             traitsMenuContent={providerTraitsMenuContent}
                             onToggleInteractionMode={toggleInteractionMode}
-                            onTogglePlanSidebar={togglePlanSidebar}
                           />
                         ) : (
                           <>

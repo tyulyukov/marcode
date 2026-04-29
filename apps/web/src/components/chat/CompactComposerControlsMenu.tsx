@@ -1,10 +1,9 @@
 import { ProviderInteractionMode } from "@marcode/contracts";
 import { memo, type ReactNode } from "react";
-import { EllipsisIcon, ListTodoIcon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import {
   Menu,
-  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -13,15 +12,10 @@ import {
 } from "../ui/menu";
 
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
-  activePlan: boolean;
   interactionMode: ProviderInteractionMode;
-  planSidebarOpen: boolean;
-  planSidebarLabel: string;
   traitsMenuContent?: ReactNode;
   onToggleInteractionMode: () => void;
-  onTogglePlanSidebar: () => void;
 }) {
-  const sidebarLabel = props.planSidebarLabel.toLowerCase();
   return (
     <Menu>
       <MenuTrigger
@@ -54,17 +48,6 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           <MenuRadioItem value="default">Chat</MenuRadioItem>
           <MenuRadioItem value="plan">Plan</MenuRadioItem>
         </MenuRadioGroup>
-        {props.activePlan ? (
-          <>
-            <MenuDivider />
-            <MenuItem onClick={props.onTogglePlanSidebar}>
-              <ListTodoIcon className="size-4 shrink-0" />
-              {props.planSidebarOpen
-                ? `Hide ${sidebarLabel} sidebar`
-                : `Show ${sidebarLabel} sidebar`}
-            </MenuItem>
-          </>
-        ) : null}
       </MenuPopup>
     </Menu>
   );
