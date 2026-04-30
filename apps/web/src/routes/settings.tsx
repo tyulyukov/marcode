@@ -1,6 +1,13 @@
 import { RotateCcwIcon } from "lucide-react";
-import { Outlet, createFileRoute, redirect, useLocation } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import {
+  Outlet,
+  createFileRoute,
+  redirect,
+  useCanGoBack,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   type SettingsRestoreScope,
@@ -39,16 +46,25 @@ function RestoreDefaultsButton({
 
 function SettingsContentLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const canGoBack = useCanGoBack();
   const [restoreSignal, setRestoreSignal] = useState(0);
   const restoreScope = RESTORE_SCOPE_BY_PATHNAME[location.pathname] ?? null;
   const handleRestored = () => setRestoreSignal((value) => value + 1);
+  const navigateBackWithinApp = useCallback(() => {
+    if (canGoBack) {
+      window.history.back();
+      return;
+    }
+    void navigate({ to: "/" });
+  }, [canGoBack, navigate]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        window.history.back();
+        navigateBackWithinApp();
       }
     };
 
@@ -56,7 +72,7 @@ function SettingsContentLayout() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [navigateBackWithinApp]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
