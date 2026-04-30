@@ -14,20 +14,20 @@ type StepStatus = "pending" | "inProgress" | "completed";
 function stepStatusIcon(status: StepStatus) {
   if (status === "completed") {
     return (
-      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
         <CheckIcon className="size-2.5" />
       </span>
     );
   }
   if (status === "inProgress") {
     return (
-      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-primary/60 bg-primary/15">
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-primary/60 bg-primary/15">
         <span className="size-1 rounded-full bg-primary" />
       </span>
     );
   }
   return (
-    <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-border/60 bg-muted/30">
+    <span className="flex size-4 shrink-0 items-center justify-center rounded-full border border-border/60 bg-muted/30">
       <span className="size-1 rounded-full bg-muted-foreground/30" />
     </span>
   );
@@ -46,7 +46,7 @@ function DeltaSection(props: {
       </p>
       <div className="space-y-0.5">
         {props.steps.map((entry, index) => (
-          <div key={`${index}:${entry.step}`} className="flex items-start gap-2 px-3 py-1">
+          <div key={`${index}:${entry.step}`} className="flex items-center gap-2 px-3 py-1">
             {stepStatusIcon(props.status)}
             <p
               className={cn(
@@ -100,8 +100,8 @@ export const PlanUpdateCard = memo(function PlanUpdateCard(props: PlanUpdateCard
         </p>
       ) : null}
       <DeltaSection label={addedLabel} status="pending" steps={added} />
-      <DeltaSection label="NOW WORKING ON" status="inProgress" steps={inProgress} />
       <DeltaSection label="JUST COMPLETED" status="completed" steps={justCompleted} />
+      <DeltaSection label="NOW WORKING ON" status="inProgress" steps={inProgress} />
     </div>
   );
 
