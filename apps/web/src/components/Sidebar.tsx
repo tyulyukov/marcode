@@ -101,6 +101,7 @@ import {
 } from "../threadRoutes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
+import { useSyncedRelativeTimeTick } from "../hooks/useRelativeTimeTick";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { Kbd } from "./ui/kbd";
 import {
@@ -320,6 +321,7 @@ interface SidebarThreadRowProps {
 }
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
+  useSyncedRelativeTimeTick();
   const {
     orderedProjectThreadKeys,
     isActive,

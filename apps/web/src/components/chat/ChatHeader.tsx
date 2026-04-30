@@ -15,8 +15,8 @@ import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScr
 import { Toggle } from "../ui/toggle";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { useSyncedRelativeTimeTick } from "../../hooks/useRelativeTimeTick";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -25,7 +25,6 @@ interface ChatHeaderProps {
   activeThreadTitle: string;
   activeThreadActivityAt: string | undefined;
   activeProjectName: string | undefined;
-  activeProjectCwd: string | null;
   isGitRepo: boolean;
   openInCwd: string | null;
   activeProjectScripts: ProjectScript[] | undefined;
@@ -57,7 +56,6 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadTitle,
   activeThreadActivityAt,
   activeProjectName,
-  activeProjectCwd,
   isGitRepo,
   openInCwd,
   activeProjectScripts,
@@ -81,6 +79,7 @@ export const ChatHeader = memo(function ChatHeader({
   onToggleDiff,
   onTogglePlanSidebar,
 }: ChatHeaderProps) {
+  useSyncedRelativeTimeTick();
   const relativeActivityAt = activeThreadActivityAt
     ? formatRelativeTimeLabel(activeThreadActivityAt)
     : null;
@@ -88,7 +87,7 @@ export const ChatHeader = memo(function ChatHeader({
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
       <SidebarTrigger className="size-7 shrink-0 md:hidden" />
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-1 overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -106,13 +105,6 @@ export const ChatHeader = memo(function ChatHeader({
         </Tooltip>
         {showMetaRow && (
           <div className="flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
-            {activeProjectName && activeProjectCwd && (
-              <ProjectFavicon
-                environmentId={activeThreadEnvironmentId}
-                cwd={activeProjectCwd}
-                seed={activeProjectName}
-              />
-            )}
             {activeProjectName && <span className="min-w-0 truncate">{activeProjectName}</span>}
             {activeProjectName && relativeActivityAt && (
               <span aria-hidden className="shrink-0 text-muted-foreground/40">

@@ -106,6 +106,8 @@ function normalizeClaudeRateLimitEvent(
         ? normalizePercent(surpassedThreshold)
         : null;
 
+  const isNotAllowed = statusRaw !== null && statusRaw !== "allowed";
+
   if (usedPercent !== null) {
     windows.push({
       label,
@@ -118,7 +120,7 @@ function normalizeClaudeRateLimitEvent(
       usedPercent: 100,
       resetsAt,
     });
-  } else if (rateLimitType || resetsAt !== null) {
+  } else if (isNotAllowed) {
     windows.push({
       label,
       usedPercent: null,

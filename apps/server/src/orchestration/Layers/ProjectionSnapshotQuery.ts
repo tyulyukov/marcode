@@ -1387,6 +1387,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
         additionalDirectories: threadRow.value.additionalDirectories,
+        implementingJiraTicketKeys: threadRow.value.implementingJiraTicketKeys as ReadonlyArray<
+          OrchestrationThread["implementingJiraTicketKeys"][number]
+        >,
         latestTurn: Option.isSome(latestTurnRow) ? mapLatestTurn(latestTurnRow.value) : null,
         createdAt: threadRow.value.createdAt,
         updatedAt: threadRow.value.updatedAt,

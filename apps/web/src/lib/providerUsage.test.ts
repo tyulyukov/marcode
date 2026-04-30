@@ -112,7 +112,7 @@ describe("providerUsage", () => {
     ]);
   });
 
-  it("does not fabricate zero percent when Claude omits utilization", () => {
+  it("ignores allowed Claude events that omit any usage data", () => {
     const snapshot = deriveLatestProviderUsageSnapshot([
       makeActivity("activity-1", {
         type: "rate_limit_event",
@@ -124,7 +124,21 @@ describe("providerUsage", () => {
       }),
     ]);
 
-    expect(snapshot?.status).toBe("ok");
+    expect(snapshot).toBeNull();
+  });
+
+  it("surfaces non-allowed Claude events even when utilization is omitted", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot([
+      makeActivity("activity-1", {
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed_warning",
+          resetsAt: 1776582000,
+          rateLimitType: "five_hour",
+        },
+      }),
+    ]);
+
     expect(snapshot?.windows).toEqual([
       {
         label: "Session (5 hrs)",
@@ -132,6 +146,29 @@ describe("providerUsage", () => {
         resetsAt: 1776582000,
       },
     ]);
+  });
+
+  it("returns null when every Claude event lacks usage data and is allowed", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot([
+      makeActivity("activity-1", {
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          resetsAt: 1776582000,
+          rateLimitType: "five_hour",
+        },
+      }),
+      makeActivity("activity-2", {
+        type: "rate_limit_event",
+        rate_limit_info: {
+          status: "allowed",
+          resetsAt: 1776600000,
+          rateLimitType: "seven_day",
+        },
+      }),
+    ]);
+
+    expect(snapshot).toBeNull();
   });
 
   it("derives Codex primary and secondary rate-limit windows", () => {

@@ -4784,14 +4784,14 @@ export default function ChatView({
       <header
         className={cn(
           "border-b border-border",
-          isElectron && !sidebarVisible ? "pr-3 sm:pr-5 pl-[90px]" : "px-3 sm:px-5",
+          isElectron && !sidebarVisible ? "pr-3 sm:pr-4 pl-[90px]" : "px-3 sm:px-4",
           isElectron
             ? cn(
-                "drag-region flex h-[72px] items-center wco:h-[env(titlebar-area-height)]",
+                "drag-region flex h-[56px] items-center wco:h-[env(titlebar-area-height)]",
                 reserveTitleBarControlInset &&
                   "wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
               )
-            : "py-5 sm:py-6",
+            : "py-3 sm:py-4",
         )}
       >
         <ChatHeader
@@ -4803,7 +4803,6 @@ export default function ChatView({
             activeSidebarThreadSummary?.latestUserMessageAt,
           )}
           activeProjectName={activeProject?.name}
-          activeProjectCwd={activeProject?.cwd ?? null}
           isGitRepo={isGitRepo}
           openInCwd={gitCwd}
           activeProjectScripts={activeProject?.scripts}
