@@ -78,7 +78,6 @@ import { SelectionReplyToolbar } from "./SelectionReplyToolbar";
 import { extractLeadingQuotedContexts, type QuotedContext } from "~/lib/quotedContext";
 import { UserMessageQuotedContextLabel } from "./UserMessageQuotedContextLabel";
 import { useSettings } from "~/hooks/useSettings";
-import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@marcode/contracts/settings";
 import { formatTimestamp } from "../../timestampFormat";
 
@@ -571,7 +570,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           onScroll={handleScroll}
           className={cn(
             "h-full overflow-x-hidden overscroll-y-contain",
-            hideChatMinimap ? null : "pr-2",
+            hideChatMinimap ? null : "@5xl/chat:pr-8",
           )}
           ListHeaderComponent={<div className="h-3 sm:h-4" />}
           ListFooterComponent={<div className="h-3 sm:h-4" />}

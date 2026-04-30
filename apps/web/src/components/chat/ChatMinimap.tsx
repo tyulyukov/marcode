@@ -124,7 +124,7 @@ export const ChatMinimap = memo(function ChatMinimap({
       <nav
         ref={navCallbackRef}
         aria-label="User messages minimap"
-        className="pointer-events-none absolute top-3 right-1 bottom-3 z-20 flex flex-col items-end @md/chat:right-2"
+        className="pointer-events-none absolute top-3 right-1 bottom-3 z-20 hidden flex-col items-end @md/chat:right-2 @5xl/chat:flex"
         data-testid="chat-minimap"
         data-expanded={isOpen ? "true" : undefined}
       >
