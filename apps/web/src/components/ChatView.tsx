@@ -4799,14 +4799,15 @@ export default function ChatView({
       <header
         className={cn(
           "border-b border-border",
-          isElectron && !sidebarVisible ? "pr-3 sm:pr-4 pl-[90px]" : "px-3 sm:px-4",
+          isElectron && !sidebarVisible ? "pr-3 sm:pr-4 pl-[90px]" : null,
           isElectron
             ? cn(
+                sidebarVisible ? "px-3 sm:px-4" : null,
                 "drag-region flex h-[56px] items-center wco:h-[env(titlebar-area-height)]",
                 reserveTitleBarControlInset &&
                   "wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]",
               )
-            : "py-3 sm:py-4",
+            : "py-3 pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:py-4 sm:pl-[calc(env(safe-area-inset-left)+1rem)] sm:pr-[calc(env(safe-area-inset-right)+1rem)]",
         )}
       >
         <ChatHeader
@@ -4925,7 +4926,14 @@ export default function ChatView({
           </div>
 
           {/* Input bar */}
-          <div className={cn("px-3 pt-1.5 sm:px-5 sm:pt-2", isGitRepo ? "pb-1" : "pb-3 sm:pb-4")}>
+          <div
+            className={cn(
+              "pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] pt-1.5 sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)] sm:pt-2",
+              isGitRepo
+                ? "pb-[calc(env(safe-area-inset-bottom)+0.25rem)]"
+                : "pb-[calc(env(safe-area-inset-bottom)+0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)+1rem)]",
+            )}
+          >
             <form
               ref={composerFormRef}
               onSubmit={onSend}
