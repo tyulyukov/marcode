@@ -37,14 +37,39 @@ function deriveSearchQuery(entry: WorkLogEntry): string | null {
   return null;
 }
 
+function deriveActionQueries(
+  entry: WorkLogEntry,
+  mainQuery: string | null,
+): ReadonlyArray<string> | null {
+  const action = entry.toolAction;
+  if (!action) return null;
+  const queries = action.queries;
+  if (!Array.isArray(queries)) return null;
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const value of queries) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed.length === 0) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    cleaned.push(trimmed);
+  }
+  if (cleaned.length === 0) return null;
+  if (cleaned.length === 1 && cleaned[0] === mainQuery) return null;
+  return cleaned;
+}
+
 export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardProps) {
   const { entry, isLatestTurn = false } = props;
 
   const status = deriveToolStatus(entry);
   const query = useMemo(() => deriveSearchQuery(entry), [entry]);
+  const isCodex = entry.toolAction !== undefined;
+  const actionQueries = useMemo(() => deriveActionQueries(entry, query), [entry, query]);
   const renderedOutput = useMemo(
-    () => (entry.detail ? ansiToSpans(entry.detail) : null),
-    [entry.detail],
+    () => (!isCodex && entry.detail ? ansiToSpans(entry.detail) : null),
+    [isCodex, entry.detail],
   );
 
   const headerText = query ? `Searched for "${query}"` : (entry.toolTitle ?? entry.label);
@@ -68,7 +93,15 @@ export const WebSearchCard = memo(function WebSearchCard(props: WebSearchCardPro
     </span>
   );
 
-  const body = renderedOutput ? (
+  const body = actionQueries ? (
+    <ul className="list-none space-y-0.5 px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
+      {actionQueries.map((q) => (
+        <li key={q} className="break-words">
+          {q}
+        </li>
+      ))}
+    </ul>
+  ) : renderedOutput ? (
     <pre className="whitespace-pre-wrap break-words px-3 py-1.5 font-mono text-[10px] leading-4 text-muted-foreground/55">
       {renderedOutput}
     </pre>

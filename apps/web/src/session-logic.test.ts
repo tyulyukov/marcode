@@ -1226,6 +1226,86 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
   });
 
+  it("populates progressHistory from per-step summary, not the prompt-echoing detail", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Pick a random file", prompt: "Pick a random file" },
+      }),
+      makeActivity({
+        id: "p1-thinking-start",
+        createdAt: "2026-02-23T00:00:34.948Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Pick a random file", lastToolName: "Thinking" },
+      }),
+      makeActivity({
+        id: "p2-shell-completed",
+        createdAt: "2026-02-23T00:00:34.948Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: {
+          taskId: "t1",
+          detail: "/bin/zsh -lc pwd",
+          summary: "/bin/zsh -lc pwd",
+          lastToolName: "Shell",
+        },
+      }),
+      makeActivity({
+        id: "t1-complete",
+        createdAt: "2026-02-23T00:00:35.000Z",
+        kind: "task.completed",
+        tone: "info",
+        payload: { taskId: "t1", status: "completed" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+
+    expect(task.progressHistory).toHaveLength(2);
+    const [thinking, shell] = task.progressHistory;
+
+    expect(thinking!.id).toBe("p1-thinking-start");
+    expect(thinking!.description).toBeNull();
+    expect(thinking!.summary).toBeNull();
+    expect(thinking!.lastToolName).toBe("Thinking");
+
+    expect(shell!.id).toBe("p2-shell-completed");
+    expect(shell!.description).toBe("/bin/zsh -lc pwd");
+    expect(shell!.summary).toBe("/bin/zsh -lc pwd");
+
+    const ids = task.progressHistory.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("does not surface the prompt as progressSummary when latest progress lacks a summary", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Pick a random file" },
+      }),
+      makeActivity({
+        id: "t1-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Pick a random file", lastToolName: "Thinking" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+    expect(task.progressSummary).toBeNull();
+    expect(task.lastToolName).toBe("Thinking");
+  });
+
   it("handles stopped task status", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -2127,6 +2207,42 @@ describe("deriveWorkLogEntries", () => {
       expect(entries[0]!.itemType).toBe("web_search");
       expect(entries[0]!.toolName).toBe("WebSearch");
       expect(entries[0]!.toolInput).toEqual({ query: "effect-ts 4 release notes" });
+    });
+
+    it("extracts Codex webSearch action.queries into entry.toolAction", () => {
+      const action = {
+        type: "search",
+        query: "OBRIO official company about",
+        queries: [
+          "OBRIO official company about",
+          "site:obrio.net OBRIO about",
+          "site:obrio.com OBRIO about",
+        ],
+      };
+      const activities: OrchestrationThreadActivity[] = [
+        makeActivity({
+          id: "ws-complete",
+          createdAt: "2026-02-23T00:00:01.000Z",
+          kind: "tool.completed",
+          summary: "Web search",
+          tone: "tool",
+          payload: {
+            itemType: "web_search",
+            itemId: "ws_1",
+            title: "Web search",
+            detail: "OBRIO official company about",
+            data: {
+              toolName: "WebSearch",
+              input: { query: "OBRIO official company about" },
+              action,
+            },
+          },
+        }),
+      ];
+
+      const entries = deriveWorkLogEntries(activities, undefined);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.toolAction).toEqual(action);
     });
 
     it("extracts one diffPreview per Codex fileChange change", () => {

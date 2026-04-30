@@ -40,12 +40,14 @@ export const PROVIDER_OPTIONS: Array<{
 ];
 
 export interface SubagentToolProgress {
+  readonly id: string;
   readonly toolName: string;
   readonly elapsedSeconds: number | null;
   readonly createdAt: string;
 }
 
 export interface AgentProgressEntry {
+  readonly id: string;
   readonly lastToolName: string | null;
   readonly description: string | null;
   readonly summary: string | null;
@@ -88,6 +90,7 @@ export interface WorkLogEntry {
   toolTitle?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
+  toolAction?: Record<string, unknown>;
   toolCompleted?: boolean;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
@@ -920,10 +923,7 @@ function buildAgentTaskSummary(
       : null;
 
   const lastToolName = asTrimmedString(latestProgressPayload?.lastToolName) ?? null;
-  const progressSummary =
-    asTrimmedString(latestProgressPayload?.detail) ??
-    asTrimmedString(latestProgressPayload?.summary) ??
-    null;
+  const progressSummary = asTrimmedString(latestProgressPayload?.summary) ?? null;
 
   const createdAt =
     group.started?.createdAt ?? latestProgress?.createdAt ?? group.completed?.createdAt ?? "";
@@ -948,6 +948,7 @@ function buildAgentTaskSummary(
   const toolProgressEntries: SubagentToolProgress[] = group.toolProgressEntries.map((activity) => {
     const p = asRecord(activity.payload);
     return {
+      id: activity.id,
       toolName: asTrimmedString(p?.toolName) ?? "Tool",
       elapsedSeconds: typeof p?.elapsedSeconds === "number" ? p.elapsedSeconds : null,
       createdAt: activity.createdAt,
@@ -956,10 +957,12 @@ function buildAgentTaskSummary(
 
   const progressHistory: AgentProgressEntry[] = group.progressEntries.map((activity) => {
     const p = asRecord(activity.payload);
+    const summary = asTrimmedString(p?.summary) ?? null;
     return {
+      id: activity.id,
       lastToolName: asTrimmedString(p?.lastToolName) ?? null,
-      description: asTrimmedString(p?.detail) ?? null,
-      summary: asTrimmedString(p?.summary) ?? null,
+      description: summary,
+      summary,
       createdAt: activity.createdAt,
     };
   });
@@ -1112,6 +1115,7 @@ function toDerivedWorkLogEntry(
   }
   const toolName = extractToolName(payload);
   const toolInput = extractToolInput(payload);
+  const toolAction = extractToolAction(payload);
   if (title) {
     entry.toolTitle = title;
   }
@@ -1120,6 +1124,9 @@ function toDerivedWorkLogEntry(
   }
   if (toolInput) {
     entry.toolInput = toolInput;
+  }
+  if (toolAction) {
+    entry.toolAction = toolAction;
   }
   if (itemType) {
     entry.itemType = itemType;
@@ -1269,6 +1276,7 @@ function mergeDerivedWorkLogEntries(
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const toolName = next.toolName ?? previous.toolName;
   const toolInput = previous.toolInput ?? next.toolInput;
+  const toolAction = next.toolAction ?? previous.toolAction;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const itemId = next.itemId ?? previous.itemId;
@@ -1290,6 +1298,7 @@ function mergeDerivedWorkLogEntries(
     ...(toolTitle ? { toolTitle } : {}),
     ...(toolName ? { toolName } : {}),
     ...(toolInput ? { toolInput } : {}),
+    ...(toolAction ? { toolAction } : {}),
     ...(previous.toolCompleted || next.toolCompleted ? { toolCompleted: true } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
@@ -1582,6 +1591,13 @@ function extractToolName(payload: Record<string, unknown> | null): string | null
 function extractToolInput(payload: Record<string, unknown> | null): Record<string, unknown> | null {
   const data = asRecord(payload?.data);
   return asRecord(data?.input);
+}
+
+function extractToolAction(
+  payload: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const data = asRecord(payload?.data);
+  return asRecord(data?.action);
 }
 
 function extractToolCallId(payload: Record<string, unknown> | null): string | null {

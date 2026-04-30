@@ -130,18 +130,18 @@ function formatElapsedSeconds(seconds: number): string {
 }
 
 type TimelineItem =
-  | { kind: "tool-progress"; createdAt: string; data: SubagentToolProgress }
-  | { kind: "task-progress"; createdAt: string; data: AgentProgressEntry };
+  | { kind: "tool-progress"; id: string; createdAt: string; data: SubagentToolProgress }
+  | { kind: "task-progress"; id: string; createdAt: string; data: AgentProgressEntry };
 
 function buildTimelineItems(task: AgentTaskSummary): TimelineItem[] {
   const items: TimelineItem[] = [];
 
   for (const entry of task.progressHistory) {
-    items.push({ kind: "task-progress", createdAt: entry.createdAt, data: entry });
+    items.push({ kind: "task-progress", id: entry.id, createdAt: entry.createdAt, data: entry });
   }
 
   for (const entry of task.toolProgressEntries) {
-    items.push({ kind: "tool-progress", createdAt: entry.createdAt, data: entry });
+    items.push({ kind: "tool-progress", id: entry.id, createdAt: entry.createdAt, data: entry });
   }
 
   items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -252,20 +252,10 @@ const ProgressTimeline = memo(function ProgressTimeline(props: { task: AgentTask
           const isLast = idx === items.length - 1;
           if (item.kind === "tool-progress") {
             return (
-              <ToolProgressTimelineRow
-                key={`t-${item.data.toolName}-${item.createdAt}`}
-                entry={item.data}
-                isLast={isLast}
-              />
+              <ToolProgressTimelineRow key={`t-${item.id}`} entry={item.data} isLast={isLast} />
             );
           }
-          return (
-            <TaskProgressTimelineRow
-              key={`p-${item.createdAt}`}
-              entry={item.data}
-              isLast={isLast}
-            />
-          );
+          return <TaskProgressTimelineRow key={`p-${item.id}`} entry={item.data} isLast={isLast} />;
         })}
         {task.status === "running" && (
           <div className="relative flex gap-3">
