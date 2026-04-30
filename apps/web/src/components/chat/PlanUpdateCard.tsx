@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { CheckIcon, LoaderIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import type { WorkLogEntry } from "../../session-logic";
 import { cn } from "~/lib/utils";
 import { ToolCard } from "./_shared/ToolCard";
@@ -21,8 +21,8 @@ function stepStatusIcon(status: StepStatus) {
   }
   if (status === "inProgress") {
     return (
-      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-blue-500/15 text-blue-400">
-        <LoaderIcon className="size-2.5 animate-spin" />
+      <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-primary/60 bg-primary/15">
+        <span className="size-1 rounded-full bg-primary" />
       </span>
     );
   }
@@ -54,7 +54,7 @@ function DeltaSection(props: {
                 props.status === "completed"
                   ? "text-muted-foreground/55 line-through decoration-muted-foreground/25"
                   : props.status === "inProgress"
-                    ? "text-foreground/90"
+                    ? "text-primary"
                     : "text-muted-foreground/70",
               )}
             >
@@ -99,9 +99,9 @@ export const PlanUpdateCard = memo(function PlanUpdateCard(props: PlanUpdateCard
           {entry.planExplanation}
         </p>
       ) : null}
-      <DeltaSection label="JUST COMPLETED" status="completed" steps={justCompleted} />
-      <DeltaSection label="NOW WORKING ON" status="inProgress" steps={inProgress} />
       <DeltaSection label={addedLabel} status="pending" steps={added} />
+      <DeltaSection label="NOW WORKING ON" status="inProgress" steps={inProgress} />
+      <DeltaSection label="JUST COMPLETED" status="completed" steps={justCompleted} />
     </div>
   );
 
