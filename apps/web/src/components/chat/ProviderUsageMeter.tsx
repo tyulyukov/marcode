@@ -33,6 +33,16 @@ function usageBarColor(percent: number | null): string {
   return `hsl(${hue} 86% 56%)`;
 }
 
+function triggerColorClass(status: ProviderUsageSnapshot["status"]): string {
+  if (status === "rejected") {
+    return "text-destructive/85 hover:text-destructive";
+  }
+  if (status === "warning") {
+    return "text-warning/85 hover:text-warning";
+  }
+  return "text-muted-foreground/75 hover:text-muted-foreground";
+}
+
 function UsageBar(props: { percent: number | null }) {
   const percent = props.percent ?? 0;
 
@@ -76,7 +86,7 @@ export function ProviderUsageMeter(props: { usage: ProviderUsageSnapshot }) {
         render={
           <button
             type="button"
-            className="group inline-flex items-center justify-center rounded-full p-0.5 text-muted-foreground/75 transition-[color,opacity] hover:text-muted-foreground hover:opacity-90"
+            className={`group inline-flex items-center justify-center rounded-full p-0.5 transition-[color,opacity] hover:opacity-90 ${triggerColorClass(usage.status)}`}
             aria-label={
               hasReportedPercent
                 ? `${usage.providerLabel} usage: ${Math.round(maxPercent)}%`

@@ -301,13 +301,15 @@ function withDescription(title: string, description: string | undefined) {
 
 function summarizeGitActionResult(
   result: Pick<GitRunStackedActionResult, "commit" | "push" | "pr">,
+  gitHostProvider?: GitHostProvider,
 ): {
   title: string;
   description?: string;
 } {
   if (result.pr.status === "created" || result.pr.status === "opened_existing") {
     const prNumber = result.pr.number ? ` #${result.pr.number}` : "";
-    const title = `${result.pr.status === "created" ? "Created PR" : "Opened PR"}${prNumber}`;
+    const label = gitHostProvider === "gitlab" ? "MR" : "PR";
+    const title = `${result.pr.status === "created" ? `Created ${label}` : `Opened ${label}`}${prNumber}`;
     return withDescription(title, truncateText(result.pr.title));
   }
 
@@ -939,7 +941,10 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     cwd: string,
     result: Pick<GitRunStackedActionResult, "action" | "branch" | "commit" | "push" | "pr">,
   ) {
-    const summary = summarizeGitActionResult(result);
+    const hostProvider = yield* detectHostProvider(cwd).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    const summary = summarizeGitActionResult(result, hostProvider);
     let latestOpenPr: PullRequestInfo | null = null;
     let currentBranchIsDefault = false;
     let finalBranchContext: {
@@ -986,9 +991,6 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     }
 
     const openPr = latestOpenPr ?? explicitResultPr;
-    const hostProvider = yield* detectHostProvider(cwd).pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
-    );
     const prOrMr = hostProvider === "gitlab" ? "MR" : "PR";
 
     const cta =
@@ -1263,10 +1265,12 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     }
 
     const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext);
+    const detectedHostProvider = yield* detectHostProvider(cwd);
+    const prOrMr = detectedHostProvider === "gitlab" ? "MR" : "PR";
     yield* emit({
       kind: "phase_started",
       phase: "pr",
-      label: "Generating PR content...",
+      label: `Generating ${prOrMr} content...`,
     });
     const rangeContext = yield* gitCore.readRangeContext(cwd, baseBranch);
 
@@ -1281,12 +1285,10 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       ...(jiraTickets && jiraTickets.length > 0 ? { jiraTickets } : {}),
     });
 
-    const detectedHostProvider = yield* detectHostProvider(cwd);
-    const prLabel = detectedHostProvider === "gitlab" ? "Creating MR..." : "Creating PR...";
     yield* emit({
       kind: "phase_started",
       phase: "pr",
-      label: prLabel,
+      label: `Creating ${prOrMr}...`,
     });
     const originRepo = headContext.originRepositoryNameWithOwner;
     yield* gitHostCli
@@ -1700,18 +1702,25 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           : { status: "skipped_not_requested" as const };
 
         const pr = wantsPr
-          ? yield* progress
-              .emit({
+          ? yield* Effect.gen(function* () {
+              const hostProvider = yield* detectHostProvider(input.cwd).pipe(
+                Effect.catch(() => Effect.succeed(undefined)),
+              );
+              const prOrMr = hostProvider === "gitlab" ? "MR" : "PR";
+              yield* progress.emit({
                 kind: "phase_started",
                 phase: "pr",
-                label: "Preparing PR...",
-              })
-              .pipe(
-                Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
-                Effect.flatMap(() =>
-                  runPrStep(modelSelection, input.cwd, currentBranch, progress.emit, jiraTickets),
-                ),
-              )
+                label: `Preparing ${prOrMr}...`,
+              });
+              yield* Ref.set(currentPhase, Option.some("pr"));
+              return yield* runPrStep(
+                modelSelection,
+                input.cwd,
+                currentBranch,
+                progress.emit,
+                jiraTickets,
+              );
+            })
           : { status: "skipped_not_requested" as const };
 
         const toast = yield* buildCompletionToast(input.cwd, {
