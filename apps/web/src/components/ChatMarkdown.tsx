@@ -241,6 +241,61 @@ function SuspenseShikiCodeBlock({
   );
 }
 
+function DeferredShikiCodeBlock({
+  className,
+  code,
+  themeName,
+  isStreaming,
+  fallback,
+}: SuspenseShikiCodeBlockProps & { fallback: ReactNode }) {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    setEnabled(false);
+    if (isStreaming) {
+      return;
+    }
+
+    let cancelled = false;
+    const enable = () => {
+      if (!cancelled) {
+        setEnabled(true);
+      }
+    };
+
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(enable, { timeout: 1_000 });
+      return () => {
+        cancelled = true;
+        window.cancelIdleCallback(idleId);
+      };
+    }
+
+    const timeoutId = globalThis.setTimeout(enable, 120);
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [className, code, isStreaming, themeName]);
+
+  if (!enabled) {
+    return <>{fallback}</>;
+  }
+
+  return (
+    <CodeHighlightErrorBoundary fallback={fallback}>
+      <Suspense fallback={fallback}>
+        <SuspenseShikiCodeBlock
+          className={className}
+          code={code}
+          themeName={themeName}
+          isStreaming={isStreaming}
+        />
+      </Suspense>
+    </CodeHighlightErrorBoundary>
+  );
+}
+
 interface MarkdownFileLinkProps {
   href: string;
   targetPath: string;
@@ -541,16 +596,13 @@ function ChatMarkdown({ text, cwd, isStreaming = false }: ChatMarkdownProps) {
 
         return (
           <MarkdownCodeBlock code={codeBlock.code}>
-            <CodeHighlightErrorBoundary fallback={<pre {...props}>{children}</pre>}>
-              <Suspense fallback={<pre {...props}>{children}</pre>}>
-                <SuspenseShikiCodeBlock
-                  className={codeBlock.className}
-                  code={codeBlock.code}
-                  themeName={diffThemeName}
-                  isStreaming={isStreaming}
-                />
-              </Suspense>
-            </CodeHighlightErrorBoundary>
+            <DeferredShikiCodeBlock
+              className={codeBlock.className}
+              code={codeBlock.code}
+              themeName={diffThemeName}
+              isStreaming={isStreaming}
+              fallback={<pre {...props}>{children}</pre>}
+            />
           </MarkdownCodeBlock>
         );
       },

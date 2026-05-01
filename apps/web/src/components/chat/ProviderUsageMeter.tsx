@@ -6,7 +6,11 @@ function formatResetTime(resetsAt: number | null): string | null {
     return null;
   }
   const date = new Date(resetsAt * 1000);
-  return `Resets ${date.toLocaleDateString(undefined, {
+  return `Resets ${formatUsageDate(date)}`;
+}
+
+function formatUsageDate(date: Date): string {
+  return `${date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
   })}, ${date.toLocaleTimeString(undefined, {
@@ -14,6 +18,14 @@ function formatResetTime(resetsAt: number | null): string | null {
     minute: "2-digit",
     timeZoneName: "short",
   })}`;
+}
+
+function formatLastUpdatedAt(updatedAt: string): string | null {
+  const timestamp = Date.parse(updatedAt);
+  if (!Number.isFinite(timestamp)) {
+    return null;
+  }
+  return `Last updated ${formatUsageDate(new Date(timestamp))}`;
 }
 
 function usageBarColor(percent: number | null): string {
@@ -76,6 +88,7 @@ export function ProviderUsageMeter(props: { usage: ProviderUsageSnapshot }) {
     .filter((percent): percent is number => percent !== null);
   const maxPercent = Math.max(...reportedPercents, 0);
   const hasReportedPercent = reportedPercents.length > 0;
+  const lastUpdatedText = formatLastUpdatedAt(usage.updatedAt);
 
   return (
     <Popover>
@@ -122,6 +135,12 @@ export function ProviderUsageMeter(props: { usage: ProviderUsageSnapshot }) {
               </div>
             );
           })}
+
+          {lastUpdatedText ? (
+            <div className="border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+              {lastUpdatedText}
+            </div>
+          ) : null}
         </div>
       </PopoverPopup>
     </Popover>

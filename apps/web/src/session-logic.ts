@@ -1345,6 +1345,7 @@ function mergeDerivedWorkLogEntries(
   return {
     ...previous,
     ...next,
+    id: previous.id,
     createdAt: previous.createdAt,
     ...(detail ? { detail } : {}),
     ...(command ? { command } : {}),

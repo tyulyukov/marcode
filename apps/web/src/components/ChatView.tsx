@@ -2663,7 +2663,7 @@ export default function ChatView({
     return () => {
       observer.disconnect();
     };
-  }, [activeThread?.id, composerFooterActionLayoutKey, composerFooterHasWideActions, scrollToEnd]);
+  }, [composerFooterActionLayoutKey, composerFooterHasWideActions, scrollToEnd]);
   useEffect(() => {
     const prevPhase = previousPhaseRef.current;
     const prevThreadId = previousThreadIdRef.current;

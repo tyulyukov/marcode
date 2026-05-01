@@ -80,9 +80,9 @@ export const ChatHeader = memo(function ChatHeader({
   onToggleDiff,
   onTogglePlanSidebar,
 }: ChatHeaderProps) {
-  useSyncedRelativeTimeTick();
+  const relativeTimeNowMs = useSyncedRelativeTimeTick();
   const relativeActivityAt = activeThreadActivityAt
-    ? formatRelativeTimeLabel(activeThreadActivityAt)
+    ? formatRelativeTimeLabel(activeThreadActivityAt, relativeTimeNowMs)
     : null;
   const showMetaRow = Boolean(activeProjectName) || Boolean(relativeActivityAt);
   const primaryEnvironmentId = usePrimaryEnvironmentId();

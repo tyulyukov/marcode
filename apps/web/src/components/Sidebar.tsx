@@ -322,7 +322,7 @@ interface SidebarThreadRowProps {
 }
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
-  useSyncedRelativeTimeTick();
+  const relativeTimeNowMs = useSyncedRelativeTimeTick();
   const {
     orderedProjectThreadKeys,
     isActive,
@@ -722,6 +722,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   >
                     {formatRelativeTimeLabel(
                       thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
+                      relativeTimeNowMs,
                     )}
                   </span>
                 )}

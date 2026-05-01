@@ -72,26 +72,18 @@ function normalizeThemeColor(value: string | null | undefined): string | null {
   return value?.trim() ?? null;
 }
 
-function resolveBrowserChromeSurface(): HTMLElement {
-  return (
-    document.querySelector<HTMLElement>("main[data-slot='sidebar-inset']") ??
-    document.querySelector<HTMLElement>("[data-slot='sidebar-inner']") ??
-    document.body
-  );
-}
+export function syncBrowserChromeTheme(backgroundColor?: string | null) {
+  if (typeof document === "undefined") return;
+  const normalizedBackgroundColor = normalizeThemeColor(backgroundColor);
+  const chromeColor = normalizedBackgroundColor ?? "var(--app-chrome-background)";
 
-export function syncBrowserChromeTheme() {
-  if (typeof document === "undefined" || typeof getComputedStyle === "undefined") return;
-  const surfaceColor = normalizeThemeColor(
-    getComputedStyle(resolveBrowserChromeSurface()).backgroundColor,
-  );
-  const fallbackColor = normalizeThemeColor(getComputedStyle(document.body).backgroundColor);
-  const backgroundColor = surfaceColor ?? fallbackColor;
-  if (!backgroundColor) return;
-
-  document.documentElement.style.backgroundColor = backgroundColor;
-  document.body.style.backgroundColor = backgroundColor;
-  ensureThemeColorMetaTag().setAttribute("content", backgroundColor);
+  document.documentElement.style.backgroundColor = chromeColor;
+  if (document.body) {
+    document.body.style.backgroundColor = chromeColor;
+  }
+  if (normalizedBackgroundColor) {
+    ensureThemeColorMetaTag().setAttribute("content", normalizedBackgroundColor);
+  }
 }
 
 function getAutoNightPair(): AutoNightPair {
@@ -148,7 +140,7 @@ function applyTheme(preference: ThemePreference, suppressTransitions = false) {
   const definition = resolvePreference(preference, getSystemDark(), getAutoNightPair());
   applyThemeToDOM(definition, suppressTransitions);
   applyAccentOverride(definition);
-  syncBrowserChromeTheme();
+  syncBrowserChromeTheme(definition.variables?.["--background"] ?? null);
   syncDesktopTheme(definition, preference === "system");
 }
 

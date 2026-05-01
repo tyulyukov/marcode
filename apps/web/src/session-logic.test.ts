@@ -1774,7 +1774,7 @@ describe("deriveWorkLogEntries", () => {
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      id: "grep-complete",
+      id: "grep-update",
       toolTitle: "grep",
       detail: "19 files",
       itemType: "web_search",
@@ -1823,7 +1823,7 @@ describe("deriveWorkLogEntries", () => {
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      id: "read-complete",
+      id: "read-update",
       toolTitle: "Read File",
       detail: 'import * as Effect from "effect/Effect"',
       itemType: "dynamic_tool_call",
@@ -1938,7 +1938,7 @@ describe("deriveWorkLogEntries", () => {
     const entries = deriveWorkLogEntries(activities, undefined);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      id: "legacy-read-complete",
+      id: "legacy-read-update",
       toolTitle: "Read File",
       itemType: "dynamic_tool_call",
     });
@@ -1991,7 +1991,7 @@ describe("deriveWorkLogEntries", () => {
 
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      id: "tool-complete",
+      id: "tool-update-1",
       createdAt: "2026-02-23T00:00:01.000Z",
       label: "Tool call completed",
       detail: 'Read: {"file_path":"/tmp/app.ts"}',
@@ -2051,7 +2051,50 @@ describe("deriveWorkLogEntries", () => {
 
     const entries = deriveWorkLogEntries(activities, undefined);
 
-    expect(entries.map((entry) => entry.id)).toEqual(["tool-1-complete", "tool-2-complete"]);
+    expect(entries.map((entry) => entry.id)).toEqual(["tool-1-update", "tool-2-update"]);
+  });
+
+  it("keeps the first lifecycle id stable when a started command later completes", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "cmd-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.started",
+        summary: "Command started",
+        payload: {
+          itemType: "command_execution",
+          itemId: "cmd_1",
+          title: "Command started",
+          detail: "bun test",
+          data: { input: { command: "bun test" }, status: "inProgress" },
+        },
+      }),
+      makeActivity({
+        id: "cmd-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "tool.completed",
+        summary: "Command completed",
+        payload: {
+          itemType: "command_execution",
+          itemId: "cmd_1",
+          title: "Command completed",
+          detail: "ok",
+          data: { input: { command: "bun test" }, exitCode: 0, status: "completed" },
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: "cmd-start",
+      label: "Command completed",
+      detail: "ok",
+      command: "bun test",
+      exitCode: 0,
+      toolCompleted: true,
+    });
   });
 
   it("collapses same-timestamp lifecycle rows even when completed sorts before updated by id", () => {
@@ -2094,7 +2137,7 @@ describe("deriveWorkLogEntries", () => {
     const entries = deriveWorkLogEntries(activities, undefined);
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.id).toBe("a-complete-same-timestamp");
+    expect(entries[0]?.id).toBe("z-update-earlier");
   });
 
   it("splits a later task into a new group when earlier parallel tasks have completed", () => {

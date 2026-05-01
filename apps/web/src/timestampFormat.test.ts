@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   formatElapsedDurationLabel,
   formatExpiresInLabel,
+  formatRelativeTimeLabel,
   formatRelativeTimeUntilLabel,
   getTimestampFormatOptions,
 } from "./timestampFormat";
@@ -58,6 +59,19 @@ describe("formatRelativeTimeUntilLabel", () => {
 
   it("formats hours remaining", () => {
     expect(formatRelativeTimeUntilLabel("2026-04-07T18:00:00.000Z")).toBe("6h left");
+  });
+});
+
+describe("formatRelativeTimeLabel", () => {
+  it("formats against the provided clock value", () => {
+    const isoDate = "2026-04-07T11:59:00.000Z";
+
+    expect(formatRelativeTimeLabel(isoDate, new Date("2026-04-07T11:59:59.000Z").getTime())).toBe(
+      "59s ago",
+    );
+    expect(formatRelativeTimeLabel(isoDate, new Date("2026-04-07T12:00:00.000Z").getTime())).toBe(
+      "1m ago",
+    );
   });
 });
 

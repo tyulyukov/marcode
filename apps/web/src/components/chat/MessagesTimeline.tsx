@@ -387,22 +387,18 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     let completed = false;
     let rafId: number | null = null;
 
-    const scheduleScroll = (depth: number) => {
+    const scheduleScroll = () => {
       rafId = window.requestAnimationFrame(() => {
         rafId = null;
         if (cancelled) return;
         void listRef.current?.scrollToEnd?.({ animated: false });
-        if (depth > 0) {
-          scheduleScroll(depth - 1);
-        } else {
-          completed = true;
-          hasFinishedInitialScrollRef.current = true;
-          syncIsAtEnd();
-        }
+        completed = true;
+        hasFinishedInitialScrollRef.current = true;
+        syncIsAtEnd();
       });
     };
 
-    scheduleScroll(2);
+    scheduleScroll();
 
     return () => {
       cancelled = true;
@@ -414,7 +410,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         hasAutoScrolledOnMountRef.current = false;
       }
     };
-  }, [listRef, rows.length, syncIsAtEnd, updateIsAtEnd]);
+  }, [listRef, rows.length, syncIsAtEnd, threadId, updateIsAtEnd]);
 
   useEffect(() => {
     if (rows.length === 0) return;
@@ -564,13 +560,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     <TimelineRowCtx.Provider value={sharedState}>
       <div className="@container/chat relative h-full">
         <LegendList<MessagesTimelineRow>
-          key={threadId}
           ref={listRef}
           data={rows}
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           estimatedItemSize={160}
           getEstimatedItemSize={estimateRowSize}
+          drawDistance={120}
           initialScrollAtEnd
           maintainScrollAtEnd
           maintainScrollAtEndThreshold={0.1}
