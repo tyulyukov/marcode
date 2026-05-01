@@ -40,7 +40,9 @@ export type ThemeGroup =
   | "tokyo-night"
   | "rose-pine"
   | "ayu"
-  | "monokai";
+  | "monokai"
+  | "adbraze"
+  | "nebula";
 
 export type ThemeDefinition = {
   id: string;

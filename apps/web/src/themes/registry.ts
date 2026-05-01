@@ -1,4 +1,5 @@
 import type { ThemeDefinition, ThemeGroup } from "./types";
+import { ADBRAZE_THEMES } from "./definitions/adbraze";
 import { AYU_THEMES } from "./definitions/ayu";
 import { CATPPUCCIN_THEMES } from "./definitions/catppuccin";
 import { DRACULA_THEMES } from "./definitions/dracula";
@@ -6,6 +7,7 @@ import { GITHUB_THEMES } from "./definitions/github";
 import { GRUVBOX_THEMES } from "./definitions/gruvbox";
 import { MARCODE_THEMES } from "./definitions/marcode";
 import { MONOKAI_THEMES } from "./definitions/monokai";
+import { NEBULA_THEMES } from "./definitions/nebula";
 import { NORD_THEMES } from "./definitions/nord";
 import { ONE_DARK_THEMES } from "./definitions/one-dark";
 import { ROSE_PINE_THEMES } from "./definitions/rose-pine";
@@ -25,6 +27,8 @@ export const THEME_REGISTRY: readonly ThemeDefinition[] = [
   ...ROSE_PINE_THEMES,
   ...AYU_THEMES,
   ...MONOKAI_THEMES,
+  ...ADBRAZE_THEMES,
+  ...NEBULA_THEMES,
 ];
 
 export const THEME_MAP: ReadonlyMap<string, ThemeDefinition> = new Map(
@@ -44,4 +48,6 @@ export const THEME_GROUPS: readonly { group: ThemeGroup; label: string }[] = [
   { group: "rose-pine", label: "Ros\u00e9 Pine" },
   { group: "ayu", label: "Ayu" },
   { group: "monokai", label: "Monokai" },
+  { group: "adbraze", label: "AdBraze" },
+  { group: "nebula", label: "Nebula" },
 ];

@@ -1,0 +1,37 @@
+import type { ThemeDefinition } from "../types";
+
+export const ADBRAZE_THEMES: readonly ThemeDefinition[] = [
+  {
+    id: "adbraze-light",
+    label: "AdBraze Light",
+    group: "adbraze",
+    base: "light",
+    variables: {
+      "--background": "#f9fafc",
+      "--foreground": "#20263a",
+      "--card": "#ffffff",
+      "--card-foreground": "#20263a",
+      "--popover": "#ffffff",
+      "--popover-foreground": "#20263a",
+      "--primary": "#0d69f3",
+      "--primary-foreground": "#ffffff",
+      "--secondary": "#e2edfe",
+      "--secondary-foreground": "#034ab4",
+      "--muted": "#f2f5fa",
+      "--muted-foreground": "#637086",
+      "--accent": "#e2edfe",
+      "--accent-foreground": "#034ab4",
+      "--destructive": "#ff6b6b",
+      "--destructive-foreground": "#ff6b6b",
+      "--border": "#eaedf3",
+      "--input": "#ced1d8",
+      "--ring": "#0d69f3",
+      "--info": "#0d69f3",
+      "--info-foreground": "#0d69f3",
+      "--success": "#6ce286",
+      "--success-foreground": "#6ce286",
+      "--warning": "#ff9a3e",
+      "--warning-foreground": "#ff9a3e",
+    },
+  },
+];
