@@ -17,6 +17,7 @@ import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { useSyncedRelativeTimeTick } from "../../hooks/useRelativeTimeTick";
+import { usePrimaryEnvironmentId } from "../../environments/primary";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -84,6 +85,10 @@ export const ChatHeader = memo(function ChatHeader({
     ? formatRelativeTimeLabel(activeThreadActivityAt)
     : null;
   const showMetaRow = Boolean(activeProjectName) || Boolean(relativeActivityAt);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const isRemoteEnvironment =
+    primaryEnvironmentId !== null && activeThreadEnvironmentId !== primaryEnvironmentId;
+
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
       <SidebarTrigger className="size-7 shrink-0 md:hidden" />
@@ -144,7 +149,7 @@ export const ChatHeader = memo(function ChatHeader({
             onDeleteScript={onDeleteProjectScript}
           />
         )}
-        {activeProjectName && (
+        {activeProjectName && !isRemoteEnvironment && (
           <OpenInPicker
             keybindings={keybindings}
             availableEditors={availableEditors}
@@ -192,14 +197,14 @@ export const ChatHeader = memo(function ChatHeader({
                 aria-label="Toggle diff panel"
                 variant="outline"
                 size="xs"
-                disabled={!isGitRepo}
+                disabled={!isGitRepo && !diffOpen}
               >
                 <DiffIcon className="size-3" />
               </Toggle>
             }
           />
           <TooltipPopup side="bottom">
-            {!isGitRepo
+            {!isGitRepo && !diffOpen
               ? "Diff panel is unavailable because this project is not a git repository."
               : diffToggleShortcutLabel
                 ? `Toggle diff panel (${diffToggleShortcutLabel})`

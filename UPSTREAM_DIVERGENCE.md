@@ -37,7 +37,51 @@ Sections are ordered by action:
 
 ## Ported in the current cycle
 
-**Cycle:** 2026-04-28 · Baseline before cycle: `7f04a4a11` · Baseline after cycle: `ef574febf`
+**Cycle:** 2026-05-01 · Baseline before cycle: `9e2182c25` · Baseline after cycle: `dc9f2bfbd`
+
+### marcode/upstream-quick-fixes — upstream quick-fix sync (2026-05-01)
+
+| Upstream                                               | Subject                                                                        | New SHA     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------ | ----------- |
+| [#2176](https://github.com/pingdotgg/t3code/pull/2176) | fix: updated UI "add project" icon to match the command palette icon           | `e8806f001` |
+| [#2408](https://github.com/pingdotgg/t3code/pull/2408) | \[codex\] Fix visited timestamp under clock skew                               | `6854d2fce` |
+| [#2411](https://github.com/pingdotgg/t3code/pull/2411) | \[codex\] fix terminal dimension validation                                    | `babb286ec` |
+| [#2404](https://github.com/pingdotgg/t3code/pull/2404) | fix(server): key AskUserQuestion answers by question text                      | `d830a702b` |
+| [#1652](https://github.com/pingdotgg/t3code/pull/1652) | fix(web): prevent iOS Safari auto-zoom on input focus                          | `18d7f0c67` |
+| [#1966](https://github.com/pingdotgg/t3code/pull/1966) | fix(git): hide stale merged/closed PRs on the default branch                   | `691096c7f` |
+| [#2413](https://github.com/pingdotgg/t3code/pull/2413) | fix(web): allow closing diff panel in non-git projects                         | `6a7d84c40` |
+| [#1293](https://github.com/pingdotgg/t3code/pull/1293) | fix(web): hide mobile sidebar after thread selection or creation               | `71f5697f2` |
+| [#2423](https://github.com/pingdotgg/t3code/pull/2423) | fix(web): make thread archive button always visible on mobile                  | `444f0e85d` |
+| [#2409](https://github.com/pingdotgg/t3code/pull/2409) | Narrow the right sidebar and update task panel and diff panel                  | `b44ec8829` |
+| [#2392](https://github.com/pingdotgg/t3code/pull/2392) | fix(web): respect iOS safe areas across mobile chrome & other mobile fixes     | `047e9eed9` |
+| [#2427](https://github.com/pingdotgg/t3code/pull/2427) | fix: bump `electron` version to v40.9.3 and add it to our trusted dependencies | `8dea3fe31` |
+| [#2420](https://github.com/pingdotgg/t3code/pull/2420) | fix(mobile): enable touch scrolling in file picker modal                       | `e67f4fc16` |
+| [#2183](https://github.com/pingdotgg/t3code/pull/2183) | fix: opencode is not on PATH on Windows                                        | `dc9f2bfbd` |
+
+**Conflict resolutions applied:**
+
+- `ChatView.tsx` (#2408) — kept MarCode's `markThreadVisited(serverThread.id, ...)` call shape because MarCode keys `threadLastVisitedAtById` by raw `serverThread.id` (line 770), not upstream's `scopedThreadKey(scopeThreadRef(...))`. Adopted upstream's second arg (`activeLatestTurn.completedAt`) to fix the clock-skew issue.
+- `ComposerPromptEditor.tsx` + `Sidebar.tsx` (#1652) — MarCode already had a 16px iOS-zoom fix from `207e3ed60` (`text-[16px] sm:text-[14px]`); took upstream's `text-base sm:text-[14px]` formulation and `wrap-break-word` migration (Tailwind v4 idiom replacing `break-words`) for canonical phrasing.
+- `GitManager.ts` (#1966) — MarCode HEAD already had the `isDefaultBranch && state !== "open"` guard (independently added in `207e3ed60`) but inside MarCode's GitLab-aware `Effect.all` parallel block. Only added upstream's clarifying comment. Test file's `marcode-git-manager-` tempdir prefix was kept (vs upstream's `t3code-`).
+- `Sidebar.tsx` + `SettingsSidebarNav.tsx` + `routes/settings.tsx` (#2423) — kept MarCode's `md:` breakpoint pattern for the multi-environment indicator (instead of upstream's `max-sm:`-based always-visible-on-mobile pattern; functionally equivalent), but adopted upstream's `text-muted-foreground/60` contrast tweak. SettingsSidebarNav imports merged: kept MarCode's `PaletteIcon` import (FEATURES.md "Theme System: Appearance settings tab"), added upstream's `useCallback` + `useCanGoBack`.
+- `SettingsPanels.tsx` (#2409) — kept MarCode's `descriptors`-based `changedSettingLabels` pattern. Upstream's "Auto-open task panel" SettingsRow was dropped because MarCode removed the `autoOpenPlanSidebar` row from the UI entirely (the schema field still exists for backwards compat but is no longer user-configurable).
+- `ChatHeader.tsx` (#2392) — combined MarCode's relative-timestamp imports (`formatRelativeTimeLabel`, `useSyncedRelativeTimeTick`) with upstream's `usePrimaryEnvironmentId` import; combined hook calls in the function body so both sets of state are derived. MarCode HEAD's existing `isRemoteEnvironment` reference (line 158) now resolves correctly.
+- `index.css` (#2392) — both MarCode's reduce-motion overrides and upstream's `@utility pt-safe / pb-safe / pl-safe / pr-safe` blocks coexist (independent additions, no overlap).
+- `BranchToolbar.tsx` (#2392) — kept MarCode's `@marcode/client-runtime` / `@marcode/contracts` rebrand imports; added upstream's new `lucide-react` icon imports (`ChevronDownIcon`, `CloudIcon`, `FolderGit2Icon`, `FolderGitIcon`, `FolderIcon`, `MonitorIcon`).
+- `BranchToolbarBranchSelector.tsx` (#2392) — preserved MarCode's `GitBranchIcon`; took upstream's `min-w-0` + `shrink-0` polish.
+- `ChatView.tsx` (#2392) — MarCode's inline composer structure differs substantially from upstream's `ChatComposer`-extracted version. Resolved to keep MarCode's structure entirely; manually backported the safe-area-inset paddings to MarCode's header outer wrapper (web-only, electron path unchanged so traffic-light logic survives) and to MarCode's input-bar wrapper. The `isGitRepo`-conditional `BranchToolbar` placement was kept outside the input-bar `<div>` (where MarCode renders it) instead of upstream's nested-inside placement.
+- `routes/_chat.$environmentId.$threadId.tsx` + `routes/_chat.draft.$draftId.tsx` (#2392) — adopted upstream's `h-svh min-h-0 ... md:h-dvh` height pattern (better mobile chrome handling). Kept MarCode's two-arg `<ChatView threadId={...} environmentId={...}>` call sites and intentionally did not adopt upstream's `routeKind` / `onDiffPanelOpen` / `draftId` props (per [MEMORY.md] notes about MarCode lacking the `routeKind` prop, and `retainThreadDetailSubscription` ownership).
+- `package.json` (#2427) — kept MarCode HEAD's existing `["electron", "node-pty"]` order (already present from a previous bump); upstream's identical entry just rearranged.
+
+**Skipped:**
+
+- [#2277](https://github.com/pingdotgg/t3code/pull/2277) `feat: Multi-Provider support` — explicit user instruction; out of scope for this quick-fix cycle.
+
+---
+
+## Previous cycle: 2026-04-28
+
+**Baseline before cycle:** `7f04a4a11` · **Baseline after cycle:** `ef574febf`
 
 ### PR #72 — upstream sync (2026-04-28)
 
@@ -167,6 +211,8 @@ These upstream PRs are **behaviorally present** in MarCode via non-identical pat
 | [#2153](https://github.com/pingdotgg/t3code/pull/2153) | Redesign model picker with favorites and search                        | `41ddce8f0 feat(model-picker): port upstream sexy redesign with favorites and search` — explicit port.                                                                                                                                                                                                                                                                                                                                                   |
 | [#2192](https://github.com/pingdotgg/t3code/pull/2192) | fix(server): prevent probeClaudeCapabilities from wasting API requests | Already present: `waitForAbortSignal` + `SDKUserMessage` never-yielding prompt in `ClaudeProvider.ts:485,514`. Cherry-pick diff is empty against our HEAD.                                                                                                                                                                                                                                                                                               |
 | [#2255](https://github.com/pingdotgg/t3code/pull/2255) | fix(server): restore CODEX_HOME tilde expansion for Codex launches     | `expandHomePath` already wired on `CodexProvider.ts:226` and `CodexSessionRuntime.ts:688` via [#2210](https://github.com/pingdotgg/t3code/pull/2210) + follow-ups (`63ea04e29`, `42afbb226`).                                                                                                                                                                                                                                                            |
+| [#2419](https://github.com/pingdotgg/t3code/pull/2419) | fix(web): make new thread button always visible on mobile              | MarCode independently solved this in `207e3ed60 feat(composer): refactor mention node ...` (Apr 14) using a `md:` breakpoint inversion (`pointer-events-auto absolute ... md:pointer-events-none md:opacity-0 md:group-hover:...:opacity-100`) — semantically equivalent to upstream's `max-sm:` pattern but inverted. Cycle 2026-05-01 cherry-pick was skipped via `git cherry-pick --skip`.                                                            |
+| Direct                                                 | Stop OpenCode refresh from leaking serve processes (`35822884d`)       | `1feaf81b5 / 71199bbb7` — already ported earlier (detected by `git cherry`'s patch-id match, did not appear in 2026-05-01 missing list).                                                                                                                                                                                                                                                                                                                 |
 
 **Verification strategy for re-checking in a later cycle:** grep for the symbol the upstream PR adds. If it's already in MarCode, confirm; do not cherry-pick.
 
@@ -202,11 +248,20 @@ MarCode ships semver alphas (`1.0.0-alpha.*`), not nightly builds. Adopting nigh
 - `2d87574e` `chore(release): prepare v0.0.20` — bumps to upstream's 0.0.x version scheme, collides with MarCode's `1.0.0-alpha.*`.
 - `ada410bc` `chore(release): prepare v0.0.21` — same.
 
+### Upstream-only docs / rosters (skipped)
+
+- [#2154](https://github.com/pingdotgg/t3code/pull/2154) `Add OpenCode to README` — upstream's README is divergent from MarCode's marketing-oriented README; not worth re-adding the line.
+- [#2425](https://github.com/pingdotgg/t3code/pull/2425) `Add new GitHub users to VOUCHED.td` — upstream's volunteer roster file; doesn't apply to the fork.
+
+### Multi-Provider support (deferred, not skipped permanently)
+
+- [#2277](https://github.com/pingdotgg/t3code/pull/2277) `feat: Multi-Provider support` — deferred from the 2026-05-01 cycle on user instruction (too large for a quick-fix sync). Revisit in a dedicated cycle when MarCode is ready to integrate the multi-provider model.
+
 ---
 
 ## Pending real work
 
-_None as of 2026-04-28._ The two upstream commits in this cycle (#2364 release-smoke node fix + #2372 stale WS lifecycle gate) landed via PR #72. Re-run the `git cherry origin/main upstream/main` workflow at the top of this doc when starting a new cycle to populate this section.
+_None as of 2026-05-01._ All actionable upstream commits in the new range (`9e2182c25..1eb6fcea8`, 18 commits flagged by `git cherry`) landed via the `marcode/upstream-quick-fixes` branch except: `#2277` (deferred — see "Multi-Provider support" above), `#2154` and `#2425` (upstream-only docs/rosters), and `#2419` (already-equivalent under MarCode's `md:` inversion pattern). Re-run the `git cherry origin/main upstream/main` workflow at the top of this doc when starting the next cycle.
 
 ---
 
