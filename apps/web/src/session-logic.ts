@@ -578,7 +578,16 @@ export function deriveWorkLogEntries(
 ): WorkLogEntry[] {
   const isSessionRunning = options?.isSessionRunning ?? false;
   const provider = options?.provider;
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+  const cacheKey = `${latestTurnId ?? ""}\x1f${isSessionRunning ? "1" : "0"}\x1f${provider ?? ""}`;
+  const cachedByKey = workLogEntriesCache.get(activities);
+  const cached = cachedByKey?.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const relevantActivities = latestTurnId
+    ? activities.filter((activity) => activity.turnId === latestTurnId)
+    : activities;
+  const ordered = [...relevantActivities].toSorted(compareActivitiesByOrder);
 
   const previousPlanStepsByActivityId = new Map<string, PlanStep[] | null>();
   let runningPreviousPlanSteps: PlanStep[] | null = null;
@@ -599,7 +608,6 @@ export function deriveWorkLogEntries(
   const collabToolDataUnkeyed: SubagentCollabToolData[] = [];
   const collabToolItemIds = new Set<string>();
   for (const activity of ordered) {
-    if (latestTurnId && activity.turnId !== latestTurnId) continue;
     if (activity.kind === "tool.started") {
       const payload = asRecord(activity.payload);
       if (payload?.itemType === "collab_agent_tool_call") {
@@ -628,7 +636,6 @@ export function deriveWorkLogEntries(
   const nestedTaskIds = new Set<string>();
   for (const activity of ordered) {
     if (activity.kind !== "task.started") continue;
-    if (latestTurnId && activity.turnId !== latestTurnId) continue;
     const payload = asRecord(activity.payload);
     const taskId = asTrimmedString(payload?.taskId);
     if (!taskId) continue;
@@ -641,7 +648,6 @@ export function deriveWorkLogEntries(
   }
 
   const filtered = ordered
-    .filter((activity) => (latestTurnId ? activity.turnId === latestTurnId : true))
     .filter(
       (activity) =>
         activity.kind !== "tool.started" ||
@@ -756,10 +762,21 @@ export function deriveWorkLogEntries(
     entries.push(toDerivedWorkLogEntry(activity, previousPlanSteps));
   }
 
-  return deduplicateToolLifecycleEntries(collapseDerivedWorkLogEntries(entries)).map(
+  const result = deduplicateToolLifecycleEntries(collapseDerivedWorkLogEntries(entries)).map(
     ({ activityKind: _activityKind, collapseKey: _collapseKey, ...entry }) => entry,
   );
+  const nextCachedByKey = cachedByKey ?? new Map<string, WorkLogEntry[]>();
+  nextCachedByKey.set(cacheKey, result);
+  if (!cachedByKey) {
+    workLogEntriesCache.set(activities, nextCachedByKey);
+  }
+  return result;
 }
+
+const workLogEntriesCache = new WeakMap<
+  ReadonlyArray<OrchestrationThreadActivity>,
+  Map<string, WorkLogEntry[]>
+>();
 
 function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): boolean {
   if (activity.kind !== "tool.updated" && activity.kind !== "tool.completed") {
@@ -1066,6 +1083,12 @@ function toDerivedWorkLogEntry(
   activity: OrchestrationThreadActivity,
   previousPlanSteps: PlanStep[] | null = null,
 ): DerivedWorkLogEntry {
+  if (previousPlanSteps === null) {
+    const cached = derivedWorkLogEntryCache.get(activity);
+    if (cached) {
+      return cached;
+    }
+  }
   const payload =
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
@@ -1189,8 +1212,13 @@ function toDerivedWorkLogEntry(
   if (collapseKey) {
     entry.collapseKey = collapseKey;
   }
+  if (previousPlanSteps === null) {
+    derivedWorkLogEntryCache.set(activity, entry);
+  }
   return entry;
 }
+
+const derivedWorkLogEntryCache = new WeakMap<OrchestrationThreadActivity, DerivedWorkLogEntry>();
 
 function collapseDerivedWorkLogEntries(
   entries: ReadonlyArray<DerivedWorkLogEntry>,
@@ -1963,6 +1991,12 @@ export function deriveTimelineEntries(
   proposedPlans: ProposedPlan[],
   workEntries: WorkLogEntry[],
 ): TimelineEntry[] {
+  const cachedByProposedPlans = timelineEntriesCache.get(messages);
+  const cachedByWorkEntries = cachedByProposedPlans?.get(proposedPlans);
+  const cached = cachedByWorkEntries?.get(workEntries);
+  if (cached) {
+    return cached;
+  }
   const messageRows: TimelineEntry[] = messages.map((message) => ({
     id: message.id,
     kind: "message",
@@ -1981,10 +2015,28 @@ export function deriveTimelineEntries(
     createdAt: entry.createdAt,
     entry,
   }));
-  return [...messageRows, ...proposedPlanRows, ...workRows].toSorted((a, b) =>
+  const result = [...messageRows, ...proposedPlanRows, ...workRows].toSorted((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
   );
+  const nextCachedByProposedPlans =
+    cachedByProposedPlans ??
+    new WeakMap<ProposedPlan[], WeakMap<WorkLogEntry[], TimelineEntry[]>>();
+  const nextCachedByWorkEntries =
+    cachedByWorkEntries ?? new WeakMap<WorkLogEntry[], TimelineEntry[]>();
+  nextCachedByWorkEntries.set(workEntries, result);
+  if (!cachedByWorkEntries) {
+    nextCachedByProposedPlans.set(proposedPlans, nextCachedByWorkEntries);
+  }
+  if (!cachedByProposedPlans) {
+    timelineEntriesCache.set(messages, nextCachedByProposedPlans);
+  }
+  return result;
 }
+
+const timelineEntriesCache = new WeakMap<
+  ChatMessage[],
+  WeakMap<ProposedPlan[], WeakMap<WorkLogEntry[], TimelineEntry[]>>
+>();
 
 export function inferCheckpointTurnCountByTurnId(
   summaries: TurnDiffSummary[],

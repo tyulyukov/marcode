@@ -349,7 +349,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   }, [rows, threadId, isHydrating]);
 
   const hasFinishedInitialScrollRef = useRef(false);
+  const hasAutoScrolledOnMountRef = useRef(false);
   const isAtEndRef = useRef(true);
+  const initialScrollThreadIdRef = useRef(threadId);
+  if (initialScrollThreadIdRef.current !== threadId) {
+    initialScrollThreadIdRef.current = threadId;
+    hasFinishedInitialScrollRef.current = false;
+    hasAutoScrolledOnMountRef.current = false;
+    isAtEndRef.current = true;
+  }
   const updateIsAtEnd = useCallback(
     (isAtEnd: boolean) => {
       isAtEndRef.current = isAtEnd;
@@ -368,7 +376,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     syncIsAtEnd();
   }, [syncIsAtEnd]);
 
-  const hasAutoScrolledOnMountRef = useRef(false);
   useEffect(() => {
     if (rows.length === 0) return;
     if (hasAutoScrolledOnMountRef.current) return;
@@ -557,6 +564,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     <TimelineRowCtx.Provider value={sharedState}>
       <div className="@container/chat relative h-full">
         <LegendList<MessagesTimelineRow>
+          key={threadId}
           ref={listRef}
           data={rows}
           keyExtractor={keyExtractor}
