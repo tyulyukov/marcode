@@ -247,6 +247,12 @@ export function deriveMessagesTimelineRows(input: {
   isWorking: boolean;
   activeTurnStartedAt: string | null;
 }): MessagesTimelineRow[] {
+  const cacheKey = `${input.completionDividerBeforeEntryId ?? ""}\x1f${input.isWorking ? "1" : "0"}\x1f${input.activeTurnStartedAt ?? ""}`;
+  const cachedByKey = timelineRowsCache.get(input.timelineEntries);
+  const cached = cachedByKey?.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
   const nextRows: MessagesTimelineRow[] = [];
   const durationStartByMessageId = computeMessageDurationStart(
     input.timelineEntries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : [])),
@@ -483,8 +489,18 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
+  const nextCachedByKey = cachedByKey ?? new Map<string, MessagesTimelineRow[]>();
+  nextCachedByKey.set(cacheKey, nextRows);
+  if (!cachedByKey) {
+    timelineRowsCache.set(input.timelineEntries, nextCachedByKey);
+  }
   return nextRows;
 }
+
+const timelineRowsCache = new WeakMap<
+  ReadonlyArray<TimelineEntry>,
+  Map<string, MessagesTimelineRow[]>
+>();
 
 export function estimateMessagesTimelineRowHeight(
   row: MessagesTimelineRow,

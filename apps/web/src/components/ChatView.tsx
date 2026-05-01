@@ -102,7 +102,7 @@ import {
 import {
   type AppState,
   selectProjectsAcrossEnvironments,
-  selectThreadsAcrossEnvironments,
+  selectThreadShellsAcrossEnvironments,
   useStore,
 } from "../store";
 import {
@@ -114,6 +114,7 @@ import {
   useThreadById,
 } from "../storeSelectors";
 import { useUiStateStore } from "../uiStateStore";
+import { getThreadFromEnvironmentState } from "../threadDerivation";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -365,10 +366,7 @@ function useThreadPlanCatalog(threadIds: readonly ThreadId[]): ThreadPlanCatalog
     let previousEntries: ThreadPlanCatalogEntry[] = [];
 
     return (state: AppState): ThreadPlanCatalogEntry[] => {
-      const allThreads = selectThreadsAcrossEnvironments(state);
-      const nextThreads = threadIds.map((threadId) =>
-        allThreads.find((thread: Thread) => thread.id === threadId),
-      );
+      const nextThreads = threadIds.map((threadId) => getThreadAcrossEnvironments(state, threadId));
       const cachedThreads = previousThreads;
       if (
         cachedThreads &&
@@ -387,6 +385,37 @@ function useThreadPlanCatalog(threadIds: readonly ThreadId[]): ThreadPlanCatalog
   }, [threadIds]);
 
   return useStore(selector);
+}
+
+function getThreadAcrossEnvironments(state: AppState, threadId: ThreadId): Thread | undefined {
+  for (const environmentState of Object.values(state.environmentStateById)) {
+    if (!environmentState.threadShellById[threadId]) {
+      continue;
+    }
+    return getThreadFromEnvironmentState(environmentState, threadId);
+  }
+  return undefined;
+}
+
+function selectRateLimitActivitiesAcrossEnvironments(
+  state: AppState,
+): OrchestrationThreadActivity[] {
+  const activities: OrchestrationThreadActivity[] = [];
+  for (const environmentState of Object.values(state.environmentStateById)) {
+    for (const [threadId, activityIds] of Object.entries(
+      environmentState.activityIdsByThreadId,
+    ) as Array<[ThreadId, string[]]>) {
+      const activityById = environmentState.activityByThreadId[threadId];
+      if (!activityById) continue;
+      for (const activityId of activityIds) {
+        const activity = activityById[activityId];
+        if (activity?.kind === "account.rate-limits.updated") {
+          activities.push(activity);
+        }
+      }
+    }
+  }
+  return activities;
 }
 
 function formatOutgoingPrompt(params: {
@@ -987,7 +1016,7 @@ export default function ChatView({
   );
   const serverThreadIds = useStore(
     useShallow((state: AppState) =>
-      selectThreadsAcrossEnvironments(state).map((thread) => thread.id),
+      selectThreadShellsAcrossEnvironments(state).map((thread) => thread.id),
     ),
   );
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
@@ -1133,19 +1162,7 @@ export default function ChatView({
     () => deriveLatestContextWindowSnapshot(activeThread?.activities ?? []),
     [activeThread?.activities],
   );
-  const providerUsageActivities = useStore(
-    useShallow((state: AppState) => {
-      const activities: OrchestrationThreadActivity[] = [];
-      for (const thread of selectThreadsAcrossEnvironments(state)) {
-        for (const activity of thread.activities) {
-          if (activity.kind === "account.rate-limits.updated") {
-            activities.push(activity);
-          }
-        }
-      }
-      return activities;
-    }),
-  );
+  const providerUsageActivities = useStore(useShallow(selectRateLimitActivitiesAcrossEnvironments));
   useEffect(() => {
     setMountedTerminalThreadIds((currentThreadIds) => {
       const nextThreadIds = reconcileMountedTerminalThreadIds({
@@ -2051,8 +2068,8 @@ export default function ChatView({
       if (!targetThreadId) return;
       const nextError = sanitizeThreadErrorMessage(error);
       if (
-        selectThreadsAcrossEnvironments(useStore.getState()).some(
-          (thread: Thread) => thread.id === targetThreadId,
+        selectThreadShellsAcrossEnvironments(useStore.getState()).some(
+          (thread) => thread.id === targetThreadId,
         )
       ) {
         setStoreThreadError(targetThreadId, nextError);
@@ -4888,7 +4905,6 @@ export default function ChatView({
               onClickCapture={onMessagesClickCapture}
             >
               <MessagesTimeline
-                key={activeThread.id}
                 threadId={activeThread.id}
                 provider={activeTimelineProvider}
                 hasMessages={timelineEntries.length > 0}
