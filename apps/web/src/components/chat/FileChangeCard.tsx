@@ -1,100 +1,15 @@
-import { parsePatchFiles } from "@pierre/diffs";
-import { FileDiff, type FileDiffMetadata } from "@pierre/diffs/react";
-import { memo, useMemo } from "react";
+import { memo } from "react";
+import type { TurnId } from "@marcode/contracts";
 import { type InlineDiffHunk } from "~/lib/inlineDiff";
-import { buildPatchCacheKey, resolveDiffThemeName } from "~/lib/diffRendering";
-import { useTheme } from "~/hooks/useTheme";
+import type { QuotedContext } from "~/lib/quotedContext";
 import { cn } from "~/lib/utils";
-import { DiffStatSummary, OPERATION_LABELS, relativizePath } from "./InlineDiffPreview";
+import {
+  DiffLinesBlock,
+  DiffStatSummary,
+  OPERATION_LABELS,
+  relativizePath,
+} from "./InlineDiffPreview";
 import { ToolCard } from "./_shared/ToolCard";
-
-type DiffThemeType = "light" | "dark";
-
-const INLINE_DIFF_CSS = `
-[data-diffs-header],
-[data-diff],
-[data-file],
-[data-error-wrapper],
-[data-virtualizer-buffer] {
-  --diffs-bg: color-mix(in srgb, var(--card) 90%, var(--background)) !important;
-  --diffs-light-bg: color-mix(in srgb, var(--card) 90%, var(--background)) !important;
-  --diffs-dark-bg: color-mix(in srgb, var(--card) 90%, var(--background)) !important;
-  --diffs-token-light-bg: transparent;
-  --diffs-token-dark-bg: transparent;
-
-  --diffs-bg-context-override: color-mix(in srgb, var(--background) 97%, var(--foreground));
-  --diffs-bg-hover-override: color-mix(in srgb, var(--background) 94%, var(--foreground));
-  --diffs-bg-separator-override: color-mix(in srgb, var(--background) 95%, var(--foreground));
-  --diffs-bg-buffer-override: color-mix(in srgb, var(--background) 90%, var(--foreground));
-
-  --diffs-bg-addition-override: color-mix(in srgb, var(--background) 92%, var(--success));
-  --diffs-bg-addition-number-override: color-mix(in srgb, var(--background) 88%, var(--success));
-  --diffs-bg-addition-hover-override: color-mix(in srgb, var(--background) 85%, var(--success));
-  --diffs-bg-addition-emphasis-override: color-mix(in srgb, var(--background) 80%, var(--success));
-
-  --diffs-bg-deletion-override: color-mix(in srgb, var(--background) 92%, var(--destructive));
-  --diffs-bg-deletion-number-override: color-mix(in srgb, var(--background) 88%, var(--destructive));
-  --diffs-bg-deletion-hover-override: color-mix(in srgb, var(--background) 85%, var(--destructive));
-  --diffs-bg-deletion-emphasis-override: color-mix(
-    in srgb,
-    var(--background) 80%,
-    var(--destructive)
-  );
-
-  background-color: var(--diffs-bg) !important;
-}
-
-[data-file],
-[data-virtualizer-buffer] {
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-pre[data-diff] {
-  font-size: 11px !important;
-  line-height: 18px !important;
-  margin: 0 !important;
-}
-`;
-
-function parsePatch(patch: string, cacheScope: string): FileDiffMetadata | null {
-  if (!patch || patch.trim().length === 0) return null;
-  try {
-    const parsed = parsePatchFiles(patch.trim(), buildPatchCacheKey(patch.trim(), cacheScope));
-    const files = parsed.flatMap((p) => p.files);
-    return files[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-const InlineDiffBlock = memo(function InlineDiffBlock(props: {
-  patch: string;
-  cacheScope: string;
-}) {
-  const { patch, cacheScope } = props;
-  const { resolvedTheme } = useTheme();
-
-  const fileDiff = useMemo(() => parsePatch(patch, cacheScope), [patch, cacheScope]);
-
-  if (!fileDiff) return null;
-
-  return (
-    <FileDiff
-      fileDiff={fileDiff}
-      options={{
-        diffStyle: "unified",
-        lineDiffType: "none",
-        overflow: "wrap",
-        disableFileHeader: true,
-        disableLineNumbers: true,
-        theme: resolveDiffThemeName(resolvedTheme),
-        themeType: resolvedTheme as DiffThemeType,
-        unsafeCSS: INLINE_DIFF_CSS,
-      }}
-    />
-  );
-});
 
 interface FileChangeCardProps {
   diffPreviews: ReadonlyArray<InlineDiffHunk>;
@@ -102,10 +17,19 @@ interface FileChangeCardProps {
   isLive?: boolean;
   isPendingApproval?: boolean;
   isLatestTurn?: boolean;
+  turnId?: TurnId | null;
+  onReplyToSelection?: (context: QuotedContext) => void;
 }
 
 export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCardProps) {
-  const { diffPreviews, cwd, isPendingApproval = false, isLatestTurn = false } = props;
+  const {
+    diffPreviews,
+    cwd,
+    isPendingApproval = false,
+    isLatestTurn = false,
+    turnId = null,
+    onReplyToSelection,
+  } = props;
 
   if (diffPreviews.length === 0) return null;
 
@@ -156,7 +80,13 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   );
 
   const body = isSingleHunk ? (
-    <InlineDiffBlock patch={firstHunk.patch} cacheScope={`card-preview:${firstHunk.filePath}`} />
+    <DiffLinesBlock
+      filePath={firstHunk.filePath}
+      lines={firstHunk.lines}
+      truncated={firstHunk.truncated}
+      turnId={turnId}
+      onReplyToSelection={onReplyToSelection}
+    />
   ) : (
     <div className="px-3 py-1">
       {diffPreviews.map((hunk) => (
@@ -179,7 +109,13 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
               {relativizePath(hunk.filePath, cwd)}
             </span>
           </div>
-          <InlineDiffBlock patch={hunk.patch} cacheScope={`card-expanded:${hunk.filePath}`} />
+          <DiffLinesBlock
+            filePath={hunk.filePath}
+            lines={hunk.lines}
+            truncated={hunk.truncated}
+            turnId={turnId}
+            onReplyToSelection={onReplyToSelection}
+          />
         </div>
       ))}
     </div>

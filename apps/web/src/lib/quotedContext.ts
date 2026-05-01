@@ -5,10 +5,14 @@ export interface QuotedContext {
   readonly messageId: MessageId;
   readonly turnId: TurnId | null;
   readonly text: string;
+  readonly source?: "message" | "diff" | undefined;
   readonly codeLanguage?: string | undefined;
   readonly startOffset?: number | undefined;
   readonly endOffset?: number | undefined;
   readonly filePath?: string | undefined;
+  readonly lineStart?: number | undefined;
+  readonly lineEnd?: number | undefined;
+  readonly selectionSide?: "additions" | "deletions" | undefined;
 }
 
 const MAX_QUOTED_TEXT_LENGTH = 5000;
@@ -42,6 +46,20 @@ export function truncateQuotedText(text: string): { text: string; wasTruncated: 
 }
 
 export function quotedContextDedupKey(context: QuotedContext): string {
+  if (
+    context.source === "diff" ||
+    context.lineStart !== undefined ||
+    context.lineEnd !== undefined ||
+    context.selectionSide !== undefined
+  ) {
+    return [
+      context.filePath ?? context.messageId,
+      context.selectionSide ?? "",
+      context.lineStart ?? "",
+      context.lineEnd ?? "",
+      context.text,
+    ].join("\u0000");
+  }
   const source = context.filePath ?? context.messageId;
   return `${source}\u0000${context.startOffset ?? ""}\u0000${context.endOffset ?? ""}`;
 }
@@ -72,14 +90,28 @@ function escapeQuotedContextBody(text: string): string {
   return text.replace(/<\/quoted_context>/gi, "[/quoted_context]");
 }
 
+function escapeQuotedContextAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function formatSingleQuotedContextBlock(context: QuotedContext): string {
   const safeLang = context.codeLanguage ? sanitizeCodeLanguage(context.codeLanguage) : undefined;
   const langAttr = safeLang ? ` language="${safeLang}"` : "";
   const safeText = escapeQuotedContextBody(context.text);
   const sourceAttr = context.filePath
-    ? ` file_path="${context.filePath}"`
-    : ` message_id="${context.messageId}"`;
-  return `<quoted_context${sourceAttr}${langAttr}>\n${safeText}\n</quoted_context>`;
+    ? ` file_path="${escapeQuotedContextAttr(context.filePath)}"`
+    : ` message_id="${escapeQuotedContextAttr(context.messageId)}"`;
+  const contextSourceAttr = context.source ? ` source="${context.source}"` : "";
+  const lineStartAttr = context.lineStart !== undefined ? ` line_start="${context.lineStart}"` : "";
+  const lineEndAttr = context.lineEnd !== undefined ? ` line_end="${context.lineEnd}"` : "";
+  const selectionSideAttr = context.selectionSide
+    ? ` selection_side="${context.selectionSide}"`
+    : "";
+  return `<quoted_context${sourceAttr}${contextSourceAttr}${langAttr}${lineStartAttr}${lineEndAttr}${selectionSideAttr}>\n${safeText}\n</quoted_context>`;
 }
 
 export function buildQuotedContextBlock(contexts: ReadonlyArray<QuotedContext>): string {
@@ -115,8 +147,16 @@ export function extractLeadingQuotedContexts(text: string): ExtractedQuotedConte
     const language = langMatch?.[1];
     const filePathMatch = attrs.match(/file_path="([^"]+)"/);
     const filePath = filePathMatch?.[1];
+    const lineStartMatch = attrs.match(/line_start="(\d+)"/);
+    const lineEndMatch = attrs.match(/line_end="(\d+)"/);
+    const lineStart = lineStartMatch?.[1];
+    const lineEnd = lineEndMatch?.[1];
+    const lineLabel =
+      lineStart && lineEnd
+        ? `:${lineStart === lineEnd ? lineStart : `${lineStart}-${lineEnd}`}`
+        : "";
     const header = filePath
-      ? `Quoted diff (${filePath.split("/").pop() ?? filePath})`
+      ? `Quoted diff (${filePath}${lineLabel})`
       : language
         ? `Quoted code (${language})`
         : "Quoted text";

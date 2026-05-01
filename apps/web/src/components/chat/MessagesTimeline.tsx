@@ -716,6 +716,8 @@ function FileChangeRow({ row }: { row: Extract<MessagesTimelineRow, { kind: "fil
       cwd={ctx.workspaceRoot}
       isPendingApproval={isPendingApproval}
       isLatestTurn={row.isLatestTurn ?? false}
+      turnId={null}
+      onReplyToSelection={ctx.onReplyToSelection}
     />
   );
 }

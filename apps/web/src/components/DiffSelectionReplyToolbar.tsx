@@ -1,7 +1,13 @@
-import { CheckIcon, CopyIcon, ReplyIcon } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { CheckIcon, CopyIcon, ReplyIcon, XIcon } from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import type { FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 import { MessageId, type TurnId } from "@marcode/contracts";
+import {
+  buildQuoteFromPierreFileDiff,
+  inferLanguageFromFilePath,
+  type DiffQuoteResult,
+} from "../lib/diffLineQuote";
 import type { QuotedContext } from "../lib/quotedContext";
 import { truncateQuotedText } from "../lib/quotedContext";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -10,7 +16,12 @@ import { randomUUID } from "../lib/utils";
 interface DiffSelectionReplyToolbarProps {
   turnId: TurnId | null;
   viewportRef: React.RefObject<HTMLElement | null>;
+  selectedFilePath: string | null;
+  selectedFileDiff: FileDiffMetadata | null;
+  selectedRange: SelectedLineRange | null;
+  renderMode: "unified" | "split";
   onReply: (context: QuotedContext) => void;
+  onClearSelection: () => void;
 }
 
 interface ToolbarPosition {
@@ -18,244 +29,121 @@ interface ToolbarPosition {
   left: number;
 }
 
-const TOOLBAR_HEIGHT_PX = 32;
-const TOOLBAR_GAP_PX = 6;
-
 const DIFF_SELECTION_SYNTHETIC_MESSAGE_ID = MessageId.make("diff-selection");
 
-function collectShadowRoots(container: HTMLElement): ShadowRoot[] {
-  const roots: ShadowRoot[] = [];
-  const walk = (el: Element) => {
-    if (el.shadowRoot) roots.push(el.shadowRoot);
-    for (const child of el.children) walk(child);
+function findSelectedFileElement(
+  viewport: HTMLElement,
+  selectedFilePath: string,
+): HTMLElement | null {
+  return (
+    Array.from(viewport.querySelectorAll<HTMLElement>("[data-diff-file-path]")).find(
+      (element) => element.dataset.diffFilePath === selectedFilePath,
+    ) ?? null
+  );
+}
+
+function resolveToolbarPosition(
+  viewport: HTMLElement,
+  selectedFilePath: string,
+): ToolbarPosition | null {
+  const fileElement = findSelectedFileElement(viewport, selectedFilePath);
+  const anchor = fileElement ?? viewport;
+  const rect = anchor.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return null;
+  return {
+    top: Math.max(8, rect.top + 8),
+    left: Math.max(8, rect.right - 12),
   };
-  walk(container);
-  return roots;
-}
-
-function escapeToLightDom(node: Node): Node {
-  let current: Node = node;
-  let root = current.getRootNode();
-  while (root instanceof ShadowRoot) {
-    current = root.host;
-    root = current.getRootNode();
-  }
-  return current;
-}
-
-function findDiffFilePath(node: Node): string | null {
-  let current: Element | null = node instanceof Element ? node : node.parentElement;
-
-  const lightNode = escapeToLightDom(node);
-  if (lightNode instanceof Element) {
-    current = lightNode;
-  }
-
-  while (current) {
-    const filePath = current.getAttribute("data-diff-file-path");
-    if (filePath) return filePath;
-    current = current.parentElement;
-  }
-  return null;
-}
-
-function inferLanguageFromFilePath(filePath: string): string | undefined {
-  const ext = filePath.split(".").pop()?.toLowerCase();
-  if (!ext) return undefined;
-
-  const extMap: Record<string, string> = {
-    ts: "typescript",
-    tsx: "tsx",
-    js: "javascript",
-    jsx: "jsx",
-    py: "python",
-    rb: "ruby",
-    rs: "rust",
-    go: "go",
-    java: "java",
-    kt: "kotlin",
-    swift: "swift",
-    css: "css",
-    scss: "scss",
-    html: "html",
-    vue: "vue",
-    svelte: "svelte",
-    json: "json",
-    yaml: "yaml",
-    yml: "yaml",
-    toml: "toml",
-    md: "markdown",
-    sql: "sql",
-    sh: "bash",
-    bash: "bash",
-    zsh: "zsh",
-    c: "c",
-    cpp: "cpp",
-    h: "c",
-    hpp: "cpp",
-    cs: "csharp",
-    php: "php",
-    lua: "lua",
-    zig: "zig",
-    ex: "elixir",
-    exs: "elixir",
-    erl: "erlang",
-    hs: "haskell",
-    ml: "ocaml",
-    graphql: "graphql",
-    gql: "graphql",
-    proto: "protobuf",
-    dart: "dart",
-    r: "r",
-    scala: "scala",
-    tf: "terraform",
-    dockerfile: "dockerfile",
-  };
-
-  return extMap[ext];
-}
-
-function getSelectedTextInViewport(viewportEl: HTMLElement): {
-  text: string;
-  anchorNode: Node | null;
-} | null {
-  const selection = document.getSelection();
-  if (!selection) return null;
-
-  const text = selection.toString().trim();
-  if (text.length === 0) return null;
-
-  const shadowRoots = collectShadowRoots(viewportEl);
-
-  let anchorNode: Node | null = null;
-  if ("getComposedRanges" in selection && typeof selection.getComposedRanges === "function") {
-    const composedRanges = (
-      selection as Selection & {
-        getComposedRanges: (...roots: ShadowRoot[]) => StaticRange[];
-      }
-    ).getComposedRanges(...shadowRoots);
-    if (composedRanges.length > 0) {
-      anchorNode = composedRanges[0]!.startContainer;
-    }
-  }
-
-  if (!anchorNode && !selection.isCollapsed && selection.rangeCount > 0) {
-    anchorNode = selection.anchorNode;
-  }
-
-  return { text, anchorNode };
 }
 
 export const DiffSelectionReplyToolbar = memo(function DiffSelectionReplyToolbar(
   props: DiffSelectionReplyToolbarProps,
 ) {
-  const { turnId, viewportRef, onReply } = props;
+  const {
+    turnId,
+    viewportRef,
+    selectedFilePath,
+    selectedFileDiff,
+    selectedRange,
+    renderMode,
+    onReply,
+    onClearSelection,
+  } = props;
   const [position, setPosition] = useState<ToolbarPosition | null>(null);
-  const toolbarRef = useRef<HTMLDivElement | null>(null);
-  const lastMouseRef = useRef<{ x: number; y: number } | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard();
 
+  const quote = useMemo<DiffQuoteResult | null>(() => {
+    if (!selectedFilePath || !selectedFileDiff || !selectedRange) return null;
+    return buildQuoteFromPierreFileDiff({
+      filePath: selectedFilePath,
+      fileDiff: selectedFileDiff,
+      selection: selectedRange,
+      mode: renderMode,
+    });
+  }, [renderMode, selectedFileDiff, selectedFilePath, selectedRange]);
+
   useEffect(() => {
+    if (!selectedFilePath || !selectedRange) {
+      setPosition(null);
+      return;
+    }
     const viewport = viewportRef.current;
     if (!viewport) return;
 
-    const onMouseMove = (e: MouseEvent) => {
-      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    const updatePosition = () => {
+      setPosition(resolveToolbarPosition(viewport, selectedFilePath));
     };
 
-    const checkSelection = () => {
-      const snap = getSelectedTextInViewport(viewport);
-      const mouse = lastMouseRef.current;
-      if (!snap || !mouse) {
-        setPosition(null);
-        return;
-      }
-      const viewportRect = viewport.getBoundingClientRect();
-      if (
-        mouse.x < viewportRect.left ||
-        mouse.x > viewportRect.right ||
-        mouse.y < viewportRect.top ||
-        mouse.y > viewportRect.bottom
-      ) {
-        setPosition(null);
-        return;
-      }
-      setPosition({
-        top: mouse.y - TOOLBAR_HEIGHT_PX - TOOLBAR_GAP_PX,
-        left: mouse.x,
-      });
-    };
-
-    const onMouseUp = () => {
-      requestAnimationFrame(checkSelection);
-    };
-
-    const onSelectionChange = () => {
-      const selection = document.getSelection();
-      const text = selection?.toString().trim();
-      if (!text || text.length === 0) {
-        setPosition(null);
-      }
-    };
-
-    document.addEventListener("selectionchange", onSelectionChange);
-    viewport.addEventListener("mousemove", onMouseMove);
-    viewport.addEventListener("mouseup", onMouseUp);
+    updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
+    resizeObserver.observe(viewport);
+    const scrollParent = viewport.querySelector<HTMLElement>(".diff-render-surface") ?? viewport;
+    scrollParent.addEventListener("scroll", updatePosition, { passive: true });
+    window.addEventListener("resize", updatePosition);
     return () => {
-      document.removeEventListener("selectionchange", onSelectionChange);
-      viewport.removeEventListener("mousemove", onMouseMove);
-      viewport.removeEventListener("mouseup", onMouseUp);
+      resizeObserver.disconnect();
+      scrollParent.removeEventListener("scroll", updatePosition);
+      window.removeEventListener("resize", updatePosition);
     };
-  }, [viewportRef]);
+  }, [selectedFilePath, selectedRange, viewportRef]);
 
   const handleReply = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-
-    const snap = getSelectedTextInViewport(viewport);
-    if (!snap) return;
-
-    const { text: rawText, wasTruncated } = truncateQuotedText(snap.text);
+    if (!selectedFilePath || !quote) return;
+    const { text: rawText, wasTruncated } = truncateQuotedText(quote.text);
     if (wasTruncated) {
       console.warn("Quoted diff text was truncated to 5000 characters");
     }
 
-    const filePath = snap.anchorNode ? findDiffFilePath(snap.anchorNode) : null;
-    const codeLanguage = filePath ? inferLanguageFromFilePath(filePath) : undefined;
-
-    const context: QuotedContext = {
+    onReply({
       id: randomUUID(),
       messageId: DIFF_SELECTION_SYNTHETIC_MESSAGE_ID,
       turnId,
+      source: "diff",
       text: rawText,
-      codeLanguage,
-      filePath: filePath ?? undefined,
-    };
-
-    onReply(context);
-    window.getSelection()?.removeAllRanges();
-    setPosition(null);
-  }, [viewportRef, turnId, onReply]);
+      codeLanguage: inferLanguageFromFilePath(selectedFilePath),
+      filePath: selectedFilePath,
+      lineStart: quote.lineStart,
+      lineEnd: quote.lineEnd,
+      selectionSide: quote.selectionSide,
+    });
+    onClearSelection();
+  }, [onClearSelection, onReply, quote, selectedFilePath, turnId]);
 
   const handleCopy = useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection) return;
-    const text = selection.toString().trim();
-    if (text.length > 0) {
-      copyToClipboard(text);
+    if (quote) {
+      copyToClipboard(quote.text);
     }
-  }, [copyToClipboard]);
+  }, [copyToClipboard, quote]);
 
   useEffect(() => {
-    if (!position) return;
+    if (!selectedRange) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        window.getSelection()?.removeAllRanges();
-        setPosition(null);
+        onClearSelection();
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "r") {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "r") {
         e.preventDefault();
         handleReply();
       }
@@ -263,19 +151,18 @@ export const DiffSelectionReplyToolbar = memo(function DiffSelectionReplyToolbar
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [position, handleReply]);
+  }, [handleReply, onClearSelection, selectedRange]);
 
-  if (!position) return null;
+  if (!position || !quote) return null;
 
   return createPortal(
     <div
-      ref={toolbarRef}
       className="pointer-events-auto z-50 flex items-center gap-0.5 rounded-lg border border-border bg-popover px-1 py-0.5 shadow-lg"
       style={{
         position: "fixed",
         top: position.top,
         left: position.left,
-        transform: "translateX(-50%)",
+        transform: "translateX(-100%)",
       }}
       onMouseDown={(e) => e.preventDefault()}
     >
@@ -283,7 +170,7 @@ export const DiffSelectionReplyToolbar = memo(function DiffSelectionReplyToolbar
         type="button"
         className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
         onClick={handleReply}
-        title="Reply to selection (⌘⇧R)"
+        title="Reply to selected lines (⌘⇧R)"
       >
         <ReplyIcon className="size-3" />
         Reply
@@ -292,9 +179,17 @@ export const DiffSelectionReplyToolbar = memo(function DiffSelectionReplyToolbar
         type="button"
         className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
         onClick={handleCopy}
-        title="Copy selection"
+        title="Copy selected lines"
       >
         {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
+      </button>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+        onClick={onClearSelection}
+        title="Clear selection"
+      >
+        <XIcon className="size-3" />
       </button>
     </div>,
     document.body,

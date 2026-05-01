@@ -3,12 +3,24 @@ import {
   getSharedHighlighter,
   type SupportedLanguages,
 } from "@pierre/diffs";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  ReplyIcon,
+  XIcon,
+} from "lucide-react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MessageId, type TurnId } from "@marcode/contracts";
 import { useTheme } from "~/hooks/useTheme";
 import { type DiffLine, type InlineDiffHunk } from "~/lib/inlineDiff";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
-import { cn } from "~/lib/utils";
+import { buildQuoteFromInlineDiffLines, inferLanguageFromFilePath } from "~/lib/diffLineQuote";
+import type { QuotedContext } from "~/lib/quotedContext";
+import { truncateQuotedText } from "~/lib/quotedContext";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { cn, randomUUID } from "~/lib/utils";
 
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
 
@@ -185,11 +197,39 @@ interface DiffLinesBlockProps {
   truncated: boolean;
   maxHeight?: string;
   showBottomFade?: boolean;
+  turnId?: TurnId | null;
+  onReplyToSelection?: ((context: QuotedContext) => void) | undefined;
+}
+
+interface InlineLineSelection {
+  startIndex: number;
+  endIndex: number;
+}
+
+const INLINE_DIFF_SELECTION_SYNTHETIC_MESSAGE_ID = MessageId.make("inline-diff-selection");
+
+function isLineSelected(selection: InlineLineSelection | null, index: number): boolean {
+  if (!selection) return false;
+  const start = Math.min(selection.startIndex, selection.endIndex);
+  const end = Math.max(selection.startIndex, selection.endIndex);
+  return index >= start && index <= end;
 }
 
 export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlockProps) {
-  const { filePath, lines, truncated, maxHeight = "260px", showBottomFade = true } = props;
+  const {
+    filePath,
+    lines,
+    truncated,
+    maxHeight = "260px",
+    showBottomFade = true,
+    turnId = null,
+    onReplyToSelection,
+  } = props;
   const { resolvedTheme } = useTheme();
+  const [selection, setSelection] = useState<InlineLineSelection | null>(null);
+  const selectionAnchorRef = useRef<number | null>(null);
+  const isDraggingRef = useRef(false);
+  const { copyToClipboard, isCopied } = useCopyToClipboard();
 
   const keyedLines = useMemo(() => {
     const keys = buildLineKeys(lines);
@@ -241,8 +281,122 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
     return () => clearTimeout(timerId);
   }, [filePath, lines, resolvedTheme]);
 
+  const quote = useMemo(() => {
+    if (!selection) return null;
+    return buildQuoteFromInlineDiffLines({ lines, selection });
+  }, [lines, selection]);
+
+  const clearSelection = useCallback(() => {
+    setSelection(null);
+    selectionAnchorRef.current = null;
+    isDraggingRef.current = false;
+  }, []);
+
+  const selectLine = useCallback(
+    (index: number, extend: boolean) => {
+      if (lines[index]?.type === "separator") return;
+      const anchor = extend
+        ? (selectionAnchorRef.current ?? selection?.startIndex ?? index)
+        : index;
+      selectionAnchorRef.current = anchor;
+      setSelection({ startIndex: anchor, endIndex: index });
+    },
+    [lines, selection],
+  );
+
+  const handleReply = useCallback(() => {
+    if (!quote || !onReplyToSelection) return;
+    const { text, wasTruncated } = truncateQuotedText(quote.text);
+    if (wasTruncated) {
+      console.warn("Quoted inline diff text was truncated to 5000 characters");
+    }
+    onReplyToSelection({
+      id: randomUUID(),
+      messageId: INLINE_DIFF_SELECTION_SYNTHETIC_MESSAGE_ID,
+      turnId,
+      source: "diff",
+      text,
+      codeLanguage: inferLanguageFromFilePath(filePath),
+      filePath,
+      lineStart: quote.lineStart,
+      lineEnd: quote.lineEnd,
+    });
+    clearSelection();
+  }, [clearSelection, filePath, onReplyToSelection, quote, turnId]);
+
+  const handleCopy = useCallback(() => {
+    if (quote) {
+      copyToClipboard(quote.text);
+    }
+  }, [copyToClipboard, quote]);
+
+  useEffect(() => {
+    if (!selection) return;
+    const handlePointerUp = () => {
+      isDraggingRef.current = false;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        clearSelection();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        handleReply();
+      }
+    };
+    document.addEventListener("pointerup", handlePointerUp);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerup", handlePointerUp);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [clearSelection, handleReply, selection]);
+
   return (
-    <div className="relative overflow-hidden border-t border-border/30" style={{ maxHeight }}>
+    <div
+      className="relative overflow-hidden border-t border-border/30"
+      style={{ maxHeight }}
+      data-inline-diff-line-selection
+    >
+      {quote && (
+        <div
+          className="absolute right-2 top-2 z-10 flex items-center gap-0.5 rounded-lg border border-border bg-popover px-1 py-0.5 shadow-lg"
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          {onReplyToSelection && (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+              onClick={handleReply}
+              title="Reply to selected lines (⌘⇧R)"
+            >
+              <ReplyIcon className="size-3" />
+              Reply
+            </button>
+          )}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+            onClick={handleCopy}
+            title="Copy selected lines"
+          >
+            {isCopied ? (
+              <CheckIcon className="size-3 text-success" />
+            ) : (
+              <CopyIcon className="size-3" />
+            )}
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-foreground/80 transition-colors hover:bg-accent hover:text-foreground"
+            onClick={clearSelection}
+            title="Clear selection"
+          >
+            <XIcon className="size-3" />
+          </button>
+        </div>
+      )}
       <div className="overflow-x-auto overflow-y-hidden">
         <pre className="m-0 min-w-full w-max p-0 text-[11px] leading-[18px]">
           {keyedLines.map((line, idx) => {
@@ -258,6 +412,7 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
               );
             }
             const highlighted = lineHtmls?.[idx];
+            const selected = isLineSelected(selection, idx);
             return (
               <div
                 key={line.key}
@@ -265,9 +420,35 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
                   "pr-3 pl-2",
                   LINE_BG[line.type],
                   !highlighted && LINE_TEXT_PLAIN[line.type],
+                  selected && "bg-[color-mix(in_srgb,var(--background)_76%,var(--primary))]",
                 )}
+                data-inline-diff-line-selected={selected ? "true" : undefined}
               >
-                <span className="mr-2 inline-block w-3 select-none text-center text-muted-foreground/30">
+                <span
+                  className={cn(
+                    "mr-2 inline-block w-3 cursor-pointer select-none rounded-sm text-center text-muted-foreground/30 hover:bg-muted/60 hover:text-foreground/60",
+                    selected && "bg-primary/20 text-foreground/70",
+                  )}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Select diff line ${idx + 1}`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    isDraggingRef.current = true;
+                    selectLine(idx, event.shiftKey);
+                  }}
+                  onMouseEnter={() => {
+                    if (isDraggingRef.current) {
+                      selectLine(idx, true);
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectLine(idx, event.shiftKey);
+                    }
+                  }}
+                >
                   {MARKER_CHAR[line.type]}
                 </span>
                 {highlighted ? (
@@ -294,8 +475,12 @@ export const DiffLinesBlock = memo(function DiffLinesBlock(props: DiffLinesBlock
   );
 });
 
-export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: InlineDiffHunk }) {
-  const { hunk } = props;
+export const InlineDiffPreview = memo(function InlineDiffPreview(props: {
+  hunk: InlineDiffHunk;
+  turnId?: TurnId | null;
+  onReplyToSelection?: ((context: QuotedContext) => void) | undefined;
+}) {
+  const { hunk, turnId = null, onReplyToSelection } = props;
   const [collapsed, setCollapsed] = useState(false);
 
   const CollapseIcon = collapsed ? ChevronRightIcon : ChevronDownIcon;
@@ -315,7 +500,13 @@ export const InlineDiffPreview = memo(function InlineDiffPreview(props: { hunk: 
       </button>
 
       {!collapsed && (
-        <DiffLinesBlock filePath={hunk.filePath} lines={hunk.lines} truncated={hunk.truncated} />
+        <DiffLinesBlock
+          filePath={hunk.filePath}
+          lines={hunk.lines}
+          truncated={hunk.truncated}
+          turnId={turnId}
+          onReplyToSelection={onReplyToSelection}
+        />
       )}
     </div>
   );
