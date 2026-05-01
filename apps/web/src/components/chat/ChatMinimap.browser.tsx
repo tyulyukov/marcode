@@ -68,6 +68,18 @@ function makeEntry(i: number, preview: string): MinimapUserMessageEntry {
   };
 }
 
+// The minimap is hidden below the @5xl/chat container-query breakpoint (64rem).
+// Tests render it in isolation, so we provide a named container wide enough
+// for the `@5xl/chat:flex` rule to apply — otherwise the nav stays
+// `display: none`, navHeight is 0, dashes cap to 1, and hover times out.
+function ChatStage({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="@container/chat relative" style={{ width: "1100px", height: "720px" }}>
+      {children}
+    </div>
+  );
+}
+
 describe("ChatMinimap", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -77,7 +89,9 @@ describe("ChatMinimap", () => {
   it("renders nothing when there are no user message entries", async () => {
     const { listRef } = buildMockListRef();
     const screen = await render(
-      <ChatMinimap listRef={listRef} entries={[]} threadKey="thread-1" />,
+      <ChatStage>
+        <ChatMinimap listRef={listRef} entries={[]} threadKey="thread-1" />
+      </ChatStage>,
     );
 
     try {
@@ -97,7 +111,9 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <ChatMinimap listRef={listRef} entries={[a, b]} threadKey="thread-1" />,
+      <ChatStage>
+        <ChatMinimap listRef={listRef} entries={[a, b]} threadKey="thread-1" />
+      </ChatStage>,
     );
 
     try {
@@ -120,7 +136,9 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <ChatMinimap listRef={listRef} entries={[a, b, c]} threadKey="thread-1" />,
+      <ChatStage>
+        <ChatMinimap listRef={listRef} entries={[a, b, c]} threadKey="thread-1" />
+      </ChatStage>,
     );
 
     try {
@@ -154,7 +172,9 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <ChatMinimap listRef={helper.listRef} entries={[a, b]} threadKey="thread-1" />,
+      <ChatStage>
+        <ChatMinimap listRef={helper.listRef} entries={[a, b]} threadKey="thread-1" />
+      </ChatStage>,
     );
 
     try {
@@ -167,7 +187,9 @@ describe("ChatMinimap", () => {
 
       helper.state.scroll = 0;
       await screen.rerender(
-        <ChatMinimap listRef={helper.listRef} entries={[a, b]} threadKey="thread-2" />,
+        <ChatStage>
+          <ChatMinimap listRef={helper.listRef} entries={[a, b]} threadKey="thread-2" />
+        </ChatStage>,
       );
 
       await vi.waitFor(() => {
@@ -206,10 +228,10 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <div>
+      <ChatStage>
         {mousePark}
         <ChatMinimap listRef={listRef} entries={[a, b, c]} threadKey="thread-1" />
-      </div>,
+      </ChatStage>,
     );
 
     try {
@@ -242,10 +264,10 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <div>
+      <ChatStage>
         {mousePark}
         <ChatMinimap listRef={listRef} entries={[a, b]} threadKey="thread-1" />
-      </div>,
+      </ChatStage>,
     );
 
     try {
@@ -290,7 +312,9 @@ describe("ChatMinimap", () => {
     const { listRef } = buildMockListRef({ positionsByKey });
 
     const screen = await render(
-      <ChatMinimap listRef={listRef} entries={entries} threadKey="thread-overflow" />,
+      <ChatStage>
+        <ChatMinimap listRef={listRef} entries={entries} threadKey="thread-overflow" />
+      </ChatStage>,
     );
 
     try {
@@ -311,7 +335,9 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <ChatMinimap listRef={listRef} entries={[a, b]} threadKey="thread-no-overflow" />,
+      <ChatStage>
+        <ChatMinimap listRef={listRef} entries={[a, b]} threadKey="thread-no-overflow" />
+      </ChatStage>,
     );
 
     try {
@@ -329,10 +355,10 @@ describe("ChatMinimap", () => {
     });
 
     const screen = await render(
-      <div>
+      <ChatStage>
         {mousePark}
         <ChatMinimap listRef={listRef} entries={[a, b]} threadKey="thread-1" />
-      </div>,
+      </ChatStage>,
     );
 
     try {
