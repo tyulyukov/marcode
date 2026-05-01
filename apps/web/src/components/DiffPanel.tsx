@@ -1,4 +1,4 @@
-import { parsePatchFiles } from "@pierre/diffs";
+import { parsePatchFiles, type SelectedLineRange } from "@pierre/diffs";
 import { FileDiff, type FileDiffMetadata, Virtualizer } from "@pierre/diffs/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
@@ -178,6 +178,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const settings = useSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
+  const [selectedDiffQuote, setSelectedDiffQuote] = useState<{
+    fileKey: string;
+    filePath: string;
+    fileDiff: FileDiffMetadata;
+    range: SelectedLineRange;
+  } | null>(null);
   const patchViewportRef = useRef<HTMLDivElement>(null);
   const turnStripRef = useRef<HTMLDivElement>(null);
   const previousDiffOpenRef = useRef(false);
@@ -350,6 +356,10 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       }),
     );
   }, [renderablePatch]);
+
+  useEffect(() => {
+    setSelectedDiffQuote(null);
+  }, [diffRenderMode, diffScope, selectedPatch, selectedTurnId]);
 
   useEffect(() => {
     if (diffOpen && !previousDiffOpenRef.current) {
@@ -726,10 +736,27 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                     >
                       <FileDiff
                         fileDiff={fileDiff}
+                        selectedLines={
+                          selectedDiffQuote?.fileKey === fileKey ? selectedDiffQuote.range : null
+                        }
                         options={{
                           diffStyle: diffRenderMode === "split" ? "split" : "unified",
                           lineDiffType: "none",
                           overflow: diffWordWrap ? "wrap" : "scroll",
+                          enableLineSelection: true,
+                          lineHoverHighlight: "line",
+                          onLineSelectionEnd: (range) => {
+                            setSelectedDiffQuote(
+                              range
+                                ? {
+                                    fileKey,
+                                    filePath,
+                                    fileDiff,
+                                    range,
+                                  }
+                                : null,
+                            );
+                          },
                           theme: resolveDiffThemeName(resolvedTheme),
                           themeType: resolvedTheme as DiffThemeType,
                           unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
@@ -760,7 +787,12 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
           <DiffSelectionReplyToolbar
             turnId={selectedTurn?.turnId ?? null}
             viewportRef={patchViewportRef}
+            selectedFilePath={selectedDiffQuote?.filePath ?? null}
+            selectedFileDiff={selectedDiffQuote?.fileDiff ?? null}
+            selectedRange={selectedDiffQuote?.range ?? null}
+            renderMode={diffRenderMode === "split" ? "split" : "unified"}
             onReply={onDiffReplyToSelection}
+            onClearSelection={() => setSelectedDiffQuote(null)}
           />
         </>
       )}

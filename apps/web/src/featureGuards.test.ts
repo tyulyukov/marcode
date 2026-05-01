@@ -26,10 +26,24 @@ describe("MarCode feature guards", () => {
     expect(source).toContain("SelectionReplyToolbar");
   });
 
+  it("diff line quote helper exists", () => {
+    expect(fileExists("lib/diffLineQuote.ts")).toBe(true);
+    const source = readSrc("lib/diffLineQuote.ts");
+    expect(source).toContain("buildQuoteFromPierreFileDiff");
+    expect(source).toContain("buildQuoteFromInlineDiffLines");
+  });
+
+  it("diff panel enables whole-line selection", () => {
+    const source = readSrc("components/DiffPanel.tsx");
+    expect(source).toContain("enableLineSelection");
+    expect(source).toContain("selectedLines=");
+  });
+
   it("inline diff preview component exists", () => {
     expect(fileExists("components/chat/InlineDiffPreview.tsx")).toBe(true);
     const source = readSrc("components/chat/InlineDiffPreview.tsx");
     expect(source).toContain("InlineDiffPreview");
+    expect(source).toContain("data-inline-diff-line-selection");
   });
 
   it("message copy button exists", () => {
