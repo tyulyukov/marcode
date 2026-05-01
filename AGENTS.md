@@ -38,6 +38,23 @@ When working with Claude API/SDK, Codex, Electron, or any external library/API, 
 - Electron APIs (BrowserWindow, screen, ipcMain, etc.)
 - Any third-party library or service integration
 
+## Provider-Aware Changes (Important)
+
+MarCode supports multiple providers (`claudeAgent`, `codex`, ACP, etc.) and they emit **different schemas** for the same canonical event types. The most common foot-gun: a fix that's correct for one provider silently regresses another.
+
+Concrete example: `task.progress.payload` (`packages/contracts/src/providerRuntime.ts`)
+
+- **Claude** puts the per-step content in `description` (no `summary` field). E.g. `description: "Running ls -la …"`.
+- **Codex** puts the _task prompt_ in `description` (repeated verbatim on every progress event) and the per-step content in `summary`. The ingestion layer at `ProviderRuntimeIngestion.ts` further mirrors that into the activity `payload.detail` as `summary ?? description`, so for Codex `detail` is sometimes the prompt — for Claude it always carries real per-step content.
+
+**Rules when touching code that consumes provider events / projections:**
+
+1. **Sample at least one log per provider** before changing a derivation. `~/.marcode/dev/logs/provider/<thread-id>.log` has CANON events; grep for the event type and inspect each provider's payload shape.
+2. **Branch on provider, don't unify.** If the data shape genuinely differs, take a `provider: ProviderKind` parameter and switch — do not pick one provider's interpretation as "the truth" for everyone. Examples in `apps/web/src/session-logic.ts`: `progressHistory[].description`, `progressSummary`.
+3. **Add a regression test per provider.** When you fix a bug for one provider, add a guard test that asserts the _other_ providers still get their original behavior. Failing to do this is the most common way these regressions slip through.
+4. **Plumbing.** `deriveWorkLogEntries` already accepts `{ provider }` in its options; pass it from the call site (`ChatView.tsx` uses `activeTimelineProvider`). Don't smuggle provider info via shape-sniffing — it's brittle.
+5. **CodexAdapter / ClaudeAdapter / AcpAdapter** each normalize their provider's quirks before events leave the server. Prefer fixing data-shape mismatches at the adapter when the downstream consumer is provider-agnostic; branch on the web side only when the downstream UI behavior should genuinely differ per provider.
+
 ## Core Priorities
 
 1. Performance first.

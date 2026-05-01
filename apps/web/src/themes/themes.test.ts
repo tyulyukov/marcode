@@ -3,11 +3,11 @@ import { THEME_REGISTRY, THEME_MAP, THEME_GROUPS } from "./registry";
 import { resolvePreference } from "./apply";
 
 describe("Theme registry and resolution", () => {
-  it("THEME_REGISTRY has at least 24 themes", () => {
-    expect(THEME_REGISTRY.length).toBeGreaterThanOrEqual(24);
+  it("THEME_REGISTRY has at least 27 themes", () => {
+    expect(THEME_REGISTRY.length).toBeGreaterThanOrEqual(27);
   });
 
-  it("THEME_REGISTRY includes all 12 groups", () => {
+  it("THEME_REGISTRY includes all 14 groups", () => {
     const groups = new Set(THEME_REGISTRY.map((t) => t.group));
     const expectedGroups = [
       "marcode",
@@ -22,6 +22,8 @@ describe("Theme registry and resolution", () => {
       "rose-pine",
       "ayu",
       "monokai",
+      "adbraze",
+      "nebula",
     ] as const;
     for (const g of expectedGroups) {
       expect(groups.has(g)).toBe(true);
@@ -50,8 +52,8 @@ describe("Theme registry and resolution", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("THEME_GROUPS has 12 entries with marcode first", () => {
-    expect(THEME_GROUPS).toHaveLength(12);
+  it("THEME_GROUPS has 14 entries with marcode first", () => {
+    expect(THEME_GROUPS).toHaveLength(14);
     expect(THEME_GROUPS[0]?.group).toBe("marcode");
   });
 

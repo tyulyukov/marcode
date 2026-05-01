@@ -3576,6 +3576,102 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  // Regression: the SDK's AskUserQuestion input schema is
+  // `Record<string, string>` (strict zod) and the output schema documents
+  // "multi-select answers are comma-separated". Sending arrays causes strict
+  // validation to drop the answers, and the model receives the literal
+  // "User has answered your questions: ." rendered to it.
+  it.effect("joins multi-select array answers into comma-separated strings for the SDK", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: "claudeAgent",
+        runtimeMode: "full-access",
+      });
+
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const createInput = harness.getLastCreateQueryInput();
+      const canUseTool = createInput?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) {
+        return;
+      }
+
+      const askInput = {
+        questions: [
+          {
+            question: "Which color additions?",
+            header: "Color extras",
+            options: [
+              { label: "Auto-night mode", description: "Auto theme switch" },
+              { label: "Accent color override", description: "Custom accent" },
+              { label: "Chat wallpaper", description: "Background image" },
+            ],
+            multiSelect: true,
+          },
+          {
+            question: "Which a11y additions?",
+            header: "A11y extras",
+            options: [
+              { label: "Reduce motion", description: "Disable animations" },
+              { label: "High contrast mode", description: "High contrast palette" },
+            ],
+            multiSelect: true,
+          },
+        ],
+      };
+
+      const permissionPromise = canUseTool("AskUserQuestion", askInput, {
+        signal: new AbortController().signal,
+        toolUseID: "tool-ask-multi",
+      });
+
+      const requestedEvent = yield* Stream.runHead(adapter.streamEvents);
+      if (requestedEvent._tag !== "Some" || requestedEvent.value.type !== "user-input.requested") {
+        assert.fail("Expected user-input.requested event");
+        return;
+      }
+      const requestId = requestedEvent.value.requestId;
+
+      // Simulate the UI submitting multi-select answers as arrays (this is
+      // the canonical event payload format MarCode persists).
+      yield* adapter.respondToUserInput(session.threadId, ApprovalRequestId.make(requestId!), {
+        "Color extras": ["Auto-night mode", "Accent color override"],
+        "A11y extras": ["Reduce motion"],
+      });
+
+      // The user-input.resolved event keeps the array shape for the UI.
+      const resolvedEvent = yield* Stream.runHead(adapter.streamEvents);
+      if (resolvedEvent._tag !== "Some" || resolvedEvent.value.type !== "user-input.resolved") {
+        assert.fail("Expected user-input.resolved event");
+        return;
+      }
+      assert.deepEqual(resolvedEvent.value.payload.answers, {
+        "Color extras": ["Auto-night mode", "Accent color override"],
+        "A11y extras": ["Reduce motion"],
+      });
+
+      // But the SDK's updatedInput.answers MUST be Record<string, string>
+      // with array values joined by ", ", or the SDK drops the answers and
+      // the model is told the user answered nothing.
+      const permissionResult = yield* Effect.promise(() => permissionPromise);
+      assert.equal((permissionResult as PermissionResult).behavior, "allow");
+      const updatedInput = (permissionResult as { updatedInput: Record<string, unknown> })
+        .updatedInput;
+      assert.deepEqual(updatedInput.answers, {
+        "Color extras": "Auto-night mode, Accent color override",
+        "A11y extras": "Reduce motion",
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("denies AskUserQuestion when the waiting turn is aborted", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

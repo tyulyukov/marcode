@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@marcode/client-runtime";
-import { EnvironmentId, ProjectId, ThreadId, TurnId } from "@marcode/contracts";
+import { EnvironmentId, MessageId, ProjectId, ThreadId, TurnId } from "@marcode/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EnvironmentState, useStore } from "../store";
 import { type Thread } from "../types";
@@ -8,6 +8,7 @@ import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
+  deriveActiveThreadActivityIso,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
@@ -91,6 +92,74 @@ describe("resolveSendEnvMode", () => {
   it("forces local mode for non-git repositories", () => {
     expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: false })).toBe("local");
     expect(resolveSendEnvMode({ requestedEnvMode: "local", isGitRepo: false })).toBe("local");
+  });
+});
+
+describe("deriveActiveThreadActivityIso", () => {
+  it("uses the sidebar summary timestamp so the header and sidebar stay in sync", () => {
+    const thread = {
+      ...makeThread(),
+      messages: [
+        {
+          id: MessageId.make("message-newer"),
+          environmentId: localEnvironmentId,
+          role: "user" as const,
+          text: "newer hydrated message",
+          streaming: false,
+          createdAt: "2026-03-29T00:02:00.000Z",
+          updatedAt: "2026-03-29T00:02:00.000Z",
+        },
+      ],
+    };
+
+    expect(
+      deriveActiveThreadActivityIso(thread, {
+        id: thread.id,
+        environmentId: thread.environmentId,
+        projectId: thread.projectId,
+        title: thread.title,
+        interactionMode: thread.interactionMode,
+        session: null,
+        createdAt: thread.createdAt,
+        archivedAt: null,
+        updatedAt: "2026-03-29T00:01:00.000Z",
+        latestTurn: null,
+        branch: null,
+        worktreePath: null,
+        latestUserMessageAt: null,
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        hasActionableProposedPlan: false,
+      }),
+    ).toBe("2026-03-29T00:01:00.000Z");
+  });
+
+  it("falls back to hydrated user messages when no sidebar summary exists yet", () => {
+    const thread = {
+      ...makeThread(),
+      messages: [
+        {
+          id: MessageId.make("assistant"),
+          environmentId: localEnvironmentId,
+          role: "assistant" as const,
+          text: "assistant",
+          streaming: false,
+          createdAt: "2026-03-29T00:01:00.000Z",
+          updatedAt: "2026-03-29T00:01:00.000Z",
+        },
+        {
+          id: MessageId.make("user"),
+          environmentId: localEnvironmentId,
+          role: "user" as const,
+          text: "user",
+          streaming: false,
+          createdAt: "2026-03-29T00:02:00.000Z",
+          updatedAt: "2026-03-29T00:02:00.000Z",
+        },
+      ],
+    };
+
+    expect(deriveActiveThreadActivityIso(thread, null)).toBe("2026-03-29T00:02:00.000Z");
   });
 });
 

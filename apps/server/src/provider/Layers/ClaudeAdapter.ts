@@ -3002,13 +3002,26 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           } satisfies PermissionResult;
         }
 
-        // Return the answers to the SDK in the expected format:
-        // { questions: [...], answers: { questionText: selectedLabel } }
+        // The SDK's AskUserQuestion input schema is `Record<string, string>`
+        // (strict zod) and its output schema explicitly documents
+        // "multi-select answers are comma-separated". Passing arrays fails
+        // strict validation, the field is dropped, and the model receives
+        // "User has answered your questions: ." (literally just the period at
+        // the end of an empty sentence). Stringify any array answers here.
+        const sdkAnswers: Record<string, string> = {};
+        for (const [key, value] of Object.entries(answers)) {
+          sdkAnswers[key] = Array.isArray(value)
+            ? value.filter((v) => typeof v === "string").join(", ")
+            : typeof value === "string"
+              ? value
+              : String(value);
+        }
+
         return {
           behavior: "allow",
           updatedInput: {
             questions: toolInput.questions,
-            answers,
+            answers: sdkAnswers,
           },
         } satisfies PermissionResult;
       });

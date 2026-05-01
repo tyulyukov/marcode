@@ -271,6 +271,7 @@ import {
   cloneComposerImageForRetry,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
+  deriveActiveThreadActivityIso,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
@@ -320,18 +321,6 @@ const threadPlanCatalogCache = new LRUCache<{
   proposedPlans: Thread["proposedPlans"];
   entry: ThreadPlanCatalogEntry;
 }>(MAX_THREAD_PLAN_CATALOG_CACHE_ENTRIES, MAX_THREAD_PLAN_CATALOG_CACHE_MEMORY_BYTES);
-
-function deriveActiveThreadActivityIso(
-  thread: Thread,
-  latestUserMessageAt: string | null | undefined,
-): string | undefined {
-  if (latestUserMessageAt) return latestUserMessageAt;
-  for (let i = thread.messages.length - 1; i >= 0; i--) {
-    const message = thread.messages[i];
-    if (message?.role === "user") return message.createdAt;
-  }
-  return undefined;
-}
 
 function estimateThreadPlanCatalogEntrySize(thread: Thread): number {
   return Math.max(
@@ -1119,6 +1108,7 @@ export default function ChatView({
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const diffOpen = rawSearch.diff === "1";
+  const effectivePlanSidebarOpen = planSidebarOpen && !diffOpen;
   const activeThreadId = activeThread?.id ?? null;
   const existingOpenTerminalThreadIds = useMemo(() => {
     const existingThreadIds = new Set<ThreadId>([...serverThreadIds, ...draftThreadIds]);
@@ -1392,8 +1382,9 @@ export default function ChatView({
     () =>
       deriveWorkLogEntries(timelineThreadActivities, timelineLatestTurn?.turnId ?? undefined, {
         isSessionRunning: phase === "running",
+        provider: activeTimelineProvider,
       }),
-    [timelineLatestTurn?.turnId, timelineThreadActivities, phase],
+    [timelineLatestTurn?.turnId, timelineThreadActivities, phase, activeTimelineProvider],
   );
   const timelineLatestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(timelineThreadActivities, timelineLatestTurn?.turnId),
@@ -2002,6 +1993,9 @@ export default function ChatView({
     [keybindings, nonTerminalShortcutLabelOptions],
   );
   const onToggleDiff = useCallback(() => {
+    if (!diffOpen) {
+      setPlanSidebarOpen(false);
+    }
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
@@ -2425,16 +2419,25 @@ export default function ChatView({
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
   const togglePlanSidebar = useCallback(() => {
+    if (!effectivePlanSidebarOpen && diffOpen) {
+      onToggleDiff();
+    }
     setPlanSidebarOpen((open) => {
-      if (open) {
+      if (open && !diffOpen) {
         planSidebarDismissedForTurnRef.current =
           activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? "__dismissed__";
       } else {
         planSidebarDismissedForTurnRef.current = null;
       }
-      return !open;
+      return diffOpen ? true : !open;
     });
-  }, [activePlan?.turnId, sidebarProposedPlan?.turnId]);
+  }, [
+    activePlan?.turnId,
+    diffOpen,
+    effectivePlanSidebarOpen,
+    onToggleDiff,
+    sidebarProposedPlan?.turnId,
+  ]);
   const closePlanSidebar = useCallback(() => {
     setPlanSidebarOpen(false);
     planSidebarDismissedForTurnRef.current =
@@ -2666,13 +2669,19 @@ export default function ChatView({
   // Don't auto-open for plans carried over from a previous turn (the user can open manually).
   useEffect(() => {
     if (!activePlan) return;
-    if (planSidebarOpen) return;
+    if (effectivePlanSidebarOpen || diffOpen) return;
     const latestTurnId = activeLatestTurn?.turnId ?? null;
     if (latestTurnId && activePlan.turnId !== latestTurnId) return;
     const turnKey = activePlan.turnId ?? sidebarProposedPlan?.turnId ?? "__dismissed__";
     if (planSidebarDismissedForTurnRef.current === turnKey) return;
     setPlanSidebarOpen(true);
-  }, [activePlan, activeLatestTurn?.turnId, planSidebarOpen, sidebarProposedPlan?.turnId]);
+  }, [
+    activePlan,
+    activeLatestTurn?.turnId,
+    diffOpen,
+    effectivePlanSidebarOpen,
+    sidebarProposedPlan?.turnId,
+  ]);
 
   useEffect(() => {
     if (!composerMenuOpen) {
@@ -3984,6 +3993,9 @@ export default function ChatView({
         // step-tracking activities that the sidebar will display.
         if (nextInteractionMode === "default") {
           planSidebarDismissedForTurnRef.current = null;
+          if (diffOpen) {
+            onToggleDiff();
+          }
           setPlanSidebarOpen(true);
         }
         sendInFlightRef.current = false;
@@ -4007,6 +4019,8 @@ export default function ChatView({
       isConnecting,
       isSendBusy,
       isServerThread,
+      diffOpen,
+      onToggleDiff,
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
       runtimeMode,
@@ -4101,6 +4115,7 @@ export default function ChatView({
         return navigate({
           to: "/$environmentId/$threadId",
           params: buildThreadRouteParams(scopeThreadRef(activeThreadEnvironmentId!, nextThreadId)),
+          search: (previous) => ({ ...stripDiffSearchParams(previous), diff: undefined }),
         });
       })
       .catch(async (err) => {
@@ -4800,7 +4815,7 @@ export default function ChatView({
           activeThreadTitle={activeThread.title}
           activeThreadActivityAt={deriveActiveThreadActivityIso(
             activeThread,
-            activeSidebarThreadSummary?.latestUserMessageAt,
+            activeSidebarThreadSummary,
           )}
           activeProjectName={activeProject?.name}
           isGitRepo={isGitRepo}
@@ -4818,7 +4833,7 @@ export default function ChatView({
           gitCwd={gitCwd}
           diffOpen={diffOpen}
           hasPlan={Boolean(activePlan || sidebarProposedPlan)}
-          planSidebarOpen={planSidebarOpen}
+          planSidebarOpen={effectivePlanSidebarOpen}
           planSidebarLabel={planSidebarLabel}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
@@ -5317,7 +5332,7 @@ export default function ChatView({
         {/* end chat column */}
 
         {/* Plan sidebar */}
-        {planSidebarOpen && !shouldUsePlanSidebarSheet ? (
+        {effectivePlanSidebarOpen && !shouldUsePlanSidebarSheet ? (
           <PlanSidebar
             environmentId={activeThreadEnvironmentId!}
             activePlan={activePlan}
@@ -5351,7 +5366,7 @@ export default function ChatView({
         />
       ))}
       {shouldUsePlanSidebarSheet ? (
-        <RightPanelSheet open={planSidebarOpen} onClose={closePlanSidebar}>
+        <RightPanelSheet open={effectivePlanSidebarOpen} onClose={closePlanSidebar}>
           <PlanSidebar
             activePlan={activePlan}
             activeProposedPlan={sidebarProposedPlan}

@@ -11,6 +11,7 @@ import {
 import {
   type ChatImageAttachment,
   type ChatMessage,
+  type SidebarThreadSummary,
   type SessionPhase,
   type Thread,
 } from "../types";
@@ -327,6 +328,23 @@ export function createLocalDispatchSnapshot(
     latestTurnStartedAt: latestTurn?.startedAt ?? null,
     latestTurnCompletedAt: latestTurn?.completedAt ?? null,
   };
+}
+
+export function deriveActiveThreadActivityIso(
+  thread: Thread,
+  sidebarSummary: SidebarThreadSummary | null | undefined,
+): string | undefined {
+  const sidebarActivityAt =
+    sidebarSummary && sidebarSummary.id === thread.id
+      ? (sidebarSummary.latestUserMessageAt ?? sidebarSummary.updatedAt ?? sidebarSummary.createdAt)
+      : null;
+  if (sidebarActivityAt) return sidebarActivityAt;
+
+  for (let i = thread.messages.length - 1; i >= 0; i--) {
+    const message = thread.messages[i];
+    if (message?.role === "user") return message.createdAt;
+  }
+  return thread.updatedAt ?? thread.createdAt;
 }
 
 export function hasServerAcknowledgedLocalDispatch(input: {

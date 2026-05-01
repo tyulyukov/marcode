@@ -63,7 +63,25 @@ export const SidebarProjectGroupingMode = Schema.Literals([
 export type SidebarProjectGroupingMode = typeof SidebarProjectGroupingMode.Type;
 export const DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE: SidebarProjectGroupingMode = "repository";
 
+export const CodeFont = Schema.Literals(["system", "jetbrains-mono", "fira-code", "ibm-plex-mono"]);
+export type CodeFont = typeof CodeFont.Type;
+export const DEFAULT_CODE_FONT: CodeFont = "system";
+
+export const DEFAULT_AUTO_NIGHT_LIGHT_THEME = "marcode-light";
+export const DEFAULT_AUTO_NIGHT_DARK_THEME = "marcode-dark";
+
 export const ClientSettingsSchema = Schema.Struct({
+  accentOverride: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  autoNightLightTheme: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AUTO_NIGHT_LIGHT_THEME)),
+  ),
+  autoNightDarkTheme: Schema.String.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AUTO_NIGHT_DARK_THEME)),
+  ),
+  codeFont: CodeFont.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_CODE_FONT))),
+  reduceMotion: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffWordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),

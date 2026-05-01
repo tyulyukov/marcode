@@ -46,7 +46,7 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesTree } from "./ChangedFilesTree";
 import { DiffStatLabel, hasNonZeroStat } from "./DiffStatLabel";
 import { MessageCopyButton } from "./MessageCopyButton";
-import AnimatedChatMarkdown from "./TextReveal";
+import ChatMarkdown from "../ChatMarkdown";
 import {
   MAX_VISIBLE_WORK_LOG_ENTRIES,
   deriveMessagesTimelineRows,
@@ -809,7 +809,6 @@ function AssistantMessageRow({ row }: { row: AssistantOrUserRow }) {
     showCopyButton: row.showAssistantCopyButton,
     streaming: row.message.streaming || assistantTurnStillInProgress,
   });
-  const animate = ctx.newAssistantMessageIds.has(row.message.id);
   const turnSummary = ctx.turnDiffSummaryByAssistantMessageId.get(row.message.id);
 
   return (
@@ -829,11 +828,10 @@ function AssistantMessageRow({ row }: { row: AssistantOrUserRow }) {
           turnId={row.message.turnId ?? null}
           onReplyToSelection={ctx.onReplyToSelection}
         >
-          <AnimatedChatMarkdown
+          <ChatMarkdown
             text={messageText}
             cwd={ctx.markdownCwd}
             isStreaming={Boolean(row.message.streaming)}
-            animate={animate}
           />
         </AssistantMessageContentWithReply>
         {turnSummary && turnSummary.files.length > 0 && (
@@ -1322,7 +1320,7 @@ const EditableUserMessageTimelineRow = memo(function EditableUserMessageTimeline
 
   return (
     <div className="flex justify-end">
-      <div className="group relative max-w-[80%] rounded-2xl rounded-br-sm border border-primary/30 bg-primary/10 px-4 py-3">
+      <div className="group relative max-w-[80%] rounded-2xl rounded-br-sm border border-primary/30 bg-primary/5 px-4 py-3">
         {userImages.length > 0 && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {userImages.map((image: NonNullable<TimelineMessage["attachments"]>[number]) => (

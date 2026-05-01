@@ -101,19 +101,12 @@ import {
   requestNotificationPermission,
 } from "../../turnNotificationDispatcher";
 import { JiraSettingsSection } from "./JiraSettingsSection";
-import { ThemePicker } from "./ThemePicker";
 import {
   useServerAvailableEditors,
   useServerKeybindingsConfigPath,
   useServerObservability,
   useServerProviders,
 } from "../../rpc/serverState";
-
-const TIMESTAMP_FORMAT_LABELS = {
-  locale: "System default",
-  "12-hour": "12-hour",
-  "24-hour": "24-hour",
-} as const;
 
 type InstallProviderSettings = {
   provider: ProviderKind;
@@ -508,10 +501,17 @@ function AboutVersionSection() {
   );
 }
 
-export function useSettingsRestore(onRestored?: () => void) {
+export type SettingsRestoreScope = "general" | "appearance";
+
+type RestoreDescriptor = { label: string; isDirty: boolean; reset: () => void };
+
+export function useSettingsRestore(
+  scope: SettingsRestoreScope = "general",
+  onRestored?: () => void,
+) {
   const { theme, setTheme } = useTheme();
   const settings = useSettings();
-  const { resetSettings } = useUpdateSettings();
+  const { updateSettings } = useUpdateSettings();
 
   const isGitWritingModelDirty = !Equal.equals(
     settings.textGenerationModelSelection ?? null,
@@ -523,49 +523,141 @@ export function useSettingsRestore(onRestored?: () => void) {
     return !Equal.equals(currentSettings, defaultSettings);
   });
 
+  const descriptors = useMemo<RestoreDescriptor[]>(() => {
+    if (scope === "appearance") {
+      return [
+        {
+          label: "Theme",
+          isDirty: theme !== "system",
+          reset: () => setTheme("system"),
+        },
+        {
+          label: "Auto-night light theme",
+          isDirty: settings.autoNightLightTheme !== DEFAULT_UNIFIED_SETTINGS.autoNightLightTheme,
+          reset: () =>
+            updateSettings({
+              autoNightLightTheme: DEFAULT_UNIFIED_SETTINGS.autoNightLightTheme,
+            }),
+        },
+        {
+          label: "Auto-night dark theme",
+          isDirty: settings.autoNightDarkTheme !== DEFAULT_UNIFIED_SETTINGS.autoNightDarkTheme,
+          reset: () =>
+            updateSettings({
+              autoNightDarkTheme: DEFAULT_UNIFIED_SETTINGS.autoNightDarkTheme,
+            }),
+        },
+        {
+          label: "Accent color",
+          isDirty: settings.accentOverride !== DEFAULT_UNIFIED_SETTINGS.accentOverride,
+          reset: () => updateSettings({ accentOverride: DEFAULT_UNIFIED_SETTINGS.accentOverride }),
+        },
+        {
+          label: "Code font",
+          isDirty: settings.codeFont !== DEFAULT_UNIFIED_SETTINGS.codeFont,
+          reset: () => updateSettings({ codeFont: DEFAULT_UNIFIED_SETTINGS.codeFont }),
+        },
+        {
+          label: "Reduce motion",
+          isDirty: settings.reduceMotion !== DEFAULT_UNIFIED_SETTINGS.reduceMotion,
+          reset: () => updateSettings({ reduceMotion: DEFAULT_UNIFIED_SETTINGS.reduceMotion }),
+        },
+        {
+          label: "Time format",
+          isDirty: settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+          reset: () =>
+            updateSettings({ timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat }),
+        },
+        {
+          label: "Diff line wrapping",
+          isDirty: settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
+          reset: () => updateSettings({ diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap }),
+        },
+        {
+          label: "Chat minimap",
+          isDirty: settings.hideChatMinimap !== DEFAULT_UNIFIED_SETTINGS.hideChatMinimap,
+          reset: () =>
+            updateSettings({ hideChatMinimap: DEFAULT_UNIFIED_SETTINGS.hideChatMinimap }),
+        },
+      ];
+    }
+
+    return [
+      {
+        label: "Assistant output",
+        isDirty:
+          settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+        reset: () =>
+          updateSettings({
+            enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
+          }),
+      },
+      {
+        label: "New thread mode",
+        isDirty: settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
+        reset: () =>
+          updateSettings({ defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode }),
+      },
+      {
+        label: "Add project base directory",
+        isDirty:
+          settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+        reset: () =>
+          updateSettings({
+            addProjectBaseDirectory: DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory,
+          }),
+      },
+      {
+        label: "Archive confirmation",
+        isDirty: settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
+        reset: () =>
+          updateSettings({ confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive }),
+      },
+      {
+        label: "Delete confirmation",
+        isDirty: settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
+        reset: () =>
+          updateSettings({ confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete }),
+      },
+      {
+        label: "Git writing model",
+        isDirty: isGitWritingModelDirty,
+        reset: () =>
+          updateSettings({
+            textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+          }),
+      },
+      {
+        label: "Providers",
+        isDirty: areProviderSettingsDirty,
+        reset: () => updateSettings({ providers: DEFAULT_UNIFIED_SETTINGS.providers }),
+      },
+    ];
+  }, [
+    areProviderSettingsDirty,
+    isGitWritingModelDirty,
+    scope,
+    setTheme,
+    settings.accentOverride,
+    settings.addProjectBaseDirectory,
+    settings.autoNightDarkTheme,
+    settings.autoNightLightTheme,
+    settings.codeFont,
+    settings.confirmThreadArchive,
+    settings.confirmThreadDelete,
+    settings.defaultThreadEnvMode,
+    settings.diffWordWrap,
+    settings.enableAssistantStreaming,
+    settings.hideChatMinimap,
+    settings.reduceMotion,
+    settings.timestampFormat,
+    theme,
+    updateSettings,
+  ]);
+
   const changedSettingLabels = useMemo(
-    () => [
-      ...(theme !== "system" ? ["Theme"] : []),
-      ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
-        ? ["Time format"]
-        : []),
-      ...(settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap
-        ? ["Diff line wrapping"]
-        : []),
-      ...(settings.hideChatMinimap !== DEFAULT_UNIFIED_SETTINGS.hideChatMinimap
-        ? ["Chat minimap"]
-        : []),
-      ...(settings.enableAssistantStreaming !== DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming
-        ? ["Assistant output"]
-        : []),
-      ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
-        ? ["New thread mode"]
-        : []),
-      ...(settings.addProjectBaseDirectory !== DEFAULT_UNIFIED_SETTINGS.addProjectBaseDirectory
-        ? ["Add project base directory"]
-        : []),
-      ...(settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive
-        ? ["Archive confirmation"]
-        : []),
-      ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
-        ? ["Delete confirmation"]
-        : []),
-      ...(isGitWritingModelDirty ? ["Git writing model"] : []),
-      ...(areProviderSettingsDirty ? ["Providers"] : []),
-    ],
-    [
-      areProviderSettingsDirty,
-      isGitWritingModelDirty,
-      settings.addProjectBaseDirectory,
-      settings.confirmThreadArchive,
-      settings.confirmThreadDelete,
-      settings.defaultThreadEnvMode,
-      settings.diffWordWrap,
-      settings.enableAssistantStreaming,
-      settings.hideChatMinimap,
-      settings.timestampFormat,
-      theme,
-    ],
+    () => descriptors.filter((d) => d.isDirty).map((d) => d.label),
+    [descriptors],
   );
 
   const restoreDefaults = useCallback(async () => {
@@ -578,10 +670,11 @@ export function useSettingsRestore(onRestored?: () => void) {
     );
     if (!confirmed) return;
 
-    setTheme("system");
-    resetSettings();
+    for (const descriptor of descriptors) {
+      if (descriptor.isDirty) descriptor.reset();
+    }
     onRestored?.();
-  }, [changedSettingLabels, onRestored, resetSettings, setTheme]);
+  }, [changedSettingLabels, descriptors, onRestored]);
 
   return {
     changedSettingLabels,
@@ -1076,7 +1169,6 @@ export function GeneralSettingsPanel({
 }: {
   initialScrollTarget?: "providers";
 } = {}) {
-  const { theme, setTheme } = useTheme();
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
   const [openingPathByTarget, setOpeningPathByTarget] = useState({
@@ -1432,107 +1524,6 @@ export function GeneralSettingsPanel({
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
-        <SettingsRow
-          title="Theme"
-          description="Choose how MarCode looks across the app."
-          resetAction={
-            theme !== "system" ? (
-              <SettingResetButton label="theme" onClick={() => setTheme("system")} />
-            ) : null
-          }
-          control={<ThemePicker />}
-        />
-
-        <SettingsRow
-          title="Time format"
-          description="System default follows your browser or OS clock preference."
-          resetAction={
-            settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
-              <SettingResetButton
-                label="time format"
-                onClick={() =>
-                  updateSettings({
-                    timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={settings.timestampFormat}
-              onValueChange={(value) => {
-                if (value === "locale" || value === "12-hour" || value === "24-hour") {
-                  updateSettings({ timestampFormat: value });
-                }
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Timestamp format">
-                <SelectValue>{TIMESTAMP_FORMAT_LABELS[settings.timestampFormat]}</SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="locale">
-                  {TIMESTAMP_FORMAT_LABELS.locale}
-                </SelectItem>
-                <SelectItem hideIndicator value="12-hour">
-                  {TIMESTAMP_FORMAT_LABELS["12-hour"]}
-                </SelectItem>
-                <SelectItem hideIndicator value="24-hour">
-                  {TIMESTAMP_FORMAT_LABELS["24-hour"]}
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
-
-        <SettingsRow
-          title="Diff line wrapping"
-          description="Set the default wrap state when the diff panel opens."
-          resetAction={
-            settings.diffWordWrap !== DEFAULT_UNIFIED_SETTINGS.diffWordWrap ? (
-              <SettingResetButton
-                label="diff line wrapping"
-                onClick={() =>
-                  updateSettings({
-                    diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.diffWordWrap}
-              onCheckedChange={(checked) => updateSettings({ diffWordWrap: Boolean(checked) })}
-              aria-label="Wrap diff lines by default"
-            />
-          }
-        />
-
-        <SettingsRow
-          title="Chat minimap"
-          description="Show a vertical minimap of your prompts on the right side of the chat."
-          resetAction={
-            settings.hideChatMinimap !== DEFAULT_UNIFIED_SETTINGS.hideChatMinimap ? (
-              <SettingResetButton
-                label="chat minimap visibility"
-                onClick={() =>
-                  updateSettings({
-                    hideChatMinimap: DEFAULT_UNIFIED_SETTINGS.hideChatMinimap,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={!settings.hideChatMinimap}
-              onCheckedChange={(checked) => updateSettings({ hideChatMinimap: !checked })}
-              aria-label="Show chat minimap"
-            />
-          }
-        />
-
         <SettingsRow
           title="Assistant output"
           description="Show token-by-token output while a response is in progress."
