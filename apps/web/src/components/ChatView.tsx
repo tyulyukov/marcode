@@ -1133,9 +1133,18 @@ export default function ChatView({
     () => deriveLatestContextWindowSnapshot(activeThread?.activities ?? []),
     [activeThread?.activities],
   );
-  const activeProviderUsage = useMemo(
-    () => deriveLatestProviderUsageSnapshot(activeThread?.activities ?? []),
-    [activeThread?.activities],
+  const providerUsageActivities = useStore(
+    useShallow((state: AppState) => {
+      const activities: OrchestrationThreadActivity[] = [];
+      for (const thread of selectThreadsAcrossEnvironments(state)) {
+        for (const activity of thread.activities) {
+          if (activity.kind === "account.rate-limits.updated") {
+            activities.push(activity);
+          }
+        }
+      }
+      return activities;
+    }),
   );
   useEffect(() => {
     setMountedTerminalThreadIds((currentThreadIds) => {
@@ -1337,6 +1346,11 @@ export default function ChatView({
     selectedProviderByThreadId ?? threadProvider ?? "claudeAgent",
   );
   const selectedProvider: ProviderKind = lockedProvider ?? unlockedSelectedProvider;
+  const activeProviderUsage = useMemo(
+    () =>
+      deriveLatestProviderUsageSnapshot(providerUsageActivities, { provider: selectedProvider }),
+    [providerUsageActivities, selectedProvider],
+  );
   const activeTimelineProvider: ProviderKind =
     activeThread?.session?.provider ?? activeThread?.modelSelection.provider ?? selectedProvider;
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
@@ -1378,13 +1392,23 @@ export default function ChatView({
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
   const timelineThreadActivities = timelineThread?.activities ?? EMPTY_ACTIVITIES;
+  const timelineWorkLogTurnId = useMemo(() => {
+    const messages = timelineThread?.messages ?? EMPTY_MESSAGES;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role === "assistant" && message.turnId) {
+        return message.turnId;
+      }
+    }
+    return timelineLatestTurn?.turnId ?? undefined;
+  }, [timelineLatestTurn?.turnId, timelineThread?.messages]);
   const workLogEntries = useMemo(
     () =>
-      deriveWorkLogEntries(timelineThreadActivities, timelineLatestTurn?.turnId ?? undefined, {
+      deriveWorkLogEntries(timelineThreadActivities, timelineWorkLogTurnId, {
         isSessionRunning: phase === "running",
         provider: activeTimelineProvider,
       }),
-    [timelineLatestTurn?.turnId, timelineThreadActivities, phase, activeTimelineProvider],
+    [timelineWorkLogTurnId, timelineThreadActivities, phase, activeTimelineProvider],
   );
   const timelineLatestTurnHasToolActivity = useMemo(
     () => hasToolActivityForTurn(timelineThreadActivities, timelineLatestTurn?.turnId),

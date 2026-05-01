@@ -1,4 +1,4 @@
-import type { OrchestrationThreadActivity } from "@marcode/contracts";
+import type { OrchestrationThreadActivity, ProviderKind } from "@marcode/contracts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -31,6 +31,15 @@ export interface ProviderUsageSnapshot {
   /** When this snapshot was last updated */
   readonly updatedAt: string;
 }
+
+type ProviderUsageDerivationOptions = {
+  readonly provider?: ProviderKind | null;
+};
+
+const PROVIDER_LABEL_BY_KIND: Partial<Record<ProviderKind, string>> = {
+  claudeAgent: "Claude",
+  codex: "Codex",
+};
 
 // ---------------------------------------------------------------------------
 // Claude rate_limit_event normalization
@@ -276,10 +285,14 @@ function normalizeRateLimitPayload(
  */
 export function deriveLatestProviderUsageSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
+  options: ProviderUsageDerivationOptions = {},
 ): ProviderUsageSnapshot | null {
   const windowsByLabel = new Map<string, RateLimitWindow>();
   let providerLabel: string | null = null;
   let latestUpdatedAt: string | null = null;
+  const requestedProviderLabel = options.provider
+    ? (PROVIDER_LABEL_BY_KIND[options.provider] ?? null)
+    : null;
 
   // Walk backwards so the first match for each label wins (most recent).
   for (let index = activities.length - 1; index >= 0; index -= 1) {
@@ -290,6 +303,10 @@ export function deriveLatestProviderUsageSnapshot(
 
     const result = normalizeRateLimitPayload(activity.payload);
     if (!result) {
+      continue;
+    }
+
+    if (requestedProviderLabel !== null && result.providerLabel !== requestedProviderLabel) {
       continue;
     }
 

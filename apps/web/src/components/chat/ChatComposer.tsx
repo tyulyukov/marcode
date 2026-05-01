@@ -656,8 +656,11 @@ export const ChatComposer = memo(
     // Provider usage (rate limits / session %)
     // ------------------------------------------------------------------
     const activeProviderUsage = useMemo(
-      () => deriveLatestProviderUsageSnapshot(activeThreadActivities ?? []),
-      [activeThreadActivities],
+      () =>
+        deriveLatestProviderUsageSnapshot(activeThreadActivities ?? [], {
+          provider: selectedProvider,
+        }),
+      [activeThreadActivities, selectedProvider],
     );
 
     // ------------------------------------------------------------------

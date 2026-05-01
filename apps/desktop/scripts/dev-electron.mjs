@@ -69,7 +69,7 @@ function startApp() {
 
   const app = spawn(
     resolveElectronPath(),
-    [`--marcode-dev-root=${desktopDir}`, "dist-electron/main.cjs"],
+    [`--marcode-dev-root=${desktopDir}`, "--remote-debugging-port=9222", "dist-electron/main.cjs"],
     {
       cwd: desktopDir,
       env: childEnv,

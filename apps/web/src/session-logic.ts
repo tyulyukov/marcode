@@ -89,6 +89,8 @@ export interface WorkLogEntry {
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolName?: string;
+  toolServerName?: string;
+  toolFunctionName?: string;
   toolInput?: Record<string, unknown>;
   toolAction?: Record<string, unknown>;
   toolCompleted?: boolean;
@@ -1130,6 +1132,8 @@ function toDerivedWorkLogEntry(
     entry.changedFiles = changedFiles;
   }
   const toolName = extractToolName(payload);
+  const toolServerName = extractToolServerName(payload);
+  const toolFunctionName = extractToolFunctionName(payload);
   const toolInput = extractToolInput(payload);
   const toolAction = extractToolAction(payload);
   if (title) {
@@ -1137,6 +1141,12 @@ function toDerivedWorkLogEntry(
   }
   if (toolName) {
     entry.toolName = toolName;
+  }
+  if (toolServerName) {
+    entry.toolServerName = toolServerName;
+  }
+  if (toolFunctionName) {
+    entry.toolFunctionName = toolFunctionName;
   }
   if (toolInput) {
     entry.toolInput = toolInput;
@@ -1291,6 +1301,8 @@ function mergeDerivedWorkLogEntries(
   const exitCode = next.exitCode ?? previous.exitCode;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
   const toolName = next.toolName ?? previous.toolName;
+  const toolServerName = next.toolServerName ?? previous.toolServerName;
+  const toolFunctionName = next.toolFunctionName ?? previous.toolFunctionName;
   const toolInput = previous.toolInput ?? next.toolInput;
   const toolAction = next.toolAction ?? previous.toolAction;
   const itemType = next.itemType ?? previous.itemType;
@@ -1313,6 +1325,8 @@ function mergeDerivedWorkLogEntries(
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
     ...(toolName ? { toolName } : {}),
+    ...(toolServerName ? { toolServerName } : {}),
+    ...(toolFunctionName ? { toolFunctionName } : {}),
     ...(toolInput ? { toolInput } : {}),
     ...(toolAction ? { toolAction } : {}),
     ...(previous.toolCompleted || next.toolCompleted ? { toolCompleted: true } : {}),
@@ -1602,6 +1616,16 @@ function extractToolTitle(payload: Record<string, unknown> | null): string | nul
 function extractToolName(payload: Record<string, unknown> | null): string | null {
   const data = asRecord(payload?.data);
   return asTrimmedString(data?.toolName);
+}
+
+function extractToolServerName(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  return asTrimmedString(data?.server);
+}
+
+function extractToolFunctionName(payload: Record<string, unknown> | null): string | null {
+  const data = asRecord(payload?.data);
+  return asTrimmedString(data?.tool);
 }
 
 function extractToolInput(payload: Record<string, unknown> | null): Record<string, unknown> | null {

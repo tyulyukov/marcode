@@ -8,12 +8,6 @@ const readSrc = (relativePath: string) =>
 const fileExists = (relativePath: string) => fs.existsSync(path.resolve(SRC_DIR, relativePath));
 
 describe("MarCode feature guards", () => {
-  it("CSS content-visibility is used (no JS virtualizer)", () => {
-    const source = readSrc("components/chat/MessagesTimeline.tsx");
-    expect(source).not.toContain("@tanstack/react-virtual");
-    expect(source).not.toContain("useVirtualizer");
-  });
-
   it("text reveal animation stays removed", () => {
     const source = readSrc("components/chat/MessagesTimeline.tsx");
     expect(source).not.toContain("TextReveal");

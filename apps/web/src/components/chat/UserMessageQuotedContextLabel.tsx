@@ -1,5 +1,5 @@
 import { ChevronDownIcon, CornerDownRightIcon } from "lucide-react";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import type { ParsedQuotedContextEntry } from "../../lib/quotedContext";
@@ -19,24 +19,8 @@ function QuotedContextEntry({ ctx, panelId }: { ctx: ParsedQuotedContextEntry; p
   const hasBody = Boolean(ctx.body);
 
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const bodyRef = useRef<HTMLDivElement | null>(null);
 
-  useLayoutEffect(() => {
-    const el = bodyRef.current;
-    if (!el || isExpanded) return;
-
-    const measure = () => {
-      setIsOverflowing(el.scrollHeight > el.clientHeight + 1);
-    };
-    measure();
-
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ctx.body, isExpanded, isMonospace]);
-
-  const canToggle = hasBody && (isOverflowing || isExpanded);
+  const canToggle = hasBody;
 
   const containerClass = cn(
     "rounded-md rounded-l-none border-l-2 transition-colors",
@@ -91,7 +75,6 @@ function QuotedContextEntry({ ctx, panelId }: { ctx: ParsedQuotedContextEntry; p
           className="px-2.5 pb-1.5"
         >
           <div
-            ref={bodyRef}
             className={cn(
               "whitespace-pre-wrap break-words text-xs text-muted-foreground",
               isMonospace && "font-mono",

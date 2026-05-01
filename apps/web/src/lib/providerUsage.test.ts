@@ -3,7 +3,11 @@ import { EventId, type OrchestrationThreadActivity, TurnId } from "@marcode/cont
 
 import { deriveLatestProviderUsageSnapshot } from "./providerUsage";
 
-function makeActivity(id: string, payload: unknown): OrchestrationThreadActivity {
+function makeActivity(
+  id: string,
+  payload: unknown,
+  createdAt = "2026-03-23T00:00:00.000Z",
+): OrchestrationThreadActivity {
   return {
     id: EventId.make(id),
     tone: "info",
@@ -11,7 +15,7 @@ function makeActivity(id: string, payload: unknown): OrchestrationThreadActivity
     summary: "Account rate limits updated",
     payload,
     turnId: TurnId.make("turn-1"),
-    createdAt: "2026-03-23T00:00:00.000Z",
+    createdAt,
   };
 }
 
@@ -204,5 +208,70 @@ describe("providerUsage", () => {
         resetsAt: 1777019601,
       },
     ]);
+  });
+
+  it("can derive Codex usage across mixed provider activity streams", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot(
+      [
+        makeActivity(
+          "activity-1",
+          {
+            rateLimits: {
+              limitId: "codex",
+              primary: {
+                usedPercent: 12,
+                windowDurationMins: 300,
+                resetsAt: 1776587601,
+              },
+            },
+          },
+          "2026-03-23T00:00:00.000Z",
+        ),
+        makeActivity(
+          "activity-2",
+          {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "allowed_warning",
+              resetsAt: 1776600000,
+              rateLimitType: "five_hour",
+              utilization: 0.91,
+            },
+          },
+          "2026-03-23T00:01:00.000Z",
+        ),
+      ],
+      { provider: "codex" },
+    );
+
+    expect(snapshot?.providerLabel).toBe("Codex");
+    expect(snapshot?.updatedAt).toBe("2026-03-23T00:00:00.000Z");
+    expect(snapshot?.windows).toEqual([
+      {
+        label: "Session (5 hrs)",
+        usedPercent: 12,
+        resetsAt: 1776587601,
+      },
+    ]);
+  });
+
+  it("returns null when the requested provider has no usage events", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot(
+      [
+        makeActivity("activity-1", {
+          rateLimits: {
+            limitId: "codex",
+            primary: {
+              usedPercent: 12,
+              windowDurationMins: 300,
+              resetsAt: 1776587601,
+            },
+          },
+        }),
+      ],
+      { provider: "claudeAgent" },
+    );
+
+    expect(snapshot).toBeNull();
   });
 });

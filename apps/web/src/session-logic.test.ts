@@ -2349,9 +2349,10 @@ describe("deriveWorkLogEntries", () => {
       expect(entries).toHaveLength(1);
       expect(entries[0]!.itemType).toBe("mcp_tool_call");
       expect(entries[0]!.toolName).toBe("mcp__github__search_repositories");
+      expect(entries[0]!.toolServerName).toBe("github");
+      expect(entries[0]!.toolFunctionName).toBe("search_repositories");
       // `toolInput` only carries the structured invocation args; server/tool
-      // sit alongside as `data.server`/`data.tool`, not inside `input`. The
-      // McpToolCallCard reads them from the Codex-specific branch.
+      // sit alongside as `data.server`/`data.tool`, not inside `input`.
       expect(entries[0]!.toolInput).toEqual({ query: "typescript" });
     });
 

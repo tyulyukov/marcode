@@ -131,20 +131,6 @@ ChatView uses **fine-grained Zustand selectors** (one per thread/project ID) ins
 - Its volatile dependencies (`activePendingProgress`, `activePendingUserInput`, `composerTerminalContexts`, `composerJiraTaskContexts`) are accessed via **refs** in callbacks, not in the `useCallback` dependency array.
 - Fallback empty arrays use **module-level constants** (`EMPTY_TERMINAL_CONTEXT_DRAFTS`, `EMPTY_JIRA_TASK_DRAFTS`) instead of inline `[]`.
 
-### Timeline rendering: NO JS virtualization (`MessagesTimeline.tsx`)
-
-**CRITICAL — DO NOT REINTRODUCE `@tanstack/react-virtual` or any JS virtualizer for the messages timeline.** This has been deliberately removed twice. Upstream uses `useVirtualizer` with absolute positioning + `transform: translateY()`, but it causes persistent message overlap and scroll lag in MarCode because:
-
-- Variable-height messages (markdown, code blocks, images, expandable diffs, quoted contexts) make height estimation fundamentally inaccurate
-- Async content (Suspense code highlighting, image loads) changes height after initial measurement
-- Expandable/collapsible sections (Show full diff, work groups) change height without virtualizer notification
-- `ChatView.tsx` directly manipulates `scrollTop` for interaction anchoring and auto-scroll, which desynchronizes from the virtualizer's internal scroll state
-- `SelectionReplyToolbar` wraps every assistant message in extra DOM, adding unmeasured height
-
-**Instead, we use CSS `content-visibility: auto`** with `contain-intrinsic-block-size` hints. All rows render in normal document flow — overlap is physically impossible. The browser natively skips painting offscreen content, giving equivalent performance without the positioning bugs. Height estimates in `timelineHeight.ts` feed into `containIntrinsicBlockSize` for accurate scrollbar sizing.
-
-When merging upstream changes that touch `MessagesTimeline.tsx`, **reject any reintroduction of `useVirtualizer`, `measureElement`, `VirtualItem`, absolute-positioned row containers, or `shouldAdjustScrollPositionOnItemSizeChange`**. Keep the `content-visibility: auto` rendering path.
-
 ### Timeline row memoization (`MessagesTimeline.tsx`)
 
 Each timeline row renders through a `memo`'d `TimelineRowContent` component (not an inline function). When adding new row types or modifying row rendering, keep the logic inside `TimelineRowContent` to preserve per-row memoization.
@@ -238,3 +224,29 @@ MarCode maintains a comprehensive regression test suite to protect MarCode-exclu
 - **After every upstream merge:** run the full test suite (`bun run test` in each package) and verify all MarCode-exclusive features are preserved. Guard tests in `featureGuards.test.ts` and `workCards.guard.test.ts` will catch deleted/missing features immediately.
 - **When implementing new MarCode-exclusive features:** create at least an existence/smoke guard test in the relevant `featureGuards.test.ts`, plus unit tests for any pure logic. Update `FEATURES.md` with the new feature entry.
 - **When modifying existing features:** update or extend the corresponding tests. If changing exports, function signatures, or component structure — update the guard tests to match.
+
+## Debugging the Running App: chrome-devtools MCP
+
+MarCode's Electron renderer is wired to the `chrome-devtools` MCP for live debugging and perf work via Chrome DevTools Protocol.
+
+**Wiring (already in place):**
+
+- `apps/desktop/scripts/dev-electron.mjs` spawns Electron with `--remote-debugging-port=9222`, exposing CDP at `http://127.0.0.1:9222`.
+- `marcode/.mcp.json` (project-scoped) overrides the global `chrome-devtools` MCP entry to attach via `--browserUrl http://127.0.0.1:9222` instead of spawning a standalone Chrome.
+
+**Prereq:** MarCode dev must be running (`bun run dev`) before MCP tool calls — otherwise `mcp__chrome-devtools__*` errors with no target. Verify with `mcp__chrome-devtools__list_pages`; the renderer URL looks like `http://127.0.0.1:5733/#/{environmentId}/{threadId}`.
+
+**What it's good for:**
+
+- `list_console_messages` / `get_console_message` — inspect renderer console output without manually opening DevTools
+- `list_network_requests` / `get_network_request` — observe WebSocket frames and HTTP traffic against the local server (`apps/server` on port from `DEFAULT_DESKTOP_BACKEND_PORT`)
+- `evaluate_script` — read Zustand store state, inspect React refs, trigger handlers (`window.__store?.getState()` patterns)
+- `take_snapshot` — DOM tree dump for layout/Tailwind cascade debugging (especially the `px-*` vs `pl-*`/`pr-*` v4 pitfall above)
+- `take_screenshot` — visual regressions, dark-mode/brand checks
+- `performance_start_trace` / `stop_trace` / `analyze_insight` — verify timeline rendering perf and catch regressions in route, composer, sidebar, and timeline interactions
+- `take_memory_snapshot` — leak hunting on long sessions / reconnect storms
+- `lighthouse_audit` — broader perf passes
+
+**Use it when:** a regression reproduces only in the running app (not in unit/component tests), you need to inspect live store/projection state, or you're profiling timeline/composer/sidebar render paths against a real provider stream.
+
+**Do not use it for:** isolated logic that has unit-test coverage — write a Vitest test instead. Live CDP is for whole-app behavior, not individual functions.

@@ -1,6 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { Collapsible, CollapsiblePanel } from "~/components/ui/collapsible";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { ApprovalBadge } from "./ApprovalBadge";
 import { StatusBadge, type ToolStatusKind } from "./StatusBadge";
@@ -60,24 +59,36 @@ export function ToolCard(props: ToolCardProps) {
     bodyAvailable,
   });
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (state !== "preview" || !bodyAvailable) {
       return;
     }
     const node = previewRef.current;
     if (!node) return;
+    let rafId: number | null = null;
 
     const measure = () => {
+      rafId = null;
       const overflows = node.scrollHeight > node.clientHeight + OVERFLOW_THRESHOLD_PX;
       setBodyOverflows(overflows);
     };
 
-    measure();
+    rafId = window.requestAnimationFrame(measure);
 
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(node);
-    return () => observer.disconnect();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            if (rafId !== null) return;
+            rafId = window.requestAnimationFrame(measure);
+          });
+    observer?.observe(node);
+    return () => {
+      observer?.disconnect();
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
   }, [state, bodyAvailable, body]);
 
   const HeaderIcon = TOOL_ICONS[tool];
@@ -122,33 +133,29 @@ export function ToolCard(props: ToolCardProps) {
           />
         )}
       </HeaderRow>
-      {anyBody && (
-        <Collapsible open={isOpen}>
-          <CollapsiblePanel>
-            <div className={cn("border-t border-border/20", bodyClassName)}>
-              {showPreview && bodyAvailable && (
-                <div className="relative">
-                  <div
-                    ref={previewRef}
-                    className="overflow-hidden"
-                    style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
-                  >
-                    {body}
-                  </div>
-                  {showFullCtaVisible && <ShowFullButton onClick={expandFully} />}
-                </div>
-              )}
-              {showExpanded && (
-                <>
-                  {expandedBodyAvailable ? expandedBody : body}
-                  {bodyAvailable && (
-                    <HideButton onClick={() => setState(bodyAvailable ? "preview" : "collapsed")} />
-                  )}
-                </>
-              )}
+      {anyBody && isOpen && (
+        <div className={cn("overflow-hidden border-t border-border/20", bodyClassName)}>
+          {showPreview && bodyAvailable && (
+            <div className="relative">
+              <div
+                ref={previewRef}
+                className="overflow-hidden"
+                style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
+              >
+                {body}
+              </div>
+              {showFullCtaVisible && <ShowFullButton onClick={expandFully} />}
             </div>
-          </CollapsiblePanel>
-        </Collapsible>
+          )}
+          {showExpanded && (
+            <>
+              {expandedBodyAvailable ? expandedBody : body}
+              {bodyAvailable && (
+                <HideButton onClick={() => setState(bodyAvailable ? "preview" : "collapsed")} />
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );
