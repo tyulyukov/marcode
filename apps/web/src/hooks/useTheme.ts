@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import type { ThemeDefinition, ThemePreference } from "../themes/types";
 import { THEME_MAP } from "../themes/registry";
-import { applyThemeToDOM, resolvePreference } from "../themes/apply";
+import { applyThemeToDOM, resolvePreference, type AutoNightPair } from "../themes/apply";
+import { getClientSettings, useSettings } from "./useSettings";
 
 type ThemeSnapshot = {
   preference: ThemePreference;
@@ -93,12 +94,66 @@ export function syncBrowserChromeTheme() {
   ensureThemeColorMetaTag().setAttribute("content", backgroundColor);
 }
 
+function getAutoNightPair(): AutoNightPair {
+  const settings = getClientSettings();
+  return { light: settings.autoNightLightTheme, dark: settings.autoNightDarkTheme };
+}
+
+export function computeAccentForeground(hex: string): string {
+  const trimmed = hex.startsWith("#") ? hex.slice(1) : hex;
+  const expanded =
+    trimmed.length === 3
+      ? trimmed
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : trimmed;
+  if (expanded.length !== 6) return "#f9fdfd";
+  const r = Number.parseInt(expanded.slice(0, 2), 16);
+  const g = Number.parseInt(expanded.slice(2, 4), 16);
+  const b = Number.parseInt(expanded.slice(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return "#f9fdfd";
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? "#222222" : "#f9fdfd";
+}
+
+function applyAccentOverride(definition: ThemeDefinition) {
+  if (typeof document === "undefined") return;
+  const settings = getClientSettings();
+  const accent = settings.accentOverride;
+  const html = document.documentElement;
+
+  if (accent) {
+    html.style.setProperty("--primary", accent);
+    html.style.setProperty("--primary-foreground", computeAccentForeground(accent));
+    html.style.setProperty("--ring", accent);
+    return;
+  }
+
+  // Restore the theme's own primary (or remove the override so CSS-rule
+  // defaults apply for marcode themes that do not declare variables).
+  if (definition.variables) {
+    html.style.setProperty("--primary", definition.variables["--primary"]);
+    html.style.setProperty("--primary-foreground", definition.variables["--primary-foreground"]);
+    html.style.setProperty("--ring", definition.variables["--ring"]);
+  } else {
+    html.style.removeProperty("--primary");
+    html.style.removeProperty("--primary-foreground");
+    html.style.removeProperty("--ring");
+  }
+}
+
 function applyTheme(preference: ThemePreference, suppressTransitions = false) {
   if (typeof document === "undefined" || typeof window === "undefined") return;
-  const definition = resolvePreference(preference, getSystemDark());
+  const definition = resolvePreference(preference, getSystemDark(), getAutoNightPair());
   applyThemeToDOM(definition, suppressTransitions);
+  applyAccentOverride(definition);
   syncBrowserChromeTheme();
   syncDesktopTheme(definition, preference === "system");
+}
+
+export function reapplyCurrentTheme(suppressTransitions = true): void {
+  applyTheme(getStored(), suppressTransitions);
 }
 
 function syncDesktopTheme(definition: ThemeDefinition, isSystem: boolean) {
@@ -170,7 +225,13 @@ function subscribe(listener: () => void): () => void {
 
 export function useTheme() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const definition = resolvePreference(snapshot.preference, snapshot.systemDark);
+  const autoNightLightTheme = useSettings((s) => s.autoNightLightTheme);
+  const autoNightDarkTheme = useSettings((s) => s.autoNightDarkTheme);
+  const pair = useMemo<AutoNightPair>(
+    () => ({ light: autoNightLightTheme, dark: autoNightDarkTheme }),
+    [autoNightDarkTheme, autoNightLightTheme],
+  );
+  const definition = resolvePreference(snapshot.preference, snapshot.systemDark, pair);
   const resolvedTheme: "light" | "dark" = definition.base;
 
   const setTheme = useCallback((next: ThemePreference) => {
@@ -182,7 +243,7 @@ export function useTheme() {
 
   useEffect(() => {
     applyTheme(snapshot.preference);
-  }, [snapshot.preference]);
+  }, [snapshot.preference, pair.light, pair.dark]);
 
   return {
     theme: snapshot.preference,

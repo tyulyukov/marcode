@@ -47,6 +47,7 @@ import { useStore } from "../store";
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { migrateLocalSettingsToServer } from "../hooks/useSettings";
+import { useAppearanceEffects } from "../hooks/useAppearanceEffects";
 import {
   ensureEnvironmentConnectionBootstrapped,
   getPrimaryEnvironmentConnection,
@@ -98,6 +99,8 @@ function RouteTransitionGuard({ children }: { children: ReactNode }) {
 function RootRouteView() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
+
+  useAppearanceEffects();
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {

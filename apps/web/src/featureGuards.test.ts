@@ -14,9 +14,11 @@ describe("MarCode feature guards", () => {
     expect(source).not.toContain("useVirtualizer");
   });
 
-  it("text reveal animation exists", () => {
+  it("text reveal animation stays removed", () => {
     const source = readSrc("components/chat/MessagesTimeline.tsx");
-    expect(source).toContain("TextReveal");
+    expect(source).not.toContain("TextReveal");
+    expect(fileExists("components/chat/TextReveal.tsx")).toBe(false);
+    expect(fileExists("hooks/useSmoothReveal.ts")).toBe(false);
   });
 
   it("selection reply toolbar exists", () => {

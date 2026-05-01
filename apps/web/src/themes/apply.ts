@@ -68,13 +68,27 @@ function getSystemDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
-export function resolvePreference(preference: string, systemDark: boolean): ThemeDefinition {
+export type AutoNightPair = { readonly light: string; readonly dark: string };
+
+export function resolvePreference(
+  preference: string,
+  systemDark: boolean,
+  pair?: AutoNightPair,
+): ThemeDefinition {
   if (preference === "system") {
-    return THEME_MAP.get(systemDark ? "marcode-dark" : "marcode-light")!;
+    const fallbackId = systemDark ? "marcode-dark" : "marcode-light";
+    const pairedId = systemDark ? pair?.dark : pair?.light;
+    if (pairedId && THEME_MAP.has(pairedId)) {
+      return THEME_MAP.get(pairedId)!;
+    }
+    return THEME_MAP.get(fallbackId)!;
   }
   return THEME_MAP.get(preference) ?? THEME_MAP.get("marcode-light")!;
 }
 
-export function resolvePreferenceFromSystem(preference: string): ThemeDefinition {
-  return resolvePreference(preference, getSystemDark());
+export function resolvePreferenceFromSystem(
+  preference: string,
+  pair?: AutoNightPair,
+): ThemeDefinition {
+  return resolvePreference(preference, getSystemDark(), pair);
 }

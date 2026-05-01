@@ -30,6 +30,7 @@
 
 @theme inline {
   --font-heading: "Klaster Sans", sans-serif;
+  --font-mono: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   --animate-skeleton: skeleton 2s -1s infinite linear;
   --animate-shine: shine 3s linear infinite;
   --color-warning-foreground: var(--warning-foreground);
@@ -104,6 +105,17 @@
     @apply text-foreground relative;
     background-color: var(--app-chrome-background);
   }
+}
+
+/* Reduce motion preference (user setting, independent from theme transition guard) */
+:root[data-reduce-motion="true"],
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0s !important;
+  scroll-behavior: auto !important;
 }
 
 /* Suppress all transitions during theme changes */
@@ -214,7 +226,15 @@ body::after {
 
 pre,
 code {
-  font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family: var(
+    --font-mono,
+    "SF Mono",
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    Menlo,
+    monospace
+  );
 }
 
 /* Window drag region (frameless titlebar) */
@@ -619,45 +639,6 @@ label:has(> select#reasoning-effort) select {
 ::view-transition-new(root) {
   animation-duration: 120ms;
   animation-timing-function: ease-out;
-}
-
-/* Word-by-word fade-in for new assistant messages */
-.tr-word {
-  opacity: 0;
-  transition: opacity 140ms ease-out;
-}
-
-.tr-word.tr-visible {
-  opacity: 1;
-}
-
-.tr-li-hidden::marker {
-  color: transparent;
-  transition: color 140ms ease-out;
-}
-
-.chat-markdown .tr-block-hidden,
-.chat-markdown .tr-block-hidden *:not(.tr-word) {
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.tr-block-hidden {
-  transition:
-    background 180ms ease-out,
-    border-color 180ms ease-out,
-    box-shadow 180ms ease-out;
-}
-
-.tr-block-hidden > .chat-markdown-copy-button {
-  opacity: 0 !important;
-  pointer-events: none;
-}
-
-.tr-input-hidden {
-  opacity: 0;
-  transition: opacity 140ms ease-out;
 }
 
 /* Thin scrollbar for model picker */

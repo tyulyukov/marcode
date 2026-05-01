@@ -1226,7 +1226,7 @@ describe("deriveWorkLogEntries", () => {
     expect(entries[0]!.agentGroup!.tasks[0]!.status).toBe("completed");
   });
 
-  it("populates progressHistory from per-step summary, not the prompt-echoing detail", () => {
+  it("for Codex, drops the prompt-echoing detail from progressHistory and keeps unique ids", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "t1-start",
@@ -1263,7 +1263,7 @@ describe("deriveWorkLogEntries", () => {
       }),
     ];
 
-    const entries = deriveWorkLogEntries(activities, undefined);
+    const entries = deriveWorkLogEntries(activities, undefined, { provider: "codex" });
     const task = entries[0]!.agentGroup!.tasks[0]!;
 
     expect(task.progressHistory).toHaveLength(2);
@@ -1282,7 +1282,41 @@ describe("deriveWorkLogEntries", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("does not surface the prompt as progressSummary when latest progress lacks a summary", () => {
+  it("for Claude, keeps payload.detail as progressHistory description (it carries per-step content)", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "t1-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Explore current settings UI" },
+      }),
+      makeActivity({
+        id: "p1-bash-1",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Running find /Users/...", lastToolName: "Bash" },
+      }),
+      makeActivity({
+        id: "p2-bash-2",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.progress",
+        tone: "info",
+        payload: { taskId: "t1", detail: "Running ls -la /Users/...", lastToolName: "Bash" },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined, { provider: "claudeAgent" });
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+
+    expect(task.progressHistory).toHaveLength(2);
+    expect(task.progressHistory[0]!.description).toBe("Running find /Users/...");
+    expect(task.progressHistory[1]!.description).toBe("Running ls -la /Users/...");
+    expect(task.progressSummary).toBe("Running ls -la /Users/...");
+  });
+
+  it("for Codex, does not surface the prompt as progressSummary when latest progress lacks a summary", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "t1-start",
@@ -1300,7 +1334,7 @@ describe("deriveWorkLogEntries", () => {
       }),
     ];
 
-    const entries = deriveWorkLogEntries(activities, undefined);
+    const entries = deriveWorkLogEntries(activities, undefined, { provider: "codex" });
     const task = entries[0]!.agentGroup!.tasks[0]!;
     expect(task.progressSummary).toBeNull();
     expect(task.lastToolName).toBe("Thinking");

@@ -85,6 +85,7 @@ export const PlanUpdateCard = memo(function PlanUpdateCard(props: PlanUpdateCard
   const isFirstUpdate = total > 0 && added.length === total;
   const primaryLabel = isFirstUpdate ? "Plan started" : "Plan updated";
   const addedLabel = isFirstUpdate ? "NEW PLAN" : "JUST ADDED";
+  const visibleDeltaCount = justCompleted.length + inProgress.length + added.length;
 
   const meta = (
     <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/45">
@@ -113,6 +114,7 @@ export const PlanUpdateCard = memo(function PlanUpdateCard(props: PlanUpdateCard
       body={body}
       defaultState={isLatestTurn ? "preview" : "collapsed"}
       bodyMaxPreviewPx={240}
+      showFullCta={visibleDeltaCount > 4}
     />
   );
 });

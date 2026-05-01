@@ -572,9 +572,10 @@ export function hasActionableProposedPlan(
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
-  options?: { isSessionRunning?: boolean },
+  options?: { isSessionRunning?: boolean; provider?: ProviderKind },
 ): WorkLogEntry[] {
   const isSessionRunning = options?.isSessionRunning ?? false;
+  const provider = options?.provider;
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
 
   const previousPlanStepsByActivityId = new Map<string, PlanStep[] | null>();
@@ -739,6 +740,7 @@ export function deriveWorkLogEntries(
           collabToolDataByItemId,
           collabToolDataUnkeyed,
           isSessionRunning,
+          provider,
         );
         if (groupEntry) entries.push(groupEntry);
       }
@@ -888,6 +890,7 @@ function buildAgentTaskSummary(
   collabToolDataByItemId: ReadonlyMap<string, SubagentCollabToolData>,
   collabToolDataUnkeyed: ReadonlyArray<SubagentCollabToolData>,
   isSessionRunning: boolean,
+  provider: ProviderKind | undefined,
 ): AgentTaskSummary {
   const completedPayload = asRecord(group.completed?.payload);
   const latestProgress = group.progressEntries.at(-1);
@@ -923,7 +926,12 @@ function buildAgentTaskSummary(
       : null;
 
   const lastToolName = asTrimmedString(latestProgressPayload?.lastToolName) ?? null;
-  const progressSummary = asTrimmedString(latestProgressPayload?.summary) ?? null;
+  const progressSummary =
+    provider === "codex"
+      ? (asTrimmedString(latestProgressPayload?.summary) ?? null)
+      : (asTrimmedString(latestProgressPayload?.detail) ??
+        asTrimmedString(latestProgressPayload?.summary) ??
+        null);
 
   const createdAt =
     group.started?.createdAt ?? latestProgress?.createdAt ?? group.completed?.createdAt ?? "";
@@ -958,10 +966,16 @@ function buildAgentTaskSummary(
   const progressHistory: AgentProgressEntry[] = group.progressEntries.map((activity) => {
     const p = asRecord(activity.payload);
     const summary = asTrimmedString(p?.summary) ?? null;
+    // Codex's `task.progress.description` is the (repeated) task prompt and the
+    // ingestion layer mirrors that into `payload.detail` whenever there's no
+    // per-step `summary` — so for Codex we read summary only. Other providers
+    // (Claude, ACP) put the per-step content in `description` and the ingestion
+    // layer faithfully forwards it as `payload.detail`, so we keep that source.
+    const description = provider === "codex" ? summary : (asTrimmedString(p?.detail) ?? summary);
     return {
       id: activity.id,
       lastToolName: asTrimmedString(p?.lastToolName) ?? null,
-      description: summary,
+      description,
       summary,
       createdAt: activity.createdAt,
     };
@@ -1020,6 +1034,7 @@ function buildAgentGroupEntry(
   collabToolDataByItemId: ReadonlyMap<string, SubagentCollabToolData>,
   collabToolDataUnkeyed: ReadonlyArray<SubagentCollabToolData>,
   isSessionRunning: boolean,
+  provider: ProviderKind | undefined,
 ): DerivedWorkLogEntry | null {
   if (taskGroups.size === 0) return null;
 
@@ -1030,6 +1045,7 @@ function buildAgentGroupEntry(
       collabToolDataByItemId,
       collabToolDataUnkeyed,
       isSessionRunning,
+      provider,
     ),
   );
   const hasFailed = tasks.some((t) => t.status === "failed");

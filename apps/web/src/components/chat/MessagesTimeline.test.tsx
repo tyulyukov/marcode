@@ -236,6 +236,82 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Refining approach");
   });
 
+  it("renders a show-full affordance for long plan-update previews", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const listRef = createRef<LegendListRef | null>();
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        provider="claudeAgent"
+        threadId="test-thread"
+        hasMessages
+        isHydrating={false}
+        isWorking={false}
+        activeTurnInProgress={false}
+        activeTurnStartedAt={null}
+        listRef={listRef}
+        onIsAtEndChange={() => {}}
+        timelineEntries={[
+          {
+            id: "entry-plan-long",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-plan-long",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Plan updated",
+              tone: "info",
+              planSteps: Array.from({ length: 8 }, (_, index) => ({
+                step: `Step ${index + 1}`,
+                status: index < 6 ? "completed" : index === 6 ? "inProgress" : "pending",
+              })),
+              planJustCompletedSteps: Array.from({ length: 4 }, (_, index) => ({
+                step: `Completed ${index + 1}`,
+              })),
+              planInProgressSteps: [{ step: "Current step" }],
+              planNewSteps: [{ step: "New step 1" }, { step: "New step 2" }],
+              planTotalCount: 8,
+              planCompletedCount: 6,
+            },
+          },
+        ]}
+        completionDividerBeforeEntryId={null}
+        completionSummary={null}
+        turnDiffSummaryByAssistantMessageId={new Map()}
+        changedFilesExpandedByTurnId={{}}
+        onSetChangedFilesExpanded={() => {}}
+        onOpenTurnDiff={() => {}}
+        revertTurnCountByUserMessageId={new Map()}
+        onRevertUserMessage={() => {}}
+        isRevertingCheckpoint={false}
+        onImageExpand={() => {}}
+        activeThreadEnvironmentId={ACTIVE_THREAD_ENVIRONMENT_ID}
+        markdownCwd={undefined}
+        resolvedTheme="light"
+        timestampFormat="locale"
+        workspaceRoot={undefined}
+        isSendBusy={false}
+        isSessionStarting={false}
+        hasPendingAssistantResponse={false}
+        isPreparingWorktree={false}
+        isCompacting={false}
+        onSubagentSelect={() => {}}
+        editingUserMessageId={null}
+        editingUserMessageText=""
+        editingUserMessageImages={[]}
+        onStartEditUserMessage={() => {}}
+        onChangeEditingUserMessageText={() => {}}
+        onAddEditingUserMessageImages={() => {}}
+        onRemoveEditingUserMessageImage={() => {}}
+        onCancelEditUserMessage={() => {}}
+        onSubmitEditUserMessage={() => {}}
+        onReplyToSelection={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Show full content"');
+    expect(markup).toContain("Show full");
+  });
+
   it("renders context compaction entries in the normal work log", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const listRef = createRef<LegendListRef | null>();

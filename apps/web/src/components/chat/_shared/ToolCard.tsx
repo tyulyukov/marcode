@@ -23,6 +23,7 @@ interface ToolCardProps {
     readonly error?: string;
   };
   readonly hideChevron?: boolean;
+  readonly showFullCta?: boolean;
   readonly headerClassName?: string;
   readonly bodyClassName?: string;
 }
@@ -42,6 +43,7 @@ export function ToolCard(props: ToolCardProps) {
     isPendingApproval = false,
     statusLabels,
     hideChevron = false,
+    showFullCta = false,
     headerClassName,
     bodyClassName,
   } = props;
@@ -85,7 +87,7 @@ export function ToolCard(props: ToolCardProps) {
 
   const showPreview = state === "preview" && bodyAvailable;
   const showExpanded = state === "expanded" && (expandedBodyAvailable || bodyAvailable);
-  const showFullCtaVisible = showPreview && (bodyOverflows || expandedBodyAvailable);
+  const showFullCtaVisible = showPreview && (showFullCta || bodyOverflows || expandedBodyAvailable);
 
   return (
     <div

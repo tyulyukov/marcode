@@ -249,7 +249,7 @@ Architecture:
 - `apply.ts` — `applyThemeToDOM()` sets CSS variables via inline overrides (highest specificity)
 - `types.ts` — `ThemeDefinition`, `ThemeGroup` types
 - `apps/web/src/hooks/useTheme.ts` — `useTheme()` hook
-- `apps/web/src/components/settings/ThemePicker.tsx` — UI picker
+- `apps/web/src/components/settings/ThemeCarousel.tsx` — Telegram-inspired theme picker (lives in the Appearance settings tab)
 
 ---
 
