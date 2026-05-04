@@ -274,4 +274,62 @@ describe("providerUsage", () => {
 
     expect(snapshot).toBeNull();
   });
+
+  it("returns null for cursor provider even when Claude/Codex events are present", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot(
+      [
+        makeActivity("activity-1", {
+          type: "rate_limit_event",
+          rate_limit_info: {
+            status: "allowed_warning",
+            resetsAt: 1776582000,
+            rateLimitType: "five_hour",
+            utilization: 0.83,
+          },
+        }),
+        makeActivity("activity-2", {
+          rateLimits: {
+            limitId: "codex",
+            primary: {
+              usedPercent: 12,
+              windowDurationMins: 300,
+              resetsAt: 1776587601,
+            },
+          },
+        }),
+      ],
+      { provider: "cursor" },
+    );
+
+    expect(snapshot).toBeNull();
+  });
+
+  it("returns null for opencode provider even when Claude/Codex events are present", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot(
+      [
+        makeActivity("activity-1", {
+          type: "rate_limit_event",
+          rate_limit_info: {
+            status: "allowed_warning",
+            resetsAt: 1776582000,
+            rateLimitType: "five_hour",
+            utilization: 0.83,
+          },
+        }),
+        makeActivity("activity-2", {
+          rateLimits: {
+            limitId: "codex",
+            primary: {
+              usedPercent: 12,
+              windowDurationMins: 300,
+              resetsAt: 1776587601,
+            },
+          },
+        }),
+      ],
+      { provider: "opencode" },
+    );
+
+    expect(snapshot).toBeNull();
+  });
 });

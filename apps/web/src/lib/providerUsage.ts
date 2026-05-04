@@ -36,9 +36,11 @@ type ProviderUsageDerivationOptions = {
   readonly provider?: ProviderKind | null;
 };
 
-const PROVIDER_LABEL_BY_KIND: Partial<Record<ProviderKind, string>> = {
+const PROVIDER_LABEL_BY_KIND: Record<ProviderKind, string | null> = {
   claudeAgent: "Claude",
   codex: "Codex",
+  cursor: null,
+  opencode: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -287,12 +289,14 @@ export function deriveLatestProviderUsageSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   options: ProviderUsageDerivationOptions = {},
 ): ProviderUsageSnapshot | null {
+  if (options.provider && PROVIDER_LABEL_BY_KIND[options.provider] === null) {
+    return null;
+  }
+
   const windowsByLabel = new Map<string, RateLimitWindow>();
   let providerLabel: string | null = null;
   let latestUpdatedAt: string | null = null;
-  const requestedProviderLabel = options.provider
-    ? (PROVIDER_LABEL_BY_KIND[options.provider] ?? null)
-    : null;
+  const requestedProviderLabel = options.provider ? PROVIDER_LABEL_BY_KIND[options.provider] : null;
 
   // Walk backwards so the first match for each label wins (most recent).
   for (let index = activities.length - 1; index >= 0; index -= 1) {
