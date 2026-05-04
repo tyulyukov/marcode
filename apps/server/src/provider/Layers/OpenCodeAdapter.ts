@@ -1133,6 +1133,12 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
       );
 
       const sendTurn: OpenCodeAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+        yield* Effect.annotateCurrentSpan({
+          "ai.provider": "opencode",
+          ...(input.modelSelection?.model ? { "ai.model": input.modelSelection.model } : {}),
+          ...(input.interactionMode ? { "ai.interaction_mode": input.interactionMode } : {}),
+          "thread.id": input.threadId,
+        });
         const context = ensureSessionContext(sessions, input.threadId);
         const turnId = TurnId.make(`opencode-turn-${randomUUID()}`);
         const modelSelection =

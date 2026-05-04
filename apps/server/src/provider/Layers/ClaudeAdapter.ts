@@ -3420,6 +3420,12 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   );
 
   const sendTurn: ClaudeAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+    yield* Effect.annotateCurrentSpan({
+      "ai.provider": "claude",
+      ...(input.modelSelection?.model ? { "ai.model": input.modelSelection.model } : {}),
+      ...(input.interactionMode ? { "ai.interaction_mode": input.interactionMode } : {}),
+      "thread.id": input.threadId,
+    });
     const context = yield* requireSession(input.threadId);
     const modelSelection =
       input.modelSelection?.provider === "claudeAgent" ? input.modelSelection : undefined;

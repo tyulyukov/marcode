@@ -2012,6 +2012,12 @@ const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   });
 
   const sendTurn: CodexAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
+    yield* Effect.annotateCurrentSpan({
+      "ai.provider": "codex",
+      ...(input.modelSelection?.model ? { "ai.model": input.modelSelection.model } : {}),
+      ...(input.interactionMode ? { "ai.interaction_mode": input.interactionMode } : {}),
+      "thread.id": input.threadId,
+    });
     const codexAttachments = yield* Effect.forEach(
       input.attachments ?? [],
       (attachment) => resolveAttachment(input, attachment),

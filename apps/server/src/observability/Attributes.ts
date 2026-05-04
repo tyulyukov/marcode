@@ -126,3 +126,78 @@ export function normalizeModelMetricLabel(model: string | null | undefined): str
   }
   return "other";
 }
+
+/**
+ * OTEL_DENY_SUFFIXES - attribute key suffixes that must never leave the process.
+ *
+ * Matched against the trailing dot-separated segment of an attribute key OR the
+ * whole key. Example: `vcs.pr.url` -> trailing segment `url` -> denied.
+ *
+ * Intentionally suffix-based so newly-introduced keys inherit the deny by default
+ * (e.g. `provider.tool.path` would be denied because of `path`).
+ */
+export const OTEL_DENY_SUFFIXES: ReadonlyArray<string> = [
+  "cwd",
+  "path",
+  "file_path",
+  "filename",
+  "directory",
+  "command_line",
+  "argv",
+  "cmdline",
+  "body",
+  "content",
+  "text",
+  "message_text",
+  "prompt",
+  "completion",
+  "diff",
+  "patch",
+  "email",
+  "username",
+  "account_id",
+  "url",
+  "token",
+  "secret",
+  "key",
+  "password",
+  "authorization",
+  "title",
+  "summary",
+  "description",
+];
+
+export function isDeniedAttributeKey(
+  key: string,
+  deny: ReadonlyArray<string> = OTEL_DENY_SUFFIXES,
+): boolean {
+  for (const suffix of deny) {
+    if (key === suffix || key.endsWith(`.${suffix}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * sanitizeAttributes - drops attribute entries whose key matches OTEL_DENY_SUFFIXES.
+ *
+ * Used as a defense-in-depth filter at every span-event emission site so future
+ * additions do not silently leak sensitive data into traces.
+ */
+export function sanitizeAttributes(
+  attributes: Readonly<Record<string, unknown>>,
+  deny: ReadonlyArray<string> = OTEL_DENY_SUFFIXES,
+): TraceAttributes {
+  const filtered: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (isDeniedAttributeKey(key, deny)) {
+      continue;
+    }
+    filtered[key] = normalizeJsonValue(value);
+  }
+  return filtered;
+}

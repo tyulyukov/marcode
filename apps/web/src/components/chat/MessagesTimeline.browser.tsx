@@ -183,8 +183,6 @@ describe("MessagesTimeline auto-follow", () => {
     await using mounted = await mountTimeline(createTimelineEntries());
     await pinToBottom(mounted.scrollContainer);
 
-    const initialScrollHeight = mounted.scrollContainer.scrollHeight;
-
     for (let index = 0; index < 5; index += 1) {
       useRuntimeToolOutputStore
         .getState()
@@ -198,11 +196,49 @@ describe("MessagesTimeline auto-follow", () => {
 
     await vi.waitFor(
       () => {
-        expect(mounted.scrollContainer.scrollHeight).toBeGreaterThan(initialScrollHeight + 24);
+        expect(mounted.host.textContent).toContain("line 4-3");
         expect(Math.abs(bottomGap(mounted.scrollContainer))).toBeLessThanOrEqual(4);
       },
       { timeout: 8_000, interval: 16 },
     );
+  });
+
+  it("keeps the show-full control visible while live command output keeps growing", async () => {
+    useRuntimeToolOutputStore.getState().appendOutput(THREAD_ID, COMMAND_ITEM_ID, "boot\nready\n");
+
+    await using mounted = await mountTimeline(createTimelineEntries());
+    await pinToBottom(mounted.scrollContainer);
+
+    for (let index = 0; index < 10; index += 1) {
+      useRuntimeToolOutputStore
+        .getState()
+        .appendOutput(
+          THREAD_ID,
+          COMMAND_ITEM_ID,
+          `${Array.from({ length: 4 }, (_, lineIndex) => `overflow ${index}-${lineIndex}`).join("\n")}\n`,
+        );
+      await waitForLayout(3);
+    }
+
+    await vi.waitFor(
+      () => {
+        expect(page.getByRole("button", { name: "Show full content" }).query()).toBeTruthy();
+      },
+      { timeout: 8_000, interval: 16 },
+    );
+
+    for (let index = 0; index < 5; index += 1) {
+      useRuntimeToolOutputStore
+        .getState()
+        .appendOutput(
+          THREAD_ID,
+          COMMAND_ITEM_ID,
+          `${Array.from({ length: 3 }, (_, lineIndex) => `continued ${index}-${lineIndex}`).join("\n")}\n`,
+        );
+      await waitForLayout(3);
+      expect(page.getByRole("button", { name: "Show full content" }).query()).toBeTruthy();
+      expect(Math.abs(bottomGap(mounted.scrollContainer))).toBeLessThanOrEqual(4);
+    }
   });
 
   it("stays pinned to the bottom when an overflowed command card expands", async () => {

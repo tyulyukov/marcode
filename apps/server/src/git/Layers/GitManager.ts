@@ -29,6 +29,7 @@ import {
   type GitManagerShape,
   type GitRunStackedActionOptions,
 } from "../Services/GitManager.ts";
+import { recordSpanEvent } from "../../observability/SpanEvents.ts";
 import { GitCore, type GitStatusDetails } from "../Services/GitCore.ts";
 import { GitHostCli } from "../Services/GitHostCli.ts";
 import { TextGeneration } from "../Services/TextGeneration.ts";
@@ -1308,9 +1309,20 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           schedule: Schedule.exponential(PR_CREATE_RETRY_BASE_DELAY, 2),
           while: isBranchNotReadyError,
         }),
+        Effect.tapError(() =>
+          recordSpanEvent("vcs.pr.failed", {
+            "vcs.provider": detectedHostProvider,
+            "vcs.pr.kind": prOrMr,
+          }),
+        ),
       );
 
     const created = yield* findOpenPr(cwd, headContext);
+    yield* recordSpanEvent("vcs.pr.created", {
+      "vcs.provider": detectedHostProvider,
+      "vcs.pr.kind": prOrMr,
+      "vcs.pr.has_url": Boolean(created?.url),
+    });
     if (!created) {
       return {
         status: "created" as const,
