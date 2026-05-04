@@ -5,7 +5,6 @@ import type {
 } from "@marcode/contracts";
 import { Effect } from "effect";
 
-import { recordSpanEvent } from "../observability/SpanEvents.ts";
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
 import {
   listThreadsByProjectId,
@@ -17,12 +16,6 @@ import {
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
-
-function extractStringField(payload: unknown, field: string): string | undefined {
-  if (typeof payload !== "object" || payload === null) return undefined;
-  const value = (payload as Record<string, unknown>)[field];
-  return typeof value === "string" ? value : undefined;
-}
 
 const nowIso = () => new Date().toISOString();
 const defaultMetadata: Omit<OrchestrationEvent, "sequence" | "type" | "payload"> = {
@@ -86,23 +79,6 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
         ...nextEvent,
         sequence: nextSequence,
       }).pipe(Effect.orDie);
-
-      const payloadThreadId = extractStringField(nextEvent.payload, "threadId");
-      const payloadProjectId = extractStringField(nextEvent.payload, "projectId");
-      const payloadTurnId = extractStringField(nextEvent.payload, "turnId");
-      const payloadRole = extractStringField(nextEvent.payload, "role");
-      const payloadStatus = extractStringField(nextEvent.payload, "status");
-      yield* recordSpanEvent(`marcode.event.${nextEvent.type}`, {
-        "marcode.aggregate.kind": nextEvent.aggregateKind,
-        "marcode.aggregate.id": nextEvent.aggregateId,
-        ...(nextEvent.aggregateKind === "thread" ? { "thread.id": nextEvent.aggregateId } : {}),
-        ...(nextEvent.aggregateKind === "project" ? { "project.id": nextEvent.aggregateId } : {}),
-        ...(payloadThreadId !== undefined ? { "thread.id": payloadThreadId } : {}),
-        ...(payloadProjectId !== undefined ? { "project.id": payloadProjectId } : {}),
-        ...(payloadTurnId !== undefined ? { "turn.id": payloadTurnId } : {}),
-        ...(payloadRole !== undefined ? { "marcode.message.role": payloadRole } : {}),
-        ...(payloadStatus !== undefined ? { "marcode.event.status": payloadStatus } : {}),
-      });
     }
   }
 

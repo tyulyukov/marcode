@@ -454,10 +454,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* Effect.annotateCurrentSpan({
         "provider.kind": routed.adapter.provider,
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
-        "ai.provider": routed.adapter.provider,
-        ...(input.modelSelection?.model ? { "ai.model": input.modelSelection.model } : {}),
-        ...(input.interactionMode ? { "ai.interaction_mode": input.interactionMode } : {}),
-        "thread.id": input.threadId,
       });
       const turn = yield* routed.adapter.sendTurn(input);
       yield* directory.upsert({

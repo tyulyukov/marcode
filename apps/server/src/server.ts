@@ -60,7 +60,7 @@ import {
   jiraCallbackRouteLayer,
 } from "./jira/oauthRoutes.ts";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment.ts";
-import { AnalyticsServiceOtelLive } from "./telemetry/Layers/AnalyticsService.ts";
+import { AnalyticsServiceNoopLive } from "./telemetry/Layers/AnalyticsService.ts";
 import {
   authBearerBootstrapRouteLayer,
   authBootstrapRouteLayer,
@@ -257,7 +257,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolverLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(AuthLayerLive),
-  Layer.provideMerge(AnalyticsServiceOtelLive),
+  Layer.provideMerge(AnalyticsServiceNoopLive),
 
   // Misc.
   Layer.provideMerge(OpenLive),
