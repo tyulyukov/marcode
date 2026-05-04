@@ -64,6 +64,7 @@ const makeCliTestServerConfig = (baseDir: string) =>
       otlpMetricsUrl: undefined,
       otlpExportIntervalMs: 10_000,
       otlpServiceName: "marcode-server",
+      productAnalyticsTracesUrl: undefined,
       mode: "web",
       port: 0,
       host: "127.0.0.1",

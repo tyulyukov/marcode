@@ -152,6 +152,10 @@ const EnvServerConfig = Config.all({
   otlpServiceName: Config.string("MARCODE_OTLP_SERVICE_NAME").pipe(
     Config.withDefault("marcode-server"),
   ),
+  productAnalyticsTracesUrl: Config.string("MARCODE_PRODUCT_ANALYTICS_TRACES_URL").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   mode: Config.schema(RuntimeMode, "MARCODE_MODE").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -361,6 +365,11 @@ export const resolveServerConfig = (
         persistedObservabilitySettings.otlpMetricsUrl,
       otlpExportIntervalMs: env.otlpExportIntervalMs,
       otlpServiceName: env.otlpServiceName,
+      productAnalyticsTracesUrl:
+        env.productAnalyticsTracesUrl ??
+        (env.jiraTokenProxyUrl
+          ? `${env.jiraTokenProxyUrl.replace(/\/+$/, "")}/api/otel/traces`
+          : undefined),
       mode,
       port,
       cwd,

@@ -36,6 +36,7 @@ import { ProjectSetupScriptRunner } from "../../project/Services/ProjectSetupScr
 import { extractBranchNameFromRemoteRef } from "../remoteRefs.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { JiraContextCollector } from "../../jira/Services/JiraContextCollector.ts";
+import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
 import type { JiraTicketContext } from "@marcode/shared/jiraContext";
 import type { ThreadId } from "@marcode/contracts";
 import type { GitManagerServiceError } from "@marcode/contracts";
@@ -410,6 +411,13 @@ function appendUnique(values: string[], next: string | null | undefined): void {
   values.push(trimmed);
 }
 
+function repositoryLocalName(
+  repositoryNameWithOwner: string | null | undefined,
+): string | undefined {
+  const localName = repositoryNameWithOwner?.split("/").pop()?.trim();
+  return localName && localName.length > 0 ? localName : undefined;
+}
+
 function toStatusPr(pr: PullRequestInfo): {
   number: number;
   title: string;
@@ -489,6 +497,13 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
   const serverSettingsService = yield* ServerSettingsService;
   const jiraContextCollector = yield* JiraContextCollector;
+  const analytics = Option.getOrElse(yield* Effect.serviceOption(AnalyticsService), () => ({
+    record: () => Effect.void,
+    flush: Effect.void,
+  }));
+
+  const recordGitAnalytics = (event: string, properties: Record<string, unknown>) =>
+    analytics.record(event, properties);
 
   const resolveJiraTickets = (
     threadId: ThreadId | undefined,
@@ -1269,6 +1284,8 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext);
     const detectedHostProvider = yield* detectHostProvider(cwd);
     const prOrMr = detectedHostProvider === "gitlab" ? "MR" : "PR";
+    const changeRequestKind = detectedHostProvider === "gitlab" ? "mr" : "pr";
+    const repositoryName = repositoryLocalName(headContext.originRepositoryNameWithOwner);
     yield* emit({
       kind: "phase_started",
       phase: "pr",
@@ -1293,6 +1310,12 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       label: `Creating ${prOrMr}...`,
     });
     const originRepo = headContext.originRepositoryNameWithOwner;
+    yield* recordGitAnalytics("marcode.git.pr_mr.create_requested", {
+      "git.host.provider": detectedHostProvider ?? "unknown",
+      "git.change_request.kind": changeRequestKind,
+      "git.branch": headContext.headBranch,
+      ...(repositoryName ? { "repository.name": repositoryName } : {}),
+    });
     yield* gitHostCli
       .createPullRequest({
         cwd,
@@ -1308,9 +1331,27 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           schedule: Schedule.exponential(PR_CREATE_RETRY_BASE_DELAY, 2),
           while: isBranchNotReadyError,
         }),
+        Effect.tapError(() =>
+          recordGitAnalytics("marcode.git.pr_mr.create_completed", {
+            "git.host.provider": detectedHostProvider ?? "unknown",
+            "git.change_request.kind": changeRequestKind,
+            "git.branch": headContext.headBranch,
+            outcome: "error",
+            has_url: false,
+            ...(repositoryName ? { "repository.name": repositoryName } : {}),
+          }),
+        ),
       );
 
     const created = yield* findOpenPr(cwd, headContext);
+    yield* recordGitAnalytics("marcode.git.pr_mr.create_completed", {
+      "git.host.provider": detectedHostProvider ?? "unknown",
+      "git.change_request.kind": changeRequestKind,
+      "git.branch": headContext.headBranch,
+      outcome: "created",
+      has_url: created?.url ? true : false,
+      ...(repositoryName ? { "repository.name": repositoryName } : {}),
+    });
     if (!created) {
       return {
         status: "created" as const,

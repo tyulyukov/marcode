@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ensureNativeApi, readNativeApi } from "../../nativeApi";
 import { jiraConnectionStatusQueryOptions, jiraQueryKeys } from "../../lib/jiraReactQuery";
 import { getServerHttpOrigin } from "../../env";
+import { recordClientProductSpan } from "../../observability/clientTracing";
 import { Button } from "../ui/button";
 
 export function JiraSettingsSection() {
@@ -22,6 +23,7 @@ export function JiraSettingsSection() {
   }, [queryClient]);
 
   const handleConnect = () => {
+    recordClientProductSpan("marcode.ui.jira.connect.clicked");
     const origin = getServerHttpOrigin();
     window.open(`${origin}/api/jira/auth`, "_blank");
   };

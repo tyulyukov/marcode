@@ -1,4 +1,5 @@
 import type {
+  ModelSelection,
   OrchestrationEvent,
   OrchestrationReadModel,
   ProjectId,
@@ -43,6 +44,8 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "../Services/OrchestrationEngine.ts";
+import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
+import { hashTelemetryIdentifier } from "../../telemetry/Identify.ts";
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
@@ -70,17 +73,74 @@ function commandToAggregateRef(command: OrchestrationCommand): {
   }
 }
 
+function modelFamily(modelSelection: ModelSelection | null | undefined): string | undefined {
+  return modelSelection?.model;
+}
+
 const makeOrchestrationEngine = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const eventStore = yield* OrchestrationEventStore;
   const commandReceiptRepository = yield* OrchestrationCommandReceiptRepository;
   const projectionPipeline = yield* OrchestrationProjectionPipeline;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const analytics = Option.getOrElse(yield* Effect.serviceOption(AnalyticsService), () => ({
+    record: () => Effect.void,
+    flush: Effect.void,
+  }));
 
   let readModel = createEmptyReadModel(new Date().toISOString());
 
   const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
+
+  const recordAnalytics = (event: string, properties: Record<string, unknown>) =>
+    analytics.record(event, properties);
+
+  const recordProductEvent = (event: OrchestrationEvent) =>
+    Effect.gen(function* () {
+      switch (event.type) {
+        case "project.created": {
+          const projectName = event.payload.title.trim();
+          yield* recordAnalytics("marcode.project.opened", {
+            "project.name": projectName,
+            "project.cwd_hash": hashTelemetryIdentifier(event.payload.workspaceRoot),
+          });
+          return;
+        }
+
+        case "thread.created": {
+          const project = readModel.projects.find((entry) => entry.id === event.payload.projectId);
+          yield* recordAnalytics("marcode.thread.created", {
+            "thread.id_hash": hashTelemetryIdentifier(event.payload.threadId),
+            ...(project ? { "project.name": project.title } : {}),
+            "provider.default": event.payload.modelSelection.provider,
+          });
+          return;
+        }
+
+        case "thread.message-sent": {
+          if (event.payload.role !== "user") return;
+          const thread = readModel.threads.find((entry) => entry.id === event.payload.threadId);
+          const project = thread
+            ? readModel.projects.find((entry) => entry.id === thread.projectId)
+            : undefined;
+          const modelSelection = thread?.modelSelection;
+          yield* recordAnalytics("marcode.message.user.sent", {
+            "thread.id_hash": hashTelemetryIdentifier(event.payload.threadId),
+            ...(project ? { "project.name": project.title } : {}),
+            ...(modelSelection
+              ? {
+                  provider: modelSelection.provider,
+                  "model.family": modelFamily(modelSelection),
+                }
+              : {}),
+            "attachment.count": event.payload.attachments?.length ?? 0,
+            "jira.context.count": 0,
+          });
+          return;
+        }
+      }
+    });
 
   const processEnvelope = (envelope: CommandEnvelope): Effect.Effect<void> => {
     const dispatchStartSequence = readModel.snapshotSequence;
@@ -187,6 +247,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         readModel = committedCommand.nextReadModel;
         for (const [index, event] of committedCommand.committedEvents.entries()) {
           yield* PubSub.publish(eventPubSub, event);
+          yield* recordProductEvent(event).pipe(Effect.catch(() => Effect.void));
           if (index === 0) {
             yield* Metric.update(
               Metric.withAttributes(

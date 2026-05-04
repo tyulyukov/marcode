@@ -1,4 +1,4 @@
-import { Exit, Layer, ManagedRuntime, Scope, Tracer } from "effect";
+import { Context, Exit, Layer, ManagedRuntime, Option, Scope, Tracer } from "effect";
 import { FetchHttpClient, HttpClient } from "effect/unstable/http";
 import { OtlpSerialization, OtlpTracer } from "effect/unstable/observability";
 
@@ -48,6 +48,30 @@ export function configureClientTracing(config: ClientTracingConfig = {}): Promis
   }
   pendingConfiguration = pendingConfiguration.finally(() => applyClientTracingConfig(config));
   return pendingConfiguration;
+}
+
+export function recordClientProductSpan(
+  name: string,
+  attributes: Readonly<Record<string, unknown>> = {},
+): void {
+  const tracer = activeDelegate;
+  if (!tracer) return;
+
+  const startTime = BigInt(Date.now()) * 1_000_000n;
+  const span = tracer.span({
+    name,
+    parent: Option.none(),
+    annotations: Context.empty(),
+    links: [],
+    startTime,
+    kind: "internal",
+    root: true,
+    sampled: true,
+  });
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value !== undefined) span.attribute(key, value);
+  }
+  span.end(startTime + 1_000_000n, Exit.void);
 }
 
 async function applyClientTracingConfig(config: ClientTracingConfig): Promise<void> {

@@ -24,10 +24,19 @@ import { ProjectFaviconResolver } from "./project/Services/ProjectFaviconResolve
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import { respondToAuthError } from "./auth/http.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
+import { JiraTokenService } from "./jira/Services/JiraTokenService.ts";
+import { getTelemetryIdentifier } from "./telemetry/Identify.ts";
+import {
+  JIRA_ACCESS_TOKEN_HEADER,
+  productAnalyticsUrlFromConfig,
+  productAttributesToOtlp,
+  shouldAttachJiraProof,
+} from "./telemetry/OtlpProduct.ts";
 
 const PROJECT_FAVICON_CACHE_CONTROL = "public, max-age=3600";
 const FALLBACK_PROJECT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#6b728080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-fallback="project-favicon"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/></svg>`;
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+const MAX_BROWSER_OTLP_TRACE_BYTES = 256 * 1024;
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export const browserApiCorsLayer = HttpRouter.cors({
@@ -74,12 +83,110 @@ class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecor
   readonly bodyJson: OtlpTracer.TraceData;
 }> {}
 
+class ProductAnalyticsTraceExportError extends Data.TaggedError(
+  "ProductAnalyticsTraceExportError",
+)<{
+  readonly cause: unknown;
+}> {}
+
+function readContentLength(request: HttpServerRequest.HttpServerRequest): number | undefined {
+  const headers = (request as unknown as { readonly headers?: Record<string, string> }).headers;
+  const raw = headers?.["content-length"];
+  if (!raw) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function appendResourceAttributes(
+  bodyJson: OtlpTracer.TraceData,
+  attributes: Readonly<Record<string, unknown>>,
+): OtlpTracer.TraceData {
+  const otlpAttributes = productAttributesToOtlp(attributes);
+  if (otlpAttributes.length === 0) return bodyJson;
+
+  return {
+    ...bodyJson,
+    resourceSpans: bodyJson.resourceSpans.map((resourceSpan) => ({
+      ...resourceSpan,
+      resource: {
+        ...resourceSpan.resource,
+        attributes: [...(resourceSpan.resource?.attributes ?? []), ...otlpAttributes],
+      },
+    })),
+  };
+}
+
+const getJiraProofHeader = (targetUrl: string) =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig;
+    if (!shouldAttachJiraProof({ targetUrl, jiraTokenProxyUrl: config.jiraTokenProxyUrl })) {
+      return {};
+    }
+    const tokenServiceOption = yield* Effect.serviceOption(JiraTokenService);
+    const tokenService = Option.getOrUndefined(tokenServiceOption);
+    const accessToken = tokenService
+      ? yield* tokenService.getValidAccessToken.pipe(Effect.catch(() => Effect.succeed(null)))
+      : null;
+    return accessToken ? { [JIRA_ACCESS_TOKEN_HEADER]: accessToken } : {};
+  });
+
+const forwardProductAnalyticsTraces = (bodyJson: OtlpTracer.TraceData) =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig;
+    const productAnalyticsUrl = productAnalyticsUrlFromConfig(config);
+    if (!productAnalyticsUrl) return;
+
+    const identifier = yield* getTelemetryIdentifier;
+    const proofHeader = yield* getJiraProofHeader(productAnalyticsUrl);
+    const enrichedBodyJson = appendResourceAttributes(bodyJson, {
+      ...(identifier
+        ? {
+            "analytics.user.id": identifier.id,
+            "analytics.user.source": identifier.source,
+          }
+        : {}),
+      "analytics.user.is_genesis": false,
+      "app.mode": config.mode,
+      platform: process.platform,
+      arch: process.arch,
+    });
+
+    yield* Effect.tryPromise({
+      try: async () => {
+        const response = await fetch(productAnalyticsUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...proofHeader,
+          },
+          body: JSON.stringify(enrichedBodyJson),
+        });
+        if (!response.ok) {
+          throw new Error(`Product analytics export failed with status ${response.status}`);
+        }
+      },
+      catch: (cause) => new ProductAnalyticsTraceExportError({ cause }),
+    }).pipe(
+      Effect.tapError((cause) =>
+        Effect.logWarning("Failed to export product analytics traces", {
+          cause,
+          productAnalyticsUrl,
+        }),
+      ),
+      Effect.catch(() => Effect.void),
+    );
+  });
+
 export const otlpTracesProxyRouteLayer = HttpRouter.add(
   "POST",
   OTLP_TRACES_PROXY_PATH,
   Effect.gen(function* () {
     yield* requireAuthenticatedRequest;
     const request = yield* HttpServerRequest.HttpServerRequest;
+    const contentLength = readContentLength(request);
+    if (contentLength !== undefined && contentLength > MAX_BROWSER_OTLP_TRACE_BYTES) {
+      return HttpServerResponse.text("Trace payload too large.", { status: 413 });
+    }
     const config = yield* ServerConfig;
     const otlpTracesUrl = config.otlpTracesUrl;
     const browserTraceCollector = yield* BrowserTraceCollector;
@@ -98,6 +205,8 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
         }),
       ),
     );
+
+    yield* forwardProductAnalyticsTraces(bodyJson);
 
     if (otlpTracesUrl === undefined) {
       return HttpServerResponse.empty({ status: 204 });
