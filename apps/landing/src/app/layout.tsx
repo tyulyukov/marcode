@@ -20,7 +20,7 @@ const inter = localFont({
 export const metadata: Metadata = {
   title: "MarCode - Minimal GUI for Coding Agents",
   description:
-    "A minimal web GUI for using coding agents like Claude Code. Download for macOS, Windows, and Linux.",
+    "A minimal web GUI for coding agents — Claude Code, Codex, Cursor, OpenCode. Download for macOS, Windows, and Linux.",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "48x48" },

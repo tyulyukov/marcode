@@ -21,7 +21,7 @@ const FEATURES: Feature[] = [
   {
     title: "One GUI for Your Agents",
     description:
-      "Claude Code, Codex — one interface for every coding agent. Pick your CLI, pick your model, and go.",
+      "Claude Code, Codex, Cursor, OpenCode — one interface for every coding agent. Pick your CLI, pick your model, and go.",
     icon: <BrainCircuitIcon className="size-7" />,
     accent: "fresh-syntax",
     accentGlow: "rgba(119,230,233,0.12)",
