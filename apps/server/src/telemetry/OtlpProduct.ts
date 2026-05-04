@@ -67,6 +67,18 @@ export function makeProductSpanPayload(input: {
   };
 }
 
+export function makeProductSpanBatchPayload(
+  events: ReadonlyArray<{
+    readonly event: string;
+    readonly attributes: ProductAnalyticsAttributes;
+    readonly capturedAt: string;
+  }>,
+) {
+  return {
+    resourceSpans: events.flatMap((event) => makeProductSpanPayload(event).resourceSpans),
+  };
+}
+
 export function productAnalyticsUrlFromConfig(input: {
   readonly productAnalyticsTracesUrl: string | undefined;
   readonly jiraTokenProxyUrl: string | undefined;
