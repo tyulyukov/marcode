@@ -101,17 +101,19 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       switch (event.type) {
         case "project.created": {
           const projectName = event.payload.title.trim();
+          const workspaceRootHash = yield* hashTelemetryIdentifier(event.payload.workspaceRoot);
           yield* recordAnalytics("marcode.project.opened", {
             "project.name": projectName,
-            "project.cwd_hash": hashTelemetryIdentifier(event.payload.workspaceRoot),
+            "project.cwd_hash": workspaceRootHash,
           });
           return;
         }
 
         case "thread.created": {
           const project = readModel.projects.find((entry) => entry.id === event.payload.projectId);
+          const threadIdHash = yield* hashTelemetryIdentifier(event.payload.threadId);
           yield* recordAnalytics("marcode.thread.created", {
-            "thread.id_hash": hashTelemetryIdentifier(event.payload.threadId),
+            "thread.id_hash": threadIdHash,
             ...(project ? { "project.name": project.title } : {}),
             "provider.default": event.payload.modelSelection.provider,
           });
@@ -125,8 +127,9 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             ? readModel.projects.find((entry) => entry.id === thread.projectId)
             : undefined;
           const modelSelection = thread?.modelSelection;
+          const threadIdHash = yield* hashTelemetryIdentifier(event.payload.threadId);
           yield* recordAnalytics("marcode.message.user.sent", {
-            "thread.id_hash": hashTelemetryIdentifier(event.payload.threadId),
+            "thread.id_hash": threadIdHash,
             ...(project ? { "project.name": project.title } : {}),
             ...(modelSelection
               ? {

@@ -20,6 +20,8 @@ import {
   type OrchestrationEventStoreShape,
 } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
+import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
+import { hashTelemetryIdentifier } from "../../telemetry/Identify.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
@@ -38,6 +40,10 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
 async function createOrchestrationSystem() {
+  const analyticsRecords: Array<{
+    readonly event: string;
+    readonly properties?: Readonly<Record<string, unknown>>;
+  }> = [];
   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "marcode-orchestration-engine-test-",
   });
@@ -48,6 +54,18 @@ async function createOrchestrationSystem() {
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolverLive),
     Layer.provide(SqlitePersistenceMemory),
+    Layer.provide(
+      Layer.succeed(AnalyticsService, {
+        record: (event, properties) =>
+          Effect.sync(() => {
+            analyticsRecords.push({
+              event,
+              ...(properties ? { properties } : {}),
+            });
+          }),
+        flush: Effect.void,
+      }),
+    ),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -55,6 +73,7 @@ async function createOrchestrationSystem() {
   const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
   return {
     engine,
+    analyticsRecords,
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     dispose: () => runtime.dispose(),
   };
@@ -429,6 +448,84 @@ describe("OrchestrationEngine", () => {
     );
 
     expect(eventTypes).toEqual(["thread.created", "thread.meta-updated"]);
+    await system.dispose();
+  });
+
+  it("records resolved analytics hashes for project and thread events", async () => {
+    const system = await createOrchestrationSystem();
+    const { engine, analyticsRecords } = system;
+    const createdAt = now();
+
+    await system.run(
+      engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-analytics-create"),
+        projectId: asProjectId("project-analytics"),
+        title: "Analytics Project",
+        workspaceRoot: "/tmp/project-analytics",
+        defaultModelSelection: {
+          provider: "codex",
+          model: "gpt-5-codex",
+        },
+        createdAt,
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-thread-analytics-create"),
+        threadId: ThreadId.make("thread-analytics"),
+        projectId: asProjectId("project-analytics"),
+        title: "analytics",
+        modelSelection: {
+          provider: "codex",
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      }),
+    );
+    await system.run(
+      engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-analytics-start"),
+        threadId: ThreadId.make("thread-analytics"),
+        message: {
+          messageId: asMessageId("msg-analytics-1"),
+          role: "user",
+          text: "hello",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt,
+      }),
+    );
+
+    const expectedWorkspaceHash = await system.run(
+      hashTelemetryIdentifier("/tmp/project-analytics"),
+    );
+    const expectedThreadHash = await system.run(hashTelemetryIdentifier("thread-analytics"));
+
+    expect(
+      analyticsRecords.find((record) => record.event === "marcode.project.opened")?.properties?.[
+        "project.cwd_hash"
+      ],
+    ).toBe(expectedWorkspaceHash);
+    expect(
+      analyticsRecords.find((record) => record.event === "marcode.thread.created")?.properties?.[
+        "thread.id_hash"
+      ],
+    ).toBe(expectedThreadHash);
+    expect(
+      analyticsRecords.find((record) => record.event === "marcode.message.user.sent")?.properties?.[
+        "thread.id_hash"
+      ],
+    ).toBe(expectedThreadHash);
+
     await system.dispose();
   });
 
