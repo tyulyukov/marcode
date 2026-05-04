@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { ApprovalBadge } from "./ApprovalBadge";
 import { StatusBadge, type ToolStatusKind } from "./StatusBadge";
@@ -28,6 +28,10 @@ interface ToolCardProps {
 }
 
 const OVERFLOW_THRESHOLD_PX = 24;
+
+export function retainDetectedOverflow(current: boolean, measured: boolean): boolean {
+  return current || measured;
+}
 
 export function ToolCard(props: ToolCardProps) {
   const {
@@ -59,18 +63,30 @@ export function ToolCard(props: ToolCardProps) {
     bodyAvailable,
   });
 
+  const measurePreviewOverflow = useCallback(() => {
+    const node = previewRef.current;
+    if (!node) return;
+    const overflows = node.scrollHeight > node.clientHeight + OVERFLOW_THRESHOLD_PX;
+    setBodyOverflows((current) => retainDetectedOverflow(current, overflows));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (state !== "preview" || !bodyAvailable) {
+      setBodyOverflows(false);
+      return;
+    }
+    measurePreviewOverflow();
+  }, [state, bodyAvailable, body, bodyMaxPreviewPx, measurePreviewOverflow]);
+
   useEffect(() => {
     if (state !== "preview" || !bodyAvailable) {
       return;
     }
-    const node = previewRef.current;
-    if (!node) return;
     let rafId: number | null = null;
 
     const measure = () => {
       rafId = null;
-      const overflows = node.scrollHeight > node.clientHeight + OVERFLOW_THRESHOLD_PX;
-      setBodyOverflows(overflows);
+      measurePreviewOverflow();
     };
 
     rafId = window.requestAnimationFrame(measure);
@@ -82,14 +98,16 @@ export function ToolCard(props: ToolCardProps) {
             if (rafId !== null) return;
             rafId = window.requestAnimationFrame(measure);
           });
-    observer?.observe(node);
+    if (previewRef.current) {
+      observer?.observe(previewRef.current);
+    }
     return () => {
       observer?.disconnect();
       if (rafId !== null) {
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [state, bodyAvailable, body]);
+  }, [state, bodyAvailable, bodyMaxPreviewPx, measurePreviewOverflow]);
 
   const HeaderIcon = TOOL_ICONS[tool];
 

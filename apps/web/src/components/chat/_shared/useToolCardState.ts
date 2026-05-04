@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ToolCardState = "collapsed" | "preview" | "expanded";
 
@@ -14,11 +14,42 @@ export interface UseToolCardStateResult {
   readonly setState: (next: ToolCardState) => void;
 }
 
+export function resolveStateAfterBodyAvailabilityChange(input: {
+  readonly currentState: ToolCardState;
+  readonly previousBodyAvailable: boolean;
+  readonly bodyAvailable: boolean;
+  readonly defaultState: ToolCardState;
+}): ToolCardState {
+  if (
+    !input.previousBodyAvailable &&
+    input.bodyAvailable &&
+    input.currentState === "collapsed" &&
+    input.defaultState !== "collapsed"
+  ) {
+    return input.defaultState;
+  }
+  return input.currentState;
+}
+
 export function useToolCardState(options?: UseToolCardStateOptions): UseToolCardStateResult {
   const defaultState = options?.defaultState ?? "collapsed";
   const bodyAvailable = options?.bodyAvailable ?? true;
 
   const [state, setState] = useState<ToolCardState>(defaultState);
+  const previousBodyAvailableRef = useRef(bodyAvailable);
+
+  useEffect(() => {
+    const previousBodyAvailable = previousBodyAvailableRef.current;
+    previousBodyAvailableRef.current = bodyAvailable;
+    setState((currentState) =>
+      resolveStateAfterBodyAvailabilityChange({
+        currentState,
+        previousBodyAvailable,
+        bodyAvailable,
+        defaultState,
+      }),
+    );
+  }, [bodyAvailable, defaultState]);
 
   const toggleOpen = useCallback(() => {
     setState((current) => {

@@ -1195,6 +1195,12 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
 
     const sendTurn: CursorAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
+        yield* Effect.annotateCurrentSpan({
+          "ai.provider": "cursor",
+          ...(input.modelSelection?.model ? { "ai.model": input.modelSelection.model } : {}),
+          ...(input.interactionMode ? { "ai.interaction_mode": input.interactionMode } : {}),
+          "thread.id": input.threadId,
+        });
         const ctx = yield* requireSession(input.threadId);
         const turnId = TurnId.make(crypto.randomUUID());
         const turnModelSelection =
