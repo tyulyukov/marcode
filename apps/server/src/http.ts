@@ -116,6 +116,21 @@ function appendResourceAttributes(
   };
 }
 
+export function filterProductAnalyticsTracePayload(
+  bodyJson: OtlpTracer.TraceData,
+): OtlpTracer.TraceData {
+  return {
+    ...bodyJson,
+    resourceSpans: bodyJson.resourceSpans.flatMap((resourceSpan) => {
+      const scopeSpans = resourceSpan.scopeSpans.flatMap((scopeSpan) => {
+        const spans = scopeSpan.spans.filter((span) => span.name.startsWith("marcode."));
+        return spans.length > 0 ? [{ ...scopeSpan, spans }] : [];
+      });
+      return scopeSpans.length > 0 ? [{ ...resourceSpan, scopeSpans }] : [];
+    }),
+  };
+}
+
 const getJiraProofHeader = (targetUrl: string) =>
   Effect.gen(function* () {
     const config = yield* ServerConfig;
@@ -136,9 +151,12 @@ const forwardProductAnalyticsTraces = (bodyJson: OtlpTracer.TraceData) =>
     const productAnalyticsUrl = productAnalyticsUrlFromConfig(config);
     if (!productAnalyticsUrl) return;
 
+    const productBodyJson = filterProductAnalyticsTracePayload(bodyJson);
+    if (productBodyJson.resourceSpans.length === 0) return;
+
     const identifier = yield* getTelemetryIdentifier;
     const proofHeader = yield* getJiraProofHeader(productAnalyticsUrl);
-    const enrichedBodyJson = appendResourceAttributes(bodyJson, {
+    const enrichedBodyJson = appendResourceAttributes(productBodyJson, {
       ...(identifier
         ? {
             "analytics.user.id": identifier.id,

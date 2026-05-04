@@ -1737,14 +1737,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
   );
 
   it.effect(
-    "forwards browser OTLP traces to product analytics with Jira proof only for trusted origin",
+    "forwards browser product analytics spans with Jira proof only for trusted origin",
     () =>
       Effect.gen(function* () {
         const productRequests: Array<{
           readonly body: string;
           readonly jiraToken: string | null;
         }> = [];
-        const payload = yield* makeBrowserOtlpPayload("product.client.test");
+        const payload = yield* makeBrowserOtlpPayload("marcode.ui.composer.submit");
         const collector = yield* Effect.acquireRelease(
           Effect.promise(async () => {
             const NodeHttp = await import("node:http");
@@ -1813,9 +1813,66 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(productRequests.length, 1);
         assert.equal(productRequests[0]?.jiraToken, "jira-proof-token");
         const forwarded = JSON.parse(productRequests[0]!.body) as typeof payload;
+        const forwardedSpan = forwarded.resourceSpans[0]?.scopeSpans[0]?.spans[0]?.name ?? "";
+        assert.equal(forwardedSpan, "marcode.ui.composer.submit");
         const attributes = forwarded.resourceSpans[0]?.resource?.attributes ?? [];
         assertTrue(attributes.some((attribute) => attribute.key === "analytics.user.is_genesis"));
       }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("does not forward generic browser observability traces to product analytics", () =>
+    Effect.gen(function* () {
+      let productRequestCount = 0;
+      const payload = yield* makeBrowserOtlpPayload("RpcClient.git.listBranches");
+      const collector = yield* Effect.acquireRelease(
+        Effect.promise(async () => {
+          const NodeHttp = await import("node:http");
+          return await new Promise<{
+            readonly close: () => Promise<void>;
+            readonly url: string;
+          }>((resolve, reject) => {
+            const server = NodeHttp.createServer((_request, response) => {
+              productRequestCount++;
+              response.statusCode = 204;
+              response.end();
+            });
+            server.on("error", reject);
+            server.listen(0, "127.0.0.1", () => {
+              const address = server.address();
+              if (!address || typeof address === "string") {
+                reject(new Error("Expected TCP collector address"));
+                return;
+              }
+              resolve({
+                url: `http://127.0.0.1:${address.port}/api/otel/traces`,
+                close: () =>
+                  new Promise<void>((resolveClose, rejectClose) => {
+                    server.close((error) => (error ? rejectClose(error) : resolveClose()));
+                  }),
+              });
+            });
+          });
+        }),
+        ({ close }) => Effect.promise(close),
+      );
+
+      yield* buildAppUnderTest({
+        config: {
+          productAnalyticsTracesUrl: collector.url,
+        },
+      });
+
+      const response = yield* HttpClient.post("/api/observability/v1/traces", {
+        headers: {
+          cookie: yield* getAuthenticatedSessionCookieHeader(),
+          "content-type": "application/json",
+        },
+        body: HttpBody.text(JSON.stringify(payload), "application/json"),
+      });
+
+      assert.equal(response.status, 204);
+      assert.equal(productRequestCount, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect(
