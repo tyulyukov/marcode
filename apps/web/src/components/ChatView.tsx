@@ -1365,7 +1365,10 @@ export default function ChatView({
   const selectedProvider: ProviderKind = lockedProvider ?? unlockedSelectedProvider;
   const activeProviderUsage = useMemo(
     () =>
-      deriveLatestProviderUsageSnapshot(providerUsageActivities, { provider: selectedProvider }),
+      deriveLatestProviderUsageSnapshot(providerUsageActivities, {
+        provider: selectedProvider,
+        now: Date.now(),
+      }),
     [providerUsageActivities, selectedProvider],
   );
   const activeTimelineProvider: ProviderKind =

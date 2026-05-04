@@ -659,6 +659,7 @@ export const ChatComposer = memo(
       () =>
         deriveLatestProviderUsageSnapshot(activeThreadActivities ?? [], {
           provider: selectedProvider,
+          now: Date.now(),
         }),
       [activeThreadActivities, selectedProvider],
     );

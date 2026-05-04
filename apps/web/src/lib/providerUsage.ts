@@ -34,6 +34,7 @@ export interface ProviderUsageSnapshot {
 
 type ProviderUsageDerivationOptions = {
   readonly provider?: ProviderKind | null;
+  readonly now?: Date | number;
 };
 
 const PROVIDER_LABEL_BY_KIND: Record<ProviderKind, string | null> = {
@@ -42,6 +43,7 @@ const PROVIDER_LABEL_BY_KIND: Record<ProviderKind, string | null> = {
   cursor: null,
   opencode: null,
 };
+const PROVIDER_USAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Claude rate_limit_event normalization
@@ -332,6 +334,17 @@ export function deriveLatestProviderUsageSnapshot(
   }
 
   if (providerLabel === null || windowsByLabel.size === 0 || latestUpdatedAt === null) {
+    return null;
+  }
+
+  const latestUpdatedAtMs = Date.parse(latestUpdatedAt);
+  const nowMs = options.now instanceof Date ? options.now.getTime() : options.now;
+  if (
+    nowMs !== undefined &&
+    Number.isFinite(latestUpdatedAtMs) &&
+    Number.isFinite(nowMs) &&
+    nowMs - latestUpdatedAtMs >= PROVIDER_USAGE_MAX_AGE_MS
+  ) {
     return null;
   }
 

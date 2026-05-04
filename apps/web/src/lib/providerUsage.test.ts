@@ -275,6 +275,60 @@ describe("providerUsage", () => {
     expect(snapshot).toBeNull();
   });
 
+  it("returns null when the latest provider usage update is one day old", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot(
+      [
+        makeActivity(
+          "activity-1",
+          {
+            rateLimits: {
+              limitId: "codex",
+              primary: {
+                usedPercent: 12,
+                windowDurationMins: 300,
+                resetsAt: 1776587601,
+              },
+            },
+          },
+          "2026-03-23T00:00:00.000Z",
+        ),
+      ],
+      {
+        provider: "codex",
+        now: new Date("2026-03-24T00:00:00.000Z"),
+      },
+    );
+
+    expect(snapshot).toBeNull();
+  });
+
+  it("keeps provider usage visible before it is one day old", () => {
+    const snapshot = deriveLatestProviderUsageSnapshot(
+      [
+        makeActivity(
+          "activity-1",
+          {
+            rateLimits: {
+              limitId: "codex",
+              primary: {
+                usedPercent: 12,
+                windowDurationMins: 300,
+                resetsAt: 1776587601,
+              },
+            },
+          },
+          "2026-03-23T00:00:00.000Z",
+        ),
+      ],
+      {
+        provider: "codex",
+        now: new Date("2026-03-23T23:59:59.999Z"),
+      },
+    );
+
+    expect(snapshot?.providerLabel).toBe("Codex");
+  });
+
   it("returns null for cursor provider even when Claude/Codex events are present", () => {
     const snapshot = deriveLatestProviderUsageSnapshot(
       [
