@@ -140,9 +140,9 @@ export const recordStartupHeartbeat = Effect.gen(function* () {
     ),
   );
 
-  yield* analytics.record("server.boot.heartbeat", {
-    threadCount,
-    projectCount,
+  yield* analytics.record("marcode.app.boot", {
+    "project.count": projectCount,
+    "thread.count": threadCount,
   });
 });
 

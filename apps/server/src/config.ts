@@ -54,6 +54,7 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly otlpMetricsUrl: string | undefined;
   readonly otlpExportIntervalMs: number;
   readonly otlpServiceName: string;
+  readonly productAnalyticsTracesUrl: string | undefined;
   readonly mode: RuntimeMode;
   readonly port: number;
   readonly host: string | undefined;
@@ -156,6 +157,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
           otlpMetricsUrl: undefined,
           otlpExportIntervalMs: 10_000,
           otlpServiceName: "marcode-server",
+          productAnalyticsTracesUrl: undefined,
           cwd,
           baseDir,
           ...derivedPaths,

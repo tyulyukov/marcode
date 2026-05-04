@@ -43,6 +43,8 @@ import {
 } from "../Services/ProviderSessionDirectory.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { AnalyticsService } from "../../telemetry/Services/AnalyticsService.ts";
+import { hashTelemetryIdentifier } from "../../telemetry/Identify.ts";
 
 export interface ProviderServiceLiveOptions {
   readonly canonicalEventLogPath?: string;
@@ -144,6 +146,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   options?: ProviderServiceLiveOptions,
 ) {
   const serverSettings = yield* ServerSettingsService;
+  const analyticsOption = yield* Effect.serviceOption(AnalyticsService);
+  const analytics = Option.getOrElse(analyticsOption, () => ({
+    record: () => Effect.void,
+    flush: Effect.void,
+  }));
   const canonicalEventLogger =
     options?.canonicalEventLogger ??
     (options?.canonicalEventLogPath !== undefined
@@ -187,11 +194,77 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const providers = yield* registry.listProviders();
   const adapters = yield* Effect.forEach(providers, (provider) => registry.getByProvider(provider));
+  const hashId = (id: unknown) =>
+    hashTelemetryIdentifier(String(id)).pipe(Effect.orElseSucceed(() => String(id)));
+
+  const recordRuntimeAnalytics = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const threadIdHash = yield* hashId(event.threadId);
+      if (
+        (event.type === "item.started" || event.type === "item.updated") &&
+        "itemType" in event.payload &&
+        typeof event.payload.itemType === "string" &&
+        event.payload.itemType.includes("tool_call")
+      ) {
+        yield* analytics.record("marcode.tool.call.started", {
+          provider: event.provider,
+          "thread.id_hash": threadIdHash,
+          "tool.kind": event.payload.itemType,
+          "tool.name_normalized":
+            "title" in event.payload && typeof event.payload.title === "string"
+              ? event.payload.title.toLowerCase()
+              : event.payload.itemType,
+        });
+      }
+      if (
+        event.type === "item.completed" &&
+        "itemType" in event.payload &&
+        typeof event.payload.itemType === "string" &&
+        event.payload.itemType.includes("tool_call")
+      ) {
+        yield* analytics.record("marcode.tool.call.completed", {
+          provider: event.provider,
+          "thread.id_hash": threadIdHash,
+          "tool.kind": event.payload.itemType,
+          "tool.name_normalized":
+            "title" in event.payload && typeof event.payload.title === "string"
+              ? event.payload.title.toLowerCase()
+              : event.payload.itemType,
+          outcome: "success",
+        });
+      }
+      if (event.type === "request.opened") {
+        yield* analytics.record("marcode.approval.requested", {
+          provider: event.provider,
+          "thread.id_hash": threadIdHash,
+          "request.type": event.payload.requestType,
+        });
+      }
+      if (event.type === "request.resolved") {
+        yield* analytics.record("marcode.approval.resolved", {
+          provider: event.provider,
+          "thread.id_hash": threadIdHash,
+          "request.type": event.payload.requestType,
+          decision: event.payload.decision,
+        });
+      }
+      if (event.type === "turn.completed" || event.type === "turn.aborted") {
+        yield* analytics.record("marcode.provider.turn.completed", {
+          provider: event.provider,
+          "thread.id_hash": threadIdHash,
+          outcome: event.type === "turn.completed" ? "success" : "failure",
+        });
+      }
+    }).pipe(Effect.ignoreCause({ log: true }));
+
   const processRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     increment(providerRuntimeEventsTotal, {
       provider: event.provider,
       eventType: event.type,
-    }).pipe(Effect.andThen(publishRuntimeEvent(event)));
+    }).pipe(
+      Effect.andThen(recordRuntimeAnalytics(event)),
+      Effect.andThen(publishRuntimeEvent(event)),
+    );
 
   yield* Effect.forEach(adapters, (adapter) =>
     Stream.runForEach(adapter.streamEvents, processRuntimeEvent).pipe(Effect.forkScoped),
@@ -405,6 +478,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* upsertSessionBinding(session, threadId, {
           modelSelection: input.modelSelection,
         });
+        yield* analytics.record("marcode.provider.session.started", {
+          provider: adapter.provider,
+          "thread.id_hash": yield* hashId(threadId),
+          runtime_mode: input.runtimeMode,
+          ...(input.modelSelection?.model ? { "model.family": input.modelSelection.model } : {}),
+        });
 
         return session;
       }).pipe(
@@ -456,6 +535,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
       });
       const turn = yield* routed.adapter.sendTurn(input);
+      yield* analytics.record("marcode.provider.turn.sent", {
+        provider: routed.adapter.provider,
+        "thread.id_hash": yield* hashId(input.threadId),
+        interaction_mode: input.interactionMode,
+        "attachment.count": input.attachments.length,
+        ...(input.modelSelection?.model ? { "model.family": input.modelSelection.model } : {}),
+      });
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,

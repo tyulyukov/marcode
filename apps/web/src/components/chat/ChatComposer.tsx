@@ -109,6 +109,7 @@ import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
 import { deriveLatestProviderUsageSnapshot } from "../../lib/providerUsage";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
 import { searchProviderSkills } from "../../providerSkillSearch";
+import { recordClientProductSpan } from "../../observability/clientTracing";
 
 const IMAGE_SIZE_LIMIT_LABEL = `${Math.round(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / (1024 * 1024))}MB`;
 
@@ -622,6 +623,30 @@ export const ChatComposer = memo(
     const selectedModelSelection = useMemo<ModelSelection>(
       () => createModelSelection(selectedProvider, selectedModel, selectedModelOptionsForDispatch),
       [selectedModel, selectedModelOptionsForDispatch, selectedProvider],
+    );
+    const recordComposerSubmit = useCallback(() => {
+      recordClientProductSpan("marcode.ui.composer.submit", {
+        provider: selectedProvider,
+        "attachment.count": composerImagesRef.current.length,
+        "terminal_context.count": composerTerminalContextsRef.current.length,
+      });
+    }, [composerImagesRef, composerTerminalContextsRef, selectedProvider]);
+    const handleComposerSubmit = useCallback(
+      (event?: { preventDefault: () => void }) => {
+        recordComposerSubmit();
+        onSend(event);
+      },
+      [onSend, recordComposerSubmit],
+    );
+    const handleProviderModelSelect = useCallback(
+      (provider: ProviderKind, model: string) => {
+        recordClientProductSpan("marcode.ui.provider.changed", {
+          provider,
+          "model.family": normalizeModelSlug(model),
+        });
+        onProviderModelSelect(provider, model);
+      },
+      [onProviderModelSelect],
     );
     const selectedModelForPicker = selectedModel;
     const modelOptionsByProvider = useMemo<
@@ -1487,7 +1512,7 @@ export const ChatComposer = memo(
         }
       }
       if (key === "Enter" && !event.shiftKey) {
-        void onSend();
+        handleComposerSubmit();
         return true;
       }
       return false;
@@ -1710,7 +1735,7 @@ export const ChatComposer = memo(
     return (
       <form
         ref={composerFormRef}
-        onSubmit={onSend}
+        onSubmit={handleComposerSubmit}
         className="mx-auto w-full min-w-0 max-w-208"
         data-chat-composer-form="true"
       >
@@ -1925,7 +1950,7 @@ export const ChatComposer = memo(
                     onOpenChange={(open) => {
                       setIsComposerModelPickerOpen(open);
                     }}
-                    onProviderModelChange={onProviderModelSelect}
+                    onProviderModelChange={handleProviderModelSelect}
                   />
 
                   {isComposerFooterCompact ? (

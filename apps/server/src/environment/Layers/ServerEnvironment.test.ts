@@ -25,6 +25,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
     otlpServiceName: "marcode-server",
+    productAnalyticsTracesUrl: undefined,
     cwd: process.cwd(),
     baseDir,
     mode: "web",

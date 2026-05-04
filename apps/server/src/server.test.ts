@@ -107,7 +107,7 @@ import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
 import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore.ts";
 import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
 import { JiraApiClient } from "./jira/Services/JiraApiClient.ts";
-import { JiraTokenService } from "./jira/Services/JiraTokenService.ts";
+import { JiraTokenService, type JiraTokenServiceShape } from "./jira/Services/JiraTokenService.ts";
 import { ProviderService } from "./provider/Services/ProviderService.ts";
 
 const defaultProjectId = ProjectId.make("project-default");
@@ -344,6 +344,7 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    jiraTokenService?: Partial<JiraTokenServiceShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -365,6 +366,7 @@ const buildAppUnderTest = (options?: {
       otlpMetricsUrl: undefined,
       otlpExportIntervalMs: 10_000,
       otlpServiceName: "marcode-server",
+      productAnalyticsTracesUrl: undefined,
       mode: "desktop",
       port: 0,
       host: "127.0.0.1",
@@ -572,6 +574,7 @@ const buildAppUnderTest = (options?: {
           clearTokens: Effect.void,
           getValidAccessToken: Effect.die("unused"),
           streamChanges: Stream.empty,
+          ...options?.layers?.jiraTokenService,
         }),
       ),
       Layer.provide(
@@ -1731,6 +1734,88 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "traceparent",
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect(
+    "forwards browser OTLP traces to product analytics with Jira proof only for trusted origin",
+    () =>
+      Effect.gen(function* () {
+        const productRequests: Array<{
+          readonly body: string;
+          readonly jiraToken: string | null;
+        }> = [];
+        const payload = yield* makeBrowserOtlpPayload("product.client.test");
+        const collector = yield* Effect.acquireRelease(
+          Effect.promise(async () => {
+            const NodeHttp = await import("node:http");
+            return await new Promise<{
+              readonly close: () => Promise<void>;
+              readonly url: string;
+            }>((resolve, reject) => {
+              const server = NodeHttp.createServer((request, response) => {
+                const chunks: Buffer[] = [];
+                request.on("data", (chunk) => {
+                  chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                });
+                request.on("end", () => {
+                  productRequests.push({
+                    body: Buffer.concat(chunks).toString("utf8"),
+                    jiraToken:
+                      typeof request.headers["x-marcode-jira-access-token"] === "string"
+                        ? request.headers["x-marcode-jira-access-token"]
+                        : null,
+                  });
+                  response.statusCode = 204;
+                  response.end();
+                });
+              });
+              server.on("error", reject);
+              server.listen(0, "127.0.0.1", () => {
+                const address = server.address();
+                if (!address || typeof address === "string") {
+                  reject(new Error("Expected TCP collector address"));
+                  return;
+                }
+                resolve({
+                  url: `http://127.0.0.1:${address.port}/api/otel/traces`,
+                  close: () =>
+                    new Promise<void>((resolveClose, rejectClose) => {
+                      server.close((error) => (error ? rejectClose(error) : resolveClose()));
+                    }),
+                });
+              });
+            });
+          }),
+          ({ close }) => Effect.promise(close),
+        );
+
+        yield* buildAppUnderTest({
+          config: {
+            productAnalyticsTracesUrl: collector.url,
+            jiraTokenProxyUrl: new URL("/", collector.url).origin,
+          },
+          layers: {
+            jiraTokenService: {
+              getValidAccessToken: Effect.succeed("jira-proof-token"),
+            },
+          },
+        });
+
+        const response = yield* HttpClient.post("/api/observability/v1/traces", {
+          headers: {
+            cookie: yield* getAuthenticatedSessionCookieHeader(),
+            "content-type": "application/json",
+          },
+          body: HttpBody.text(JSON.stringify(payload), "application/json"),
+        });
+
+        assert.equal(response.status, 204);
+        assert.equal(productRequests.length, 1);
+        assert.equal(productRequests[0]?.jiraToken, "jira-proof-token");
+        const forwarded = JSON.parse(productRequests[0]!.body) as typeof payload;
+        const attributes = forwarded.resourceSpans[0]?.resource?.attributes ?? [];
+        assertTrue(attributes.some((attribute) => attribute.key === "analytics.user.is_genesis"));
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect(
