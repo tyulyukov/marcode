@@ -43,6 +43,10 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { AnalyticsServiceNoopLive } from "../../telemetry/Layers/AnalyticsService.ts";
+import {
+  AnalyticsService,
+  type AnalyticsServiceShape,
+} from "../../telemetry/Services/AnalyticsService.ts";
 
 const defaultServerSettingsLayer = ServerSettingsService.layerTest();
 
@@ -242,6 +246,12 @@ const hasMetricSnapshot = (
       Object.entries(attributes).every(([key, value]) => snapshot.attributes?.[key] === value),
   );
 
+interface AnalyticsRecord {
+  readonly event: string;
+  readonly properties?: Record<string, unknown> | undefined;
+  readonly options?: Parameters<AnalyticsServiceShape["record"]>[2] | undefined;
+}
+
 function makeProviderServiceLayer() {
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter("claudeAgent");
@@ -382,12 +392,89 @@ it.effect("ProviderServiceLive writes canonical events to the emitting thread se
           state: "completed",
         },
       });
-      yield* sleep(20);
+      yield* sleep(100);
     }).pipe(Effect.provide(providerLayer));
 
     assert.equal(canonicalEvents.length, 1);
     assert.equal(canonicalEvents[0]?.threadId, "thread-canonical-thread-segment");
     assert.deepEqual(canonicalThreadIds, ["thread-canonical-thread-segment"]);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("ProviderServiceLive records provider turns as one duration product span", () =>
+  Effect.gen(function* () {
+    const codex = makeFakeCodexAdapter();
+    const analyticsRecords: AnalyticsRecord[] = [];
+    const registry: typeof ProviderAdapterRegistry.Service = {
+      getByProvider: (provider) =>
+        provider === "codex"
+          ? Effect.succeed(codex.adapter)
+          : Effect.fail(new ProviderUnsupportedError({ provider })),
+      listProviders: () => Effect.succeed(["codex"]),
+    };
+    const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
+      Layer.provide(SqlitePersistenceMemory),
+    );
+    const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+    const analyticsLayer = Layer.succeed(AnalyticsService, {
+      record: (event, properties, options) =>
+        Effect.sync(() => {
+          analyticsRecords.push({ event, properties, options });
+        }),
+      flush: Effect.void,
+    });
+    const providerLayer = makeProviderServiceLive().pipe(
+      Layer.provide(Layer.succeed(ProviderAdapterRegistry, registry)),
+      Layer.provide(directoryLayer),
+      Layer.provide(defaultServerSettingsLayer),
+      Layer.provide(analyticsLayer),
+    );
+
+    yield* Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      yield* sleep(10);
+      const threadId = asThreadId("thread-turn-analytics");
+      yield* provider.startSession(threadId, {
+        provider: "codex",
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const turn = yield* provider.sendTurn({
+        threadId,
+        input: "hello",
+        interactionMode: "default",
+      });
+      codex.emit({
+        eventId: asEventId("evt-turn-analytics-completed"),
+        provider: "codex",
+        threadId,
+        turnId: turn.turnId,
+        createdAt: new Date(Date.now() + 250).toISOString(),
+        type: "turn.completed",
+        payload: {
+          state: "completed",
+        },
+      });
+      yield* sleep(100);
+    }).pipe(Effect.provide(providerLayer));
+
+    const turnRecord = analyticsRecords.find((record) => record.event === "marcode.provider.turn");
+
+    assert.isDefined(turnRecord);
+    assert.isUndefined(
+      analyticsRecords.find((record) => record.event === "marcode.provider.turn.sent"),
+    );
+    assert.isUndefined(
+      analyticsRecords.find((record) => record.event === "marcode.provider.turn.completed"),
+    );
+    assert.equal(turnRecord?.properties?.provider, "codex");
+    assert.equal(turnRecord?.properties?.outcome, "success");
+    assert.equal(turnRecord?.properties?.interaction_mode, "default");
+    assert.isAtLeast(Number(turnRecord?.options?.durationMs ?? 0), 1);
+    assert.deepEqual(
+      turnRecord?.options?.spanEvents?.map((event) => event.name),
+      ["marcode.provider.turn.sent", "marcode.provider.turn.completed"],
+    );
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

@@ -502,8 +502,11 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     flush: Effect.void,
   }));
 
-  const recordGitAnalytics = (event: string, properties: Record<string, unknown>) =>
-    analytics.record(event, properties);
+  const recordGitAnalytics = (
+    event: string,
+    properties: Record<string, unknown>,
+    options?: Parameters<typeof analytics.record>[2],
+  ) => analytics.record(event, properties, options);
 
   const resolveJiraTickets = (
     threadId: ThreadId | undefined,
@@ -1310,12 +1313,41 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       label: `Creating ${prOrMr}...`,
     });
     const originRepo = headContext.originRepositoryNameWithOwner;
-    yield* recordGitAnalytics("marcode.git.pr_mr.create_requested", {
+    const createStartedAtMs = Date.now();
+    const baseAnalyticsProperties = {
       "git.host.provider": detectedHostProvider ?? "unknown",
       "git.change_request.kind": changeRequestKind,
       "git.branch": headContext.headBranch,
       ...(repositoryName ? { "repository.name": repositoryName } : {}),
-    });
+    };
+    const recordCreateResult = (outcome: "created" | "error", hasUrl: boolean) => {
+      const completedAtMs = Date.now();
+      const durationMs = Math.max(1, completedAtMs - createStartedAtMs);
+      return recordGitAnalytics(
+        "marcode.git.pr_mr.create",
+        {
+          ...baseAnalyticsProperties,
+          outcome,
+          has_url: hasUrl,
+          "duration.ms": durationMs,
+        },
+        {
+          durationMs,
+          startedAt: createStartedAtMs,
+          spanEvents: [
+            {
+              name: "marcode.git.pr_mr.create.requested",
+              at: createStartedAtMs,
+            },
+            {
+              name: "marcode.git.pr_mr.create.completed",
+              at: completedAtMs,
+              attributes: { outcome, has_url: hasUrl },
+            },
+          ],
+        },
+      );
+    };
     yield* gitHostCli
       .createPullRequest({
         cwd,
@@ -1331,27 +1363,11 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           schedule: Schedule.exponential(PR_CREATE_RETRY_BASE_DELAY, 2),
           while: isBranchNotReadyError,
         }),
-        Effect.tapError(() =>
-          recordGitAnalytics("marcode.git.pr_mr.create_completed", {
-            "git.host.provider": detectedHostProvider ?? "unknown",
-            "git.change_request.kind": changeRequestKind,
-            "git.branch": headContext.headBranch,
-            outcome: "error",
-            has_url: false,
-            ...(repositoryName ? { "repository.name": repositoryName } : {}),
-          }),
-        ),
+        Effect.tapError(() => recordCreateResult("error", false)),
       );
 
     const created = yield* findOpenPr(cwd, headContext);
-    yield* recordGitAnalytics("marcode.git.pr_mr.create_completed", {
-      "git.host.provider": detectedHostProvider ?? "unknown",
-      "git.change_request.kind": changeRequestKind,
-      "git.branch": headContext.headBranch,
-      outcome: "created",
-      has_url: created?.url ? true : false,
-      ...(repositoryName ? { "repository.name": repositoryName } : {}),
-    });
+    yield* recordCreateResult("created", Boolean(created?.url));
     if (!created) {
       return {
         status: "created" as const,

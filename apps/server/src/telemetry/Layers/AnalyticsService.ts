@@ -2,11 +2,12 @@ import { Data, DateTime, Effect, Layer, Option, Ref } from "effect";
 
 import { ServerConfig } from "../../config.ts";
 import { JiraTokenService } from "../../jira/Services/JiraTokenService.ts";
-import { AnalyticsService } from "../Services/AnalyticsService.ts";
+import { AnalyticsService, type AnalyticsServiceShape } from "../Services/AnalyticsService.ts";
 import { getTelemetryIdentifier } from "../Identify.ts";
 import {
   JIRA_ACCESS_TOKEN_HEADER,
   makeProductSpanBatchPayload,
+  type ProductAnalyticsSpanEvent,
   productAnalyticsUrlFromConfig,
   shouldAttachJiraProof,
 } from "../OtlpProduct.ts";
@@ -20,6 +21,9 @@ interface BufferedAnalyticsEvent {
   readonly event: string;
   readonly properties?: Readonly<Record<string, unknown>>;
   readonly capturedAt: string;
+  readonly durationMs?: number;
+  readonly startedAt?: string | number | Date;
+  readonly spanEvents?: ReadonlyArray<ProductAnalyticsSpanEvent>;
 }
 
 const MAX_BUFFERED_EVENTS = 1_000;
@@ -103,6 +107,9 @@ const makeAnalyticsService = Effect.gen(function* () {
                 events.map((event) => ({
                   event: event.event,
                   capturedAt: event.capturedAt,
+                  ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+                  ...(event.startedAt !== undefined ? { startedAt: event.startedAt } : {}),
+                  ...(event.spanEvents !== undefined ? { spanEvents: event.spanEvents } : {}),
                   attributes: {
                     ...makeBaseAttributes(),
                     ...event.properties,
@@ -168,7 +175,7 @@ const makeAnalyticsService = Effect.gen(function* () {
     }
   }).pipe(Effect.catchCause(() => Effect.void));
 
-  const record = (event: string, properties?: Record<string, unknown>) =>
+  const record: AnalyticsServiceShape["record"] = (event, properties, options) =>
     Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({
         ...makeBaseAttributes(),
@@ -183,6 +190,9 @@ const makeAnalyticsService = Effect.gen(function* () {
             event,
             ...(properties ? { properties } : {}),
             capturedAt: DateTime.formatIso(now),
+            ...(options?.durationMs !== undefined ? { durationMs: options.durationMs } : {}),
+            ...(options?.startedAt !== undefined ? { startedAt: options.startedAt } : {}),
+            ...(options?.spanEvents !== undefined ? { spanEvents: options.spanEvents } : {}),
           },
         ];
         return appended.length > MAX_BUFFERED_EVENTS

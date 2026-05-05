@@ -22,7 +22,7 @@ import {
   type ProviderRuntimeEvent,
   type ProviderSession,
 } from "@marcode/contracts";
-import { Effect, Layer, Option, PubSub, Schema, SchemaIssue, Stream } from "effect";
+import { Effect, Layer, Option, PubSub, Ref, Schema, SchemaIssue, Stream } from "effect";
 
 import {
   increment,
@@ -142,6 +142,30 @@ function readPersistedCwd(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+const toolCallKey = (event: ProviderRuntimeEvent): string | undefined =>
+  event.itemId ? `${event.provider}:${event.threadId}:${event.itemId}` : undefined;
+
+const turnKey = (input: {
+  readonly provider: string;
+  readonly threadId: unknown;
+  readonly turnId: unknown;
+}): string => `${input.provider}:${String(input.threadId)}:${String(input.turnId)}`;
+
+const eventTimeMs = (event: ProviderRuntimeEvent): number => {
+  const parsed = Date.parse(event.createdAt);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+};
+
+const isToolCallEvent = (event: ProviderRuntimeEvent): boolean =>
+  "itemType" in event.payload &&
+  typeof event.payload.itemType === "string" &&
+  event.payload.itemType.includes("tool_call");
+
+interface ProviderTurnAnalyticsStart {
+  readonly startedAtMs: number;
+  readonly properties: Readonly<Record<string, unknown>>;
+}
+
 const makeProviderService = Effect.fn("makeProviderService")(function* (
   options?: ProviderServiceLiveOptions,
 ) {
@@ -196,33 +220,44 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const adapters = yield* Effect.forEach(providers, (provider) => registry.getByProvider(provider));
   const hashId = (id: unknown) =>
     hashTelemetryIdentifier(String(id)).pipe(Effect.orElseSucceed(() => String(id)));
+  const toolCallStarts = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const providerTurnStarts = yield* Ref.make<ReadonlyMap<string, ProviderTurnAnalyticsStart>>(
+    new Map(),
+  );
 
   const recordRuntimeAnalytics = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Effect.gen(function* () {
       const threadIdHash = yield* hashId(event.threadId);
       if (
         (event.type === "item.started" || event.type === "item.updated") &&
-        "itemType" in event.payload &&
-        typeof event.payload.itemType === "string" &&
-        event.payload.itemType.includes("tool_call")
+        isToolCallEvent(event)
       ) {
-        yield* analytics.record("marcode.tool.call.started", {
-          provider: event.provider,
-          "thread.id_hash": threadIdHash,
-          "tool.kind": event.payload.itemType,
-          "tool.name_normalized":
-            "title" in event.payload && typeof event.payload.title === "string"
-              ? event.payload.title.toLowerCase()
-              : event.payload.itemType,
-        });
+        const key = toolCallKey(event);
+        if (key) {
+          const startedAtMs = eventTimeMs(event);
+          yield* Ref.update(toolCallStarts, (current) => {
+            if (current.has(key)) return current;
+            const next = new Map(current);
+            next.set(key, startedAtMs);
+            return next;
+          });
+        }
       }
-      if (
-        event.type === "item.completed" &&
-        "itemType" in event.payload &&
-        typeof event.payload.itemType === "string" &&
-        event.payload.itemType.includes("tool_call")
-      ) {
-        yield* analytics.record("marcode.tool.call.completed", {
+      if (event.type === "item.completed" && isToolCallEvent(event)) {
+        const key = toolCallKey(event);
+        const completedAtMs = eventTimeMs(event);
+        const startedAtMs = key
+          ? yield* Ref.modify(toolCallStarts, (current) => {
+              const started = current.get(key);
+              if (started === undefined) return [undefined, current] as const;
+              const next = new Map(current);
+              next.delete(key);
+              return [started, next] as const;
+            })
+          : undefined;
+        const durationMs =
+          startedAtMs !== undefined ? Math.max(1, completedAtMs - startedAtMs) : undefined;
+        const properties = {
           provider: event.provider,
           "thread.id_hash": threadIdHash,
           "tool.kind": event.payload.itemType,
@@ -231,7 +266,29 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
               ? event.payload.title.toLowerCase()
               : event.payload.itemType,
           outcome: "success",
-        });
+          ...(durationMs !== undefined ? { "duration.ms": durationMs } : {}),
+        };
+        yield* analytics.record(
+          "marcode.tool.call",
+          properties,
+          startedAtMs !== undefined && durationMs !== undefined
+            ? {
+                durationMs,
+                startedAt: startedAtMs,
+                spanEvents: [
+                  {
+                    name: "marcode.tool.call.started",
+                    at: startedAtMs,
+                  },
+                  {
+                    name: "marcode.tool.call.completed",
+                    at: completedAtMs,
+                    attributes: { outcome: "success" },
+                  },
+                ],
+              }
+            : undefined,
+        );
       }
       if (event.type === "request.opened") {
         yield* analytics.record("marcode.approval.requested", {
@@ -249,11 +306,57 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
       }
       if (event.type === "turn.completed" || event.type === "turn.aborted") {
-        yield* analytics.record("marcode.provider.turn.completed", {
-          provider: event.provider,
-          "thread.id_hash": threadIdHash,
-          outcome: event.type === "turn.completed" ? "success" : "failure",
-        });
+        const completedAtMs = eventTimeMs(event);
+        const started =
+          event.turnId !== undefined
+            ? yield* Ref.modify(providerTurnStarts, (current) => {
+                const key = turnKey({
+                  provider: event.provider,
+                  threadId: event.threadId,
+                  turnId: event.turnId,
+                });
+                const value = current.get(key);
+                if (value === undefined) return [undefined, current] as const;
+                const next = new Map(current);
+                next.delete(key);
+                return [value, next] as const;
+              })
+            : undefined;
+        const durationMs =
+          started !== undefined ? Math.max(1, completedAtMs - started.startedAtMs) : undefined;
+        const outcome = event.type === "turn.completed" ? "success" : "failure";
+        const options =
+          started !== undefined && durationMs !== undefined
+            ? {
+                durationMs,
+                startedAt: started.startedAtMs,
+                spanEvents: [
+                  {
+                    name: "marcode.provider.turn.sent",
+                    at: started.startedAtMs,
+                  },
+                  {
+                    name:
+                      event.type === "turn.completed"
+                        ? "marcode.provider.turn.completed"
+                        : "marcode.provider.turn.aborted",
+                    at: completedAtMs,
+                    attributes: { outcome },
+                  },
+                ],
+              }
+            : undefined;
+        yield* analytics.record(
+          "marcode.provider.turn",
+          {
+            provider: event.provider,
+            "thread.id_hash": threadIdHash,
+            ...started?.properties,
+            outcome,
+            ...(durationMs !== undefined ? { "duration.ms": durationMs } : {}),
+          },
+          options,
+        );
       }
     }).pipe(Effect.ignoreCause({ log: true }));
 
@@ -478,12 +581,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         yield* upsertSessionBinding(session, threadId, {
           modelSelection: input.modelSelection,
         });
-        yield* analytics.record("marcode.provider.session.started", {
-          provider: adapter.provider,
-          "thread.id_hash": yield* hashId(threadId),
-          runtime_mode: input.runtimeMode,
-          ...(input.modelSelection?.model ? { "model.family": input.modelSelection.model } : {}),
-        });
 
         return session;
       }).pipe(
@@ -534,13 +631,28 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.kind": routed.adapter.provider,
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
       });
+      const startedAtMs = Date.now();
       const turn = yield* routed.adapter.sendTurn(input);
-      yield* analytics.record("marcode.provider.turn.sent", {
-        provider: routed.adapter.provider,
-        "thread.id_hash": yield* hashId(input.threadId),
-        interaction_mode: input.interactionMode,
-        "attachment.count": input.attachments.length,
-        ...(input.modelSelection?.model ? { "model.family": input.modelSelection.model } : {}),
+      yield* Ref.update(providerTurnStarts, (current) => {
+        const next = new Map(current);
+        next.set(
+          turnKey({
+            provider: routed.adapter.provider,
+            threadId: input.threadId,
+            turnId: turn.turnId,
+          }),
+          {
+            startedAtMs,
+            properties: {
+              interaction_mode: input.interactionMode,
+              "attachment.count": input.attachments.length,
+              ...(input.modelSelection?.model
+                ? { "model.family": input.modelSelection.model }
+                : {}),
+            },
+          },
+        );
+        return next;
       });
       yield* directory.upsert({
         threadId: input.threadId,

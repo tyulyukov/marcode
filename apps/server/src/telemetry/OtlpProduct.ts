@@ -3,6 +3,11 @@ import packageJson from "../../package.json" with { type: "json" };
 export const JIRA_ACCESS_TOKEN_HEADER = "x-marcode-jira-access-token";
 
 export type ProductAnalyticsAttributes = Readonly<Record<string, unknown>>;
+export type ProductAnalyticsSpanEvent = Readonly<{
+  name: string;
+  attributes?: ProductAnalyticsAttributes;
+  at?: string | number | Date;
+}>;
 
 function valueToOtlp(value: unknown): Record<string, unknown> | null {
   if (value === undefined || value === null) return null;
@@ -22,12 +27,25 @@ export function productAttributesToOtlp(attributes: ProductAnalyticsAttributes) 
   });
 }
 
+function timeToUnixNano(value: string | number | Date): bigint {
+  const ms =
+    value instanceof Date ? value.getTime() : typeof value === "number" ? value : Date.parse(value);
+  return BigInt(Number.isFinite(ms) ? ms : Date.now()) * 1_000_000n;
+}
+
 export function makeProductSpanPayload(input: {
   readonly event: string;
   readonly attributes: ProductAnalyticsAttributes;
   readonly capturedAt: string;
+  readonly durationMs?: number;
+  readonly startedAt?: string | number | Date;
+  readonly spanEvents?: ReadonlyArray<ProductAnalyticsSpanEvent>;
 }) {
-  const now = BigInt(new Date(input.capturedAt).getTime()) * 1_000_000n;
+  const start = input.startedAt
+    ? timeToUnixNano(input.startedAt)
+    : timeToUnixNano(input.capturedAt);
+  const durationNano = BigInt(Math.max(1, input.durationMs ?? 1)) * 1_000_000n;
+  const end = start + durationNano;
   return {
     resourceSpans: [
       {
@@ -51,10 +69,15 @@ export function makeProductSpanPayload(input: {
                 spanId: crypto.randomUUID().replaceAll("-", "").slice(0, 16),
                 name: input.event,
                 kind: 1,
-                startTimeUnixNano: String(now),
-                endTimeUnixNano: String(now + 1_000_000n),
+                startTimeUnixNano: String(start),
+                endTimeUnixNano: String(end),
                 attributes: productAttributesToOtlp(input.attributes),
-                events: [],
+                events: (input.spanEvents ?? []).map((event) => ({
+                  timeUnixNano: String(event.at ? timeToUnixNano(event.at) : end),
+                  name: event.name,
+                  attributes: productAttributesToOtlp(event.attributes ?? {}),
+                  droppedAttributesCount: 0,
+                })),
                 links: [],
                 status: { code: "STATUS_CODE_OK" },
                 flags: 1,
@@ -72,6 +95,9 @@ export function makeProductSpanBatchPayload(
     readonly event: string;
     readonly attributes: ProductAnalyticsAttributes;
     readonly capturedAt: string;
+    readonly durationMs?: number;
+    readonly startedAt?: string | number | Date;
+    readonly spanEvents?: ReadonlyArray<ProductAnalyticsSpanEvent>;
   }>,
 ) {
   return {

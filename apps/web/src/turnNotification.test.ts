@@ -56,12 +56,15 @@ function makeActivityAppendedEvent(threadId: string, kind: string): Orchestratio
   } as unknown as OrchestrationEvent;
 }
 
-function makeTurnDiffCompletedEvent(threadId: string): OrchestrationEvent {
+function makeTurnDiffCompletedEvent(
+  threadId: string,
+  turnId = `turn-${threadId}`,
+): OrchestrationEvent {
   return {
     type: "thread.turn-diff-completed",
     payload: {
       threadId: threadId as ThreadId,
-      turnId: `turn-${threadId}`,
+      turnId,
     },
   } as unknown as OrchestrationEvent;
 }
@@ -308,7 +311,7 @@ describe("deriveTurnNotificationTriggers", () => {
       () => project,
     );
 
-    const events = [makeTurnDiffCompletedEvent("thread-1")];
+    const events = [makeTurnDiffCompletedEvent("thread-1", "turn-1")];
     const triggers = deriveTurnNotificationTriggers(
       events,
       () => thread,
@@ -363,6 +366,70 @@ describe("deriveTurnNotificationTriggers", () => {
 
     const triggers = deriveTurnNotificationTriggers(
       events,
+      () => thread,
+      () => project,
+    );
+
+    expect(triggers).toHaveLength(0);
+  });
+
+  it("waits for turn-diff-completed before firing Codex turn-completed", () => {
+    const thread = makeThread({
+      session: { orchestrationStatus: "running", activeTurnId: "turn-1" },
+    } as Partial<Thread>);
+    const project = makeProject();
+
+    deriveTurnNotificationTriggers(
+      [
+        makeSessionSetEvent("thread-1", "running", {
+          activeTurnId: "turn-1",
+          providerName: "codex",
+        }),
+      ],
+      () => thread,
+      () => project,
+    );
+
+    const idleBatch = deriveTurnNotificationTriggers(
+      [
+        makeSessionSetEvent("thread-1", "ready", {
+          activeTurnId: null,
+          providerName: "codex",
+        }),
+      ],
+      () => thread,
+      () => project,
+    );
+    const completionBatch = deriveTurnNotificationTriggers(
+      [makeTurnDiffCompletedEvent("thread-1", "turn-1")],
+      () => thread,
+      () => project,
+    );
+
+    expect(idleBatch).toHaveLength(0);
+    expect(completionBatch).toHaveLength(1);
+    expect(completionBatch[0]!.reason).toBe("turn-completed");
+  });
+
+  it("ignores stale Codex turn-diff-completed events for a previous active turn", () => {
+    const thread = makeThread({
+      session: { orchestrationStatus: "running", activeTurnId: "turn-thread-1" },
+    } as Partial<Thread>);
+    const project = makeProject();
+
+    deriveTurnNotificationTriggers(
+      [
+        makeSessionSetEvent("thread-1", "running", {
+          activeTurnId: "turn-current",
+          providerName: "codex",
+        }),
+      ],
+      () => thread,
+      () => project,
+    );
+
+    const triggers = deriveTurnNotificationTriggers(
+      [makeTurnDiffCompletedEvent("thread-1")],
       () => thread,
       () => project,
     );
