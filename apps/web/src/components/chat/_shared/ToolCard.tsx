@@ -1,5 +1,6 @@
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Collapsible, CollapsiblePanel } from "~/components/ui/collapsible";
 import { cn } from "~/lib/utils";
 import { ApprovalBadge } from "./ApprovalBadge";
 import { StatusBadge, type ToolStatusKind } from "./StatusBadge";
@@ -151,29 +152,33 @@ export function ToolCard(props: ToolCardProps) {
           />
         )}
       </HeaderRow>
-      {anyBody && isOpen && (
-        <div className={cn("overflow-hidden border-t border-border/20", bodyClassName)}>
-          {showPreview && bodyAvailable && (
-            <div className="relative">
-              <div
-                ref={previewRef}
-                className="overflow-hidden"
-                style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
-              >
-                {body}
-              </div>
-              {showFullCtaVisible && <ShowFullButton onClick={expandFully} />}
-            </div>
-          )}
-          {showExpanded && (
-            <>
-              {expandedBodyAvailable ? expandedBody : body}
-              {bodyAvailable && (
-                <HideButton onClick={() => setState(bodyAvailable ? "preview" : "collapsed")} />
+      {anyBody && (
+        <Collapsible open={isOpen}>
+          <CollapsiblePanel>
+            <div className={cn("border-t border-border/20", bodyClassName)}>
+              {showPreview && bodyAvailable && (
+                <div className="relative">
+                  <div
+                    ref={previewRef}
+                    className="overflow-hidden"
+                    style={{ maxHeight: `${bodyMaxPreviewPx}px` }}
+                  >
+                    {body}
+                  </div>
+                  {showFullCtaVisible && <ShowFullButton onClick={expandFully} />}
+                </div>
               )}
-            </>
-          )}
-        </div>
+              {showExpanded && (
+                <>
+                  {expandedBodyAvailable ? expandedBody : body}
+                  {bodyAvailable && (
+                    <HideButton onClick={() => setState(bodyAvailable ? "preview" : "collapsed")} />
+                  )}
+                </>
+              )}
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
       )}
     </div>
   );
