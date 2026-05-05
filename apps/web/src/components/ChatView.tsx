@@ -4903,10 +4903,7 @@ export default function ChatView({
           {/* Messages Wrapper */}
           <div className="relative flex min-h-0 flex-1 flex-col">
             {/* Messages */}
-            <div
-              className="min-h-0 flex-1 px-3 py-3 sm:px-5 sm:py-4"
-              onClickCapture={onMessagesClickCapture}
-            >
+            <div className="min-h-0 flex-1 px-3 sm:px-5" onClickCapture={onMessagesClickCapture}>
               <MessagesTimeline
                 threadId={activeThread.id}
                 provider={activeTimelineProvider}
