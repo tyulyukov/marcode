@@ -53,7 +53,7 @@ import {
   getPrimaryEnvironmentConnection,
   startEnvironmentConnectionService,
 } from "../environments/runtime";
-import { configureClientTracing, recordClientProductSpan } from "../observability/clientTracing";
+import { configureClientTracing } from "../observability/clientTracing";
 import {
   ensurePrimaryEnvironmentReady,
   resolveInitialServerAuthGateState,
@@ -232,17 +232,9 @@ function RuntimeToolOutputBootstrap() {
 }
 
 function AuthenticatedTracingBootstrap() {
-  const pathname = useLocation({ select: (location) => location.pathname });
-
   useEffect(() => {
     void configureClientTracing();
   }, []);
-
-  useEffect(() => {
-    recordClientProductSpan("marcode.ui.route.changed", {
-      route: pathname,
-    });
-  }, [pathname]);
 
   return null;
 }

@@ -640,10 +640,6 @@ export const ChatComposer = memo(
     );
     const handleProviderModelSelect = useCallback(
       (provider: ProviderKind, model: string) => {
-        recordClientProductSpan("marcode.ui.provider.changed", {
-          provider,
-          "model.family": normalizeModelSlug(model),
-        });
         onProviderModelSelect(provider, model);
       },
       [onProviderModelSelect],

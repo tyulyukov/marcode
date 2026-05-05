@@ -2,6 +2,7 @@ import type {
   NotificationEventGroup,
   OrchestrationEvent,
   OrchestrationSessionStatus,
+  ProviderKind,
   ProjectId,
   ThreadId,
   TurnId,
@@ -72,8 +73,13 @@ function isThreadSuppressed(threadId: ThreadId): boolean {
 // the detail stream can race each other — by the time a "ready" status arrives
 // in one stream, the stored session may already read "ready" from the other, so
 // we can't rely on reading `thread.session?.orchestrationStatus` to decide
-// whether a turn *was* active. This set is authoritative across batches.
-const threadsWithActiveTurn = new Set<ThreadId>();
+// whether a turn *was* active. This map is authoritative across batches.
+type ActiveTurnState = {
+  readonly provider: ProviderKind | null;
+  readonly turnId: TurnId | null;
+};
+
+const threadsWithActiveTurn = new Map<ThreadId, ActiveTurnState>();
 
 // Persistent recent-completion dedup. `thread.session-set` (ready) and
 // `thread.turn-diff-completed` arrive as two separate single-event batches in
@@ -104,6 +110,18 @@ export function __resetTurnNotificationStateForTests(): void {
   threadsWithActiveTurn.clear();
   recentlyFiredCompletion.clear();
   suppressedThreads.clear();
+}
+
+function providerKindFromSession(value: string | null | undefined): ProviderKind | null {
+  switch (value) {
+    case "claudeAgent":
+    case "codex":
+    case "cursor":
+    case "opencode":
+      return value;
+    default:
+      return null;
+  }
 }
 
 // Tracks turn ids the user has locally interrupted via the Stop button, so the
@@ -165,8 +183,10 @@ export function deriveTurnNotificationTriggers(
       const newStatus = session.status;
 
       if (newStatus === "running") {
-        // Arm the persistent active-turn flag. Cleared on completion below.
-        threadsWithActiveTurn.add(threadId);
+        threadsWithActiveTurn.set(threadId, {
+          provider: providerKindFromSession(session.providerName),
+          turnId: session.activeTurnId ?? null,
+        });
       }
 
       const reason = COMPLETION_STATUS_TO_REASON[newStatus];
@@ -182,7 +202,11 @@ export function deriveTurnNotificationTriggers(
       // orchestrationStatus / activeTurnId / latestTurn) all had failure modes
       // where session.started's status=ready + stale store state misfired for
       // OpenCode/Cursor — the flag below is authoritative.
-      if (!threadsWithActiveTurn.has(threadId)) continue;
+      const activeTurn = threadsWithActiveTurn.get(threadId);
+      if (!activeTurn) continue;
+
+      const provider = providerKindFromSession(session.providerName) ?? activeTurn.provider;
+      if (provider === "codex" && reason === "turn-completed") continue;
 
       const thread = getThread(threadId);
       if (!thread) continue;
@@ -213,11 +237,13 @@ export function deriveTurnNotificationTriggers(
     // turn.completed runtime event. Still gated on the armed flag so we never
     // notify for a turn that never started from the client's perspective.
     if (event.type === "thread.turn-diff-completed") {
-      const { threadId } = event.payload;
+      const { threadId, turnId } = event.payload;
       if (completionFiredThreadIds.has(threadId)) continue;
       if (isThreadSuppressed(threadId)) continue;
       if (userInitiatedThreadIds.has(threadId)) continue;
-      if (!threadsWithActiveTurn.has(threadId)) continue;
+      const activeTurn = threadsWithActiveTurn.get(threadId);
+      if (!activeTurn) continue;
+      if (activeTurn.turnId !== null && activeTurn.turnId !== turnId) continue;
       if (wasRecentlyFired(threadId)) {
         // The primary session-set path already fired in a nearby batch.
         completionFiredThreadIds.add(threadId);
