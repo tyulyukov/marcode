@@ -2176,6 +2176,146 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       ]);
     }),
   );
+
+  it.effect("keeps latest turn id when a session stops without an active turn", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+
+      const projectId = ProjectId.make("project-latest-turn");
+      const threadId = ThreadId.make("thread-latest-turn");
+      const turnId = TurnId.make("turn-latest");
+
+      yield* eventStore.append({
+        type: "project.created",
+        eventId: EventId.make("evt-latest-turn-1"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: "2026-04-04T00:00:00.000Z",
+        commandId: CommandId.make("cmd-latest-turn-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-latest-turn-1"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Project Latest Turn",
+          workspaceRoot: "/tmp/project-latest-turn",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-04-04T00:00:00.000Z",
+          updatedAt: "2026-04-04T00:00:00.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-latest-turn-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-04-04T00:00:01.000Z",
+        commandId: CommandId.make("cmd-latest-turn-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-latest-turn-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId,
+          title: "Thread Latest Turn",
+          modelSelection: {
+            provider: "codex",
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "plan",
+          branch: null,
+          worktreePath: null,
+          additionalDirectories: [],
+          implementingJiraTicketKeys: [],
+          createdAt: "2026-04-04T00:00:01.000Z",
+          updatedAt: "2026-04-04T00:00:01.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "thread.turn-start-requested",
+        eventId: EventId.make("evt-latest-turn-3"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-04-04T00:00:02.000Z",
+        commandId: CommandId.make("cmd-latest-turn-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-latest-turn-3"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-latest-turn"),
+          runtimeMode: "full-access",
+          interactionMode: "plan",
+          createdAt: "2026-04-04T00:00:02.000Z",
+        },
+      });
+
+      yield* eventStore.append({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-latest-turn-4"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-04-04T00:00:03.000Z",
+        commandId: CommandId.make("cmd-latest-turn-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-latest-turn-4"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: turnId,
+            lastError: null,
+            compacting: false,
+            updatedAt: "2026-04-04T00:00:03.000Z",
+          },
+        },
+      });
+
+      yield* eventStore.append({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-latest-turn-5"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-04-04T00:00:04.000Z",
+        commandId: CommandId.make("cmd-latest-turn-5"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-latest-turn-5"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "stopped",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            compacting: false,
+            updatedAt: "2026-04-04T00:00:04.000Z",
+          },
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{ readonly latestTurnId: string | null }>`
+        SELECT latest_turn_id AS "latestTurnId"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.deepEqual(rows, [{ latestTurnId: turnId }]);
+    }),
+  );
 });
 
 it.effect("restores pending turn-start metadata across projection pipeline restart", () =>

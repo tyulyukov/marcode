@@ -1197,4 +1197,140 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       }
     }),
   );
+
+  it.effect("falls back to latest turn rows when targeted thread latest_turn_id is empty", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_turns`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-fallback',
+          'Project Fallback',
+          '/tmp/project-fallback',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-04-03T00:00:00.000Z',
+          '2026-04-03T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          archived_at,
+          deleted_at
+        )
+        VALUES (
+          'thread-fallback',
+          'project-fallback',
+          'Thread Fallback',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'plan',
+          NULL,
+          NULL,
+          NULL,
+          '2026-04-03T00:00:04.000Z',
+          0,
+          0,
+          1,
+          '2026-04-03T00:00:02.000Z',
+          '2026-04-03T00:00:03.000Z',
+          NULL,
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_turns (
+          thread_id,
+          turn_id,
+          pending_message_id,
+          source_proposed_plan_thread_id,
+          source_proposed_plan_id,
+          assistant_message_id,
+          state,
+          requested_at,
+          started_at,
+          completed_at,
+          checkpoint_turn_count,
+          checkpoint_ref,
+          checkpoint_status,
+          checkpoint_files_json
+        )
+        VALUES
+          (
+            'thread-fallback',
+            'turn-old',
+            'message-user-old',
+            NULL,
+            NULL,
+            'message-assistant-old',
+            'completed',
+            '2026-04-03T00:00:05.000Z',
+            '2026-04-03T00:00:06.000Z',
+            '2026-04-03T00:00:20.000Z',
+            NULL,
+            NULL,
+            NULL,
+            '[]'
+          ),
+          (
+            'thread-fallback',
+            'turn-new',
+            'message-user-new',
+            NULL,
+            NULL,
+            'message-assistant-new',
+            'completed',
+            '2026-04-03T00:01:05.000Z',
+            '2026-04-03T00:01:06.000Z',
+            '2026-04-03T00:01:20.000Z',
+            NULL,
+            NULL,
+            NULL,
+            '[]'
+          )
+      `;
+
+      const threadDetail = yield* snapshotQuery.getThreadDetailById(
+        ThreadId.make("thread-fallback"),
+      );
+      assert.equal(threadDetail._tag, "Some");
+      if (threadDetail._tag === "Some") {
+        assert.equal(threadDetail.value.latestTurn?.turnId, asTurnId("turn-new"));
+        assert.equal(threadDetail.value.latestTurn?.state, "completed");
+      }
+    }),
+  );
 });

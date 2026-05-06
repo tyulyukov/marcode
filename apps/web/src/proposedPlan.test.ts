@@ -8,6 +8,7 @@ import {
   buildProposedPlanMarkdownFilename,
   proposedPlanTitle,
   resolvePlanFollowUpSubmission,
+  shouldHighlightProposedPlanMarkdown,
   stripDisplayedPlanMarkdown,
 } from "./proposedPlan";
 import type { QuotedContext } from "./lib/quotedContext";
@@ -147,5 +148,15 @@ describe("buildProposedPlanMarkdownFilename", () => {
 
   it("falls back to a generic filename when the plan has no heading", () => {
     expect(buildProposedPlanMarkdownFilename("- step 1")).toBe("plan.md");
+  });
+});
+
+describe("shouldHighlightProposedPlanMarkdown", () => {
+  it("keeps highlighting enabled for normal plans", () => {
+    expect(shouldHighlightProposedPlanMarkdown("# Plan\n\n```ts\nconst x = 1;\n```")).toBe(true);
+  });
+
+  it("disables highlighting for oversized plans", () => {
+    expect(shouldHighlightProposedPlanMarkdown("x".repeat(20_001))).toBe(false);
   });
 });

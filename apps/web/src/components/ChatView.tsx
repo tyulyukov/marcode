@@ -610,8 +610,17 @@ function PersistentThreadTerminalDrawer({
   keybindings,
   onAddTerminalContext,
 }: PersistentThreadTerminalDrawerProps) {
-  const serverThread = useThreadById(threadId);
-  const resolvedEnvironmentId = serverThread?.environmentId ?? environmentId;
+  const scopedThreadRef = useMemo(
+    () => (environmentId ? scopeThreadRef(environmentId, threadId) : null),
+    [environmentId, threadId],
+  );
+  const scopedServerThread = useStore(
+    useMemo(() => createThreadSelectorByRef(scopedThreadRef), [scopedThreadRef]),
+  );
+  const fallbackServerThread = useThreadById(threadId);
+  const serverThread = scopedServerThread ?? fallbackServerThread;
+  const resolvedEnvironmentId =
+    scopedServerThread?.environmentId ?? environmentId ?? serverThread?.environmentId;
   const persistentThreadRef: ScopedThreadRef | null = useMemo(
     () => (resolvedEnvironmentId ? scopeThreadRef(resolvedEnvironmentId, threadId) : null),
     [resolvedEnvironmentId, threadId],
@@ -780,9 +789,20 @@ export default function ChatView({
   const { isMobile, state: sidebarState } = useSidebar();
   const sidebarVisible = !isMobile && sidebarState === "expanded";
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const serverThread = useThreadById(threadId);
+  const routeThreadRef = useMemo(
+    () => (environmentIdProp ? scopeThreadRef(environmentIdProp, threadId) : null),
+    [environmentIdProp, threadId],
+  );
+  const scopedServerThread = useStore(
+    useMemo(() => createThreadSelectorByRef(routeThreadRef), [routeThreadRef]),
+  );
+  const fallbackServerThread = useThreadById(threadId);
+  const serverThread = scopedServerThread ?? fallbackServerThread;
   const activeThreadEnvironmentId =
-    serverThread?.environmentId ?? environmentIdProp ?? primaryEnvironmentId;
+    scopedServerThread?.environmentId ??
+    environmentIdProp ??
+    serverThread?.environmentId ??
+    primaryEnvironmentId;
   const threadRef: ScopedThreadRef = useMemo(
     () =>
       activeThreadEnvironmentId
@@ -3634,10 +3654,29 @@ export default function ChatView({
           }
           setComposerTrigger(detectComposerTrigger(input.prompt, input.prompt.length));
         }
-        setThreadError(
-          threadIdForSend,
-          err instanceof Error ? err.message : "Failed to send message.",
-        );
+        const turnStartErrorMessage =
+          err instanceof Error ? err.message : "Failed to send message.";
+        setThreadError(threadIdForSend, turnStartErrorMessage);
+
+        // When the server runs the turn-start bootstrap (`dispatchBootstrapTurnStart`
+        // in `apps/server/src/ws.ts`) and any step after `thread.create` fails — git
+        // worktree creation, setup script launch, etc. — the bootstrap rolls back
+        // by deleting the just-created thread (`cleanupCreatedThread`). The
+        // deletion removes the thread shell from the client store, so the
+        // `setThreadError` write above lands on a thread that no longer exists
+        // and stays invisible. Without this toast the user sees "No threads yet"
+        // and has no idea their thread vanished or why (e.g. `fatal: invalid
+        // reference: main` on a freshly initialized repo with zero commits).
+        // `isLocalDraftThread` is the exact signal that drove
+        // `bootstrap.createThread` upstream, so it identifies the same set of
+        // submissions that the server-side rollback applies to.
+        if (isLocalDraftThread) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to start thread",
+            description: turnStartErrorMessage,
+          });
+        }
       });
       if (!turnStartSucceeded) {
         resetLocalDispatch();

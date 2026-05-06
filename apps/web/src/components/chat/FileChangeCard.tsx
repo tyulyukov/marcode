@@ -66,14 +66,23 @@ pre,
 code {
   background-color: transparent !important;
 }
+
+[data-code] {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
 `;
 
-function parseInlineHunkFileDiff(hunk: InlineDiffHunk): FileDiffMetadata | null {
-  if (hunk.patch.trim().length === 0) return null;
+function parseInlineHunkFileDiff(
+  hunk: InlineDiffHunk,
+  mode: "preview" | "full",
+): FileDiffMetadata | null {
+  const patch = mode === "preview" ? (hunk.previewPatch ?? hunk.patch) : hunk.patch;
+  if (patch.trim().length === 0) return null;
   try {
     const parsed = parsePatchFiles(
-      hunk.patch,
-      buildPatchCacheKey(hunk.patch, `file-change-card:${hunk.filePath}`),
+      patch,
+      buildPatchCacheKey(patch, `file-change-card:${hunk.filePath}:${mode}`),
     );
     return parsed.flatMap((patch) => patch.files)[0] ?? null;
   } catch {
@@ -83,14 +92,22 @@ function parseInlineHunkFileDiff(hunk: InlineDiffHunk): FileDiffMetadata | null 
 
 function PierreDiffLinesBlock(props: {
   hunk: InlineDiffHunk;
+  mode?: "preview" | "full";
+  showTruncatedMarker?: boolean;
   turnId: TurnId | null;
   onReplyToSelection?: ((context: QuotedContext) => void) | undefined;
 }) {
-  const { hunk, turnId, onReplyToSelection } = props;
+  const {
+    hunk,
+    mode = "full",
+    showTruncatedMarker = hunk.truncated,
+    turnId,
+    onReplyToSelection,
+  } = props;
   const { resolvedTheme } = useTheme();
   const [selectedRange, setSelectedRange] = useState<SelectedLineRange | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard();
-  const fileDiff = useMemo(() => parseInlineHunkFileDiff(hunk), [hunk]);
+  const fileDiff = useMemo(() => parseInlineHunkFileDiff(hunk, mode), [hunk, mode]);
 
   const quote = useMemo(() => {
     if (!fileDiff || !selectedRange) return null;
@@ -216,7 +233,7 @@ function PierreDiffLinesBlock(props: {
           onLineSelectionEnd: setSelectedRange,
         }}
       />
-      {hunk.truncated && (
+      {showTruncatedMarker && (
         <div className="border-t border-border/30 px-2 py-0.5 text-center font-mono text-[10px] text-muted-foreground/40">
           ... diff truncated
         </div>
@@ -286,6 +303,8 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
   const body = isSingleHunk ? (
     <PierreDiffLinesBlock
       hunk={firstHunk}
+      mode="preview"
+      showTruncatedMarker={firstHunk.truncated}
       turnId={turnId}
       onReplyToSelection={onReplyToSelection}
     />
@@ -302,7 +321,17 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
     </div>
   );
 
-  const expandedBody = isSingleHunk ? undefined : (
+  const expandedBody = isSingleHunk ? (
+    firstHunk.truncated ? (
+      <PierreDiffLinesBlock
+        hunk={firstHunk}
+        mode="full"
+        showTruncatedMarker={false}
+        turnId={turnId}
+        onReplyToSelection={onReplyToSelection}
+      />
+    ) : undefined
+  ) : (
     <div>
       {diffPreviews.map((hunk) => (
         <div key={hunk.filePath}>
@@ -313,6 +342,8 @@ export const FileChangeCard = memo(function FileChangeCard(props: FileChangeCard
           </div>
           <PierreDiffLinesBlock
             hunk={hunk}
+            mode="full"
+            showTruncatedMarker={false}
             turnId={turnId}
             onReplyToSelection={onReplyToSelection}
           />

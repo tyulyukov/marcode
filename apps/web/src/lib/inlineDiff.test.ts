@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parsePatchFiles } from "@pierre/diffs";
 import {
   computeLineDiff,
   diffStats,
@@ -163,6 +164,29 @@ describe("extractDiffPreviews", () => {
     expect(lines[3]).toEqual({ type: "context", content: "c" });
   });
 
+  it("preserves collapsed unchanged context in edit preview patches", () => {
+    const oldString = Array.from({ length: 12 }, (_, index) => `line-${index + 1}`).join("\n");
+    const newString = Array.from({ length: 12 }, (_, index) =>
+      index === 6 ? "LINE-7" : `line-${index + 1}`,
+    ).join("\n");
+
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "Edit",
+        input: {
+          file_path: "f.ts",
+          old_string: oldString,
+          new_string: newString,
+        },
+      },
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.previewPatch).toContain("@@ -4,7 +4,7 @@");
+    const fileDiff = parsePatchFiles(result[0]!.previewPatch!, "inline-diff-test")[0]!.files[0]!;
+    expect(fileDiff.hunks[0]!.collapsedBefore).toBe(3);
+  });
+
   it("truncates large diffs", () => {
     const bigOld = Array.from({ length: 50 }, (_, i) => `old-${i}`).join("\n");
     const bigNew = Array.from({ length: 50 }, (_, i) => `new-${i}`).join("\n");
@@ -176,6 +200,28 @@ describe("extractDiffPreviews", () => {
     expect(result[0]!.lines.length).toBeLessThanOrEqual(40);
     expect(result[0]!.fullLines.length).toBeGreaterThan(40);
     expect(result[0]!.truncated).toBe(true);
+    expect(result[0]!.patch.split("\n").length).toBeGreaterThan(43);
+    expect(result[0]!.previewPatch?.split("\n").length).toBeLessThanOrEqual(43);
+  });
+
+  it("keeps the full write patch while rendering only the truncated preview patch", () => {
+    const content = Array.from({ length: 80 }, (_, i) => `line-${i}`).join("\n");
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "Write",
+        input: {
+          file_path: "big.md",
+          content,
+        },
+      },
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.lines.length).toBe(40);
+    expect(result[0]!.fullLines.length).toBe(80);
+    expect(result[0]!.patch).toContain("+line-39");
+    expect(result[0]!.patch).toContain("+line-79");
+    expect(result[0]!.previewPatch).toContain("+line-39");
+    expect(result[0]!.previewPatch).not.toContain("+line-40");
   });
 
   it("computes stats from full diff before truncation", () => {

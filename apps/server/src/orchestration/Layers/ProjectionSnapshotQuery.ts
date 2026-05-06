@@ -553,9 +553,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         FROM projection_threads threads
         JOIN projection_turns turns
           ON turns.thread_id = threads.thread_id
-          AND turns.turn_id = threads.latest_turn_id
+          AND turns.turn_id IS NOT NULL
         WHERE threads.thread_id = ${threadId}
           AND threads.deleted_at IS NULL
+        ORDER BY
+          CASE
+            WHEN turns.turn_id = threads.latest_turn_id THEN 0
+            ELSE 1
+          END ASC,
+          turns.requested_at DESC,
+          turns.turn_id DESC
         LIMIT 1
       `,
   });

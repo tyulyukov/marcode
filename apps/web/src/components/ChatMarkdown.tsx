@@ -55,6 +55,7 @@ interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
   isStreaming?: boolean;
+  enableCodeHighlight?: boolean;
 }
 
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
@@ -531,7 +532,12 @@ function areMarkdownFileLinkPropsEqual(
   );
 }
 
-function ChatMarkdown({ text, cwd, isStreaming = false }: ChatMarkdownProps) {
+function ChatMarkdown({
+  text,
+  cwd,
+  isStreaming = false,
+  enableCodeHighlight = true,
+}: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const markdownFileLinkMetaByHref = useMemo(() => {
@@ -596,19 +602,24 @@ function ChatMarkdown({ text, cwd, isStreaming = false }: ChatMarkdownProps) {
 
         return (
           <MarkdownCodeBlock code={codeBlock.code}>
-            <DeferredShikiCodeBlock
-              className={codeBlock.className}
-              code={codeBlock.code}
-              themeName={diffThemeName}
-              isStreaming={isStreaming}
-              fallback={<pre {...props}>{children}</pre>}
-            />
+            {enableCodeHighlight ? (
+              <DeferredShikiCodeBlock
+                className={codeBlock.className}
+                code={codeBlock.code}
+                themeName={diffThemeName}
+                isStreaming={isStreaming}
+                fallback={<pre {...props}>{children}</pre>}
+              />
+            ) : (
+              <pre {...props}>{children}</pre>
+            )}
           </MarkdownCodeBlock>
         );
       },
     }),
     [
       diffThemeName,
+      enableCodeHighlight,
       fileLinkParentSuffixByPath,
       isStreaming,
       markdownFileLinkMetaByHref,

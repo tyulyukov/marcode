@@ -6,6 +6,7 @@ import {
   downloadPlanAsTextFile,
   normalizePlanMarkdownForExport,
   proposedPlanTitle,
+  shouldHighlightProposedPlanMarkdown,
   stripDisplayedPlanMarkdown,
 } from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
@@ -59,6 +60,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   const lineCount = planMarkdown.split("\n").length;
   const canCollapse = planMarkdown.length > 900 || lineCount > 20;
   const displayedPlanMarkdown = stripDisplayedPlanMarkdown(planMarkdown);
+  const enableCodeHighlight = shouldHighlightProposedPlanMarkdown(planMarkdown);
   const collapsedPreview = canCollapse
     ? buildCollapsedProposedPlanPreviewMarkdown(planMarkdown, { maxLines: 10 })
     : null;
@@ -165,7 +167,12 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           {canCollapse && !expanded ? (
             <ChatMarkdown text={collapsedPreview ?? ""} cwd={cwd} isStreaming={false} />
           ) : (
-            <ChatMarkdown text={displayedPlanMarkdown} cwd={cwd} isStreaming={false} />
+            <ChatMarkdown
+              text={displayedPlanMarkdown}
+              cwd={cwd}
+              isStreaming={false}
+              enableCodeHighlight={enableCodeHighlight}
+            />
           )}
           {canCollapse && !expanded ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-card/95 via-card/80 to-transparent" />

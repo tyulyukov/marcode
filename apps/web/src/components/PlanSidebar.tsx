@@ -22,6 +22,7 @@ import {
   buildProposedPlanMarkdownFilename,
   normalizePlanMarkdownForExport,
   downloadPlanAsTextFile,
+  shouldHighlightProposedPlanMarkdown,
   stripDisplayedPlanMarkdown,
 } from "../proposedPlan";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
@@ -81,6 +82,9 @@ const PlanSidebar = memo(function PlanSidebar({
   const planMarkdown = activeProposedPlan?.planMarkdown ?? null;
   const displayedPlanMarkdown = planMarkdown ? stripDisplayedPlanMarkdown(planMarkdown) : null;
   const planTitle = planMarkdown ? proposedPlanTitle(planMarkdown) : null;
+  const enablePlanCodeHighlight = planMarkdown
+    ? shouldHighlightProposedPlanMarkdown(planMarkdown)
+    : true;
 
   const handleCopyPlan = useCallback(() => {
     if (!planMarkdown) return;
@@ -257,6 +261,7 @@ const PlanSidebar = memo(function PlanSidebar({
                     text={displayedPlanMarkdown ?? ""}
                     cwd={markdownCwd}
                     isStreaming={false}
+                    enableCodeHighlight={enablePlanCodeHighlight}
                   />
                 </div>
               ) : null}

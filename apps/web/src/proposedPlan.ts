@@ -1,5 +1,11 @@
 import { appendQuotedContextsToPrompt, type QuotedContext } from "./lib/quotedContext";
 
+export const PROPOSED_PLAN_MARKDOWN_HIGHLIGHT_MAX_CHARS = 20_000;
+
+export function shouldHighlightProposedPlanMarkdown(planMarkdown: string): boolean {
+  return planMarkdown.length <= PROPOSED_PLAN_MARKDOWN_HIGHLIGHT_MAX_CHARS;
+}
+
 export function proposedPlanTitle(planMarkdown: string): string | null {
   const heading = planMarkdown.match(/^\s{0,3}#{1,6}\s+(.+)$/m)?.[1]?.trim();
   return heading && heading.length > 0 ? heading : null;

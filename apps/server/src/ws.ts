@@ -509,6 +509,14 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
               if (Cause.hasInterruptsOnly(cause)) {
                 return Effect.fail(dispatchError);
               }
+              // Rolling back the thread keeps the projection clean when the
+              // bootstrap pipeline can't finish, but it also makes the failure
+              // invisible in the sidebar — the row is gone before the user can
+              // see anything went wrong. The client compensates by surfacing an
+              // explicit "Failed to start thread" toast in `ChatView.submitComposerTurn`'s
+              // catch handler whenever the dispatched command included
+              // `bootstrap.createThread`. If you change this rollback behaviour,
+              // update the client-side toast at the same time.
               return cleanupCreatedThread().pipe(Effect.flatMap(() => Effect.fail(dispatchError)));
             }),
           );
