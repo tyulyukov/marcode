@@ -32,6 +32,14 @@ describe("ToolCard", () => {
     expect(markup).toContain('data-slot="collapsible-panel"');
     expect(markup).toContain("transition-[opacity,translate]");
     expect(markup).toContain("data-starting-style:opacity-0");
+    expect(markup).toContain("data-starting-style:[&amp;&gt;div]:border-t-transparent");
+    expect(markup).toContain("transition-[border-color]");
+    expect(markup).toContain("transition-[border-color,box-shadow]");
+    expect(markup).toContain("data-[state=preview]:border-border/65");
+    expect(markup).toContain("rounded-xl");
+    expect(markup).toContain("transition-[background-color,border-radius]");
+    expect(markup).toContain("data-[state=preview]:rounded-b-none");
+    expect(markup).not.toContain("data-[state=preview]:rounded-lg");
     expect(markup).not.toContain("transition-[height]");
   });
 });

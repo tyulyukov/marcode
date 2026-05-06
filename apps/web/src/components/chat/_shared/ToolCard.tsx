@@ -122,7 +122,13 @@ export function ToolCard(props: ToolCardProps) {
   return (
     <div
       data-scroll-anchor-target
-      className={cn("overflow-hidden rounded-xl border border-border/40 bg-card/25")}
+      data-state={state}
+      className={cn(
+        "overflow-hidden rounded-xl border bg-card/25 transition-[border-color,box-shadow] duration-200 ease-out",
+        "data-[state=collapsed]:border-border/35 data-[state=collapsed]:shadow-none",
+        "data-[state=expanded]:border-border/65 data-[state=expanded]:shadow-sm/10",
+        "data-[state=preview]:border-border/65 data-[state=preview]:shadow-sm/10",
+      )}
     >
       <HeaderRow
         showChevron={showChevron}
@@ -156,9 +162,14 @@ export function ToolCard(props: ToolCardProps) {
         <Collapsible open={isOpen}>
           <CollapsiblePanel
             animated={false}
-            className="transition-[opacity,translate] duration-150 ease-out will-change-[opacity,transform] data-ending-style:-translate-y-1 data-ending-style:opacity-0 data-starting-style:-translate-y-1 data-starting-style:opacity-0"
+            className="transition-[opacity,translate] duration-150 ease-out will-change-[opacity,transform] data-ending-style:-translate-y-1 data-ending-style:opacity-0 data-starting-style:-translate-y-1 data-starting-style:opacity-0 data-ending-style:[&>div]:border-t-transparent data-starting-style:[&>div]:border-t-transparent"
           >
-            <div className={cn("border-t border-border/20", bodyClassName)}>
+            <div
+              className={cn(
+                "border-t border-border/35 transition-[border-color] duration-200 ease-out",
+                bodyClassName,
+              )}
+            >
               {showPreview && bodyAvailable && (
                 <div className="relative">
                   <div
@@ -263,7 +274,7 @@ function HeaderRow(props: HeaderRowProps) {
         data-state={state}
         onClick={onClick}
         className={cn(
-          "flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-100 hover:bg-muted/20 focus-visible:bg-muted/20 focus-visible:outline-none",
+          "flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-[background-color,border-radius] duration-200 hover:bg-muted/20 focus-visible:bg-muted/20 focus-visible:outline-none data-[state=collapsed]:rounded-xl data-[state=expanded]:rounded-b-none data-[state=preview]:rounded-b-none",
           headerClassName,
         )}
       >
@@ -273,7 +284,13 @@ function HeaderRow(props: HeaderRowProps) {
   }
 
   return (
-    <div data-state={state} className={cn("flex items-center gap-2 px-3 py-2", headerClassName)}>
+    <div
+      data-state={state}
+      className={cn(
+        "flex items-center gap-2 px-3 py-2 transition-[border-radius] duration-150 data-[state=collapsed]:rounded-xl data-[state=expanded]:rounded-b-none data-[state=preview]:rounded-b-none",
+        headerClassName,
+      )}
+    >
       {children}
     </div>
   );

@@ -44,8 +44,12 @@ export function GitActionsJiraChips({ implementingJiraTicketKeys }: GitActionsJi
             fill="#2684FF"
           />
         </svg>
-        <span className="font-mono">{primaryKey}</span>
-        {remainingCount > 0 ? <span className="text-foreground/50">+{remainingCount}</span> : null}
+        <span className="sr-only font-mono @3xl/header-actions:not-sr-only">{primaryKey}</span>
+        {remainingCount > 0 ? (
+          <span className="sr-only text-foreground/50 @3xl/header-actions:not-sr-only">
+            +{remainingCount}
+          </span>
+        ) : null}
       </PopoverTrigger>
       <PopoverPopup tooltipStyle side="bottom" align="end">
         <div className="text-xs">
