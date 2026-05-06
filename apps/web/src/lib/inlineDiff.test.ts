@@ -164,7 +164,7 @@ describe("extractDiffPreviews", () => {
     expect(lines[3]).toEqual({ type: "context", content: "c" });
   });
 
-  it("preserves collapsed unchanged context in edit preview patches", () => {
+  it("removes edge context from edit preview patches", () => {
     const oldString = Array.from({ length: 12 }, (_, index) => `line-${index + 1}`).join("\n");
     const newString = Array.from({ length: 12 }, (_, index) =>
       index === 6 ? "LINE-7" : `line-${index + 1}`,
@@ -182,9 +182,35 @@ describe("extractDiffPreviews", () => {
     });
 
     expect(result).toHaveLength(1);
-    expect(result[0]!.previewPatch).toContain("@@ -4,7 +4,7 @@");
+    expect(result[0]!.previewPatch).toContain("@@ -7,1 +7,1 @@");
+    expect(result[0]!.previewPatch).toContain("-line-7");
+    expect(result[0]!.previewPatch).toContain("+LINE-7");
+    expect(result[0]!.previewPatch).not.toContain(" line-6");
+    expect(result[0]!.previewPatch).not.toContain(" line-8");
+  });
+
+  it("keeps middle context gaps in edit preview patches", () => {
+    const oldString = Array.from({ length: 30 }, (_, index) => `line-${index + 1}`).join("\n");
+    const newString = Array.from({ length: 30 }, (_, index) =>
+      index === 4 || index === 24 ? `LINE-${index + 1}` : `line-${index + 1}`,
+    ).join("\n");
+
+    const result = extractDiffPreviews({
+      data: {
+        toolName: "Edit",
+        input: {
+          file_path: "f.ts",
+          old_string: oldString,
+          new_string: newString,
+        },
+      },
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]!.previewPatch).toContain("@@ -5,4 +5,4 @@");
+    expect(result[0]!.previewPatch).toContain("@@ -22,4 +22,4 @@");
     const fileDiff = parsePatchFiles(result[0]!.previewPatch!, "inline-diff-test")[0]!.files[0]!;
-    expect(fileDiff.hunks[0]!.collapsedBefore).toBe(3);
+    expect(fileDiff.hunks[1]!.collapsedBefore).toBe(13);
   });
 
   it("truncates large diffs", () => {

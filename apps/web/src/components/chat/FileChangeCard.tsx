@@ -73,6 +73,17 @@ code {
 }
 `;
 
+export function normalizeFileChangePreviewDiff(fileDiff: FileDiffMetadata): FileDiffMetadata {
+  const firstHunk = fileDiff.hunks[0];
+  if (!firstHunk || firstHunk.collapsedBefore === 0) return fileDiff;
+  return {
+    ...fileDiff,
+    splitLineCount: fileDiff.splitLineCount - firstHunk.collapsedBefore,
+    unifiedLineCount: fileDiff.unifiedLineCount - firstHunk.collapsedBefore,
+    hunks: [{ ...firstHunk, collapsedBefore: 0 }, ...fileDiff.hunks.slice(1)],
+  };
+}
+
 function parseInlineHunkFileDiff(
   hunk: InlineDiffHunk,
   mode: "preview" | "full",
@@ -84,7 +95,8 @@ function parseInlineHunkFileDiff(
       patch,
       buildPatchCacheKey(patch, `file-change-card:${hunk.filePath}:${mode}`),
     );
-    return parsed.flatMap((patch) => patch.files)[0] ?? null;
+    const fileDiff = parsed.flatMap((patch) => patch.files)[0] ?? null;
+    return fileDiff && mode === "preview" ? normalizeFileChangePreviewDiff(fileDiff) : fileDiff;
   } catch {
     return null;
   }

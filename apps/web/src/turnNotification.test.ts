@@ -10,6 +10,7 @@ import {
   markThreadUserStopped,
   markTurnLocallyInterrupted,
   subscribeToLocallyInterruptedTurns,
+  syncThreadActiveTurnFromSnapshot,
   __resetTurnNotificationStateForTests,
 } from "./turnNotification";
 import type { Thread, Project } from "./types";
@@ -259,12 +260,23 @@ describe("deriveTurnNotificationTriggers", () => {
     expect(triggers).toHaveLength(0);
   });
 
-  it("fires Codex turn-completed from stored running latestTurn when ready arrives", () => {
+  it("fires Codex turn-completed when snapshot armed the gate before ready arrives", () => {
+    // Fresh app load mid-Codex-turn: the detail subscription's snapshot reports
+    // session.status="running", which `syncThreadActiveTurnFromSnapshot` uses
+    // to arm `threadsWithActiveTurn`. The subsequent `ready` session-set then
+    // fires a real completion notification, even though no in-process running
+    // event was observed.
     const thread = makeThread({
       session: { orchestrationStatus: "running" },
       latestTurn: { state: "running", turnId: "turn-1", completedAt: null },
     } as Partial<Thread>);
     const project = makeProject();
+    syncThreadActiveTurnFromSnapshot({
+      threadId: "thread-1" as ThreadId,
+      providerName: "codex",
+      status: "running",
+      activeTurnId: "turn-1" as TurnId,
+    });
     const events = [makeSessionSetEvent("thread-1", "ready", { providerName: "codex" })];
 
     const triggers = deriveTurnNotificationTriggers(
@@ -618,6 +630,83 @@ describe("deriveTurnNotificationTriggers", () => {
         );
         expect(triggers).toHaveLength(1);
         expect(triggers[0]!.reason).toBe("turn-completed");
+      },
+    );
+
+    it(
+      "Codex first-message: starting + 3×ready burst + running fires zero notifications " +
+        "even when shell-stream race exposes a stored running turn",
+      () => {
+        // Repro for the user-reported phantom completion. On a fresh Codex
+        // thread, the server emits FIVE thread.session-set events in <1 s as
+        // the provider session is established:
+        //   1. status=starting   (provider session/connecting)
+        //   2. status=ready      (server bindSessionToThread — the extra one)
+        //   3. status=ready      (provider session/ready)
+        //   4. status=ready      (provider thread.started follow-up)
+        //   5. status=running    (provider turn.started)
+        // The shell stream and detail stream race each other: by the time the
+        // detail-stream "ready" events reach the deriver, the shell stream may
+        // have already pushed thread-upserted with latestTurn.state="running"
+        // from event #5. The OLD strict gate's `hasCodexStoredRunningTurn`
+        // carve-out treated that as evidence of a real completion and fired
+        // turn-completed for events #2/#3/#4 — phantom sound on session start.
+        //
+        // The fixed gate ignores `thread.latestTurn` entirely and only trusts
+        // `threadsWithActiveTurn` (detail-stream + snapshot). Events #2/#3/#4
+        // arrive before any running event arms that map, so they all skip.
+        // Only event #5 sets the flag; subsequent events would fire correctly.
+        const project = makeProject();
+        // Worst-case shell race: the store already shows a running turn from
+        // event #5 by the time we evaluate events #2-4 from the detail stream.
+        const racedThreadState = makeThread({
+          session: {
+            orchestrationStatus: "running",
+            activeTurnId: "codex-turn-1",
+          },
+          latestTurn: {
+            state: "running",
+            turnId: "codex-turn-1",
+            completedAt: null,
+          },
+        } as unknown as Partial<Thread>);
+
+        // Each event is its own batch (mirrors applyEnvironmentThreadDetailEvent).
+        for (const phantom of [
+          makeSessionSetEvent("thread-1", "starting", { providerName: "codex" }),
+          makeSessionSetEvent("thread-1", "ready", { providerName: "codex" }),
+          makeSessionSetEvent("thread-1", "ready", { providerName: "codex" }),
+          makeSessionSetEvent("thread-1", "ready", { providerName: "codex" }),
+        ]) {
+          const triggers = deriveTurnNotificationTriggers(
+            [phantom],
+            () => racedThreadState,
+            () => project,
+          );
+          expect(triggers).toHaveLength(0);
+        }
+
+        // Event #5 (turn.started) finally arms the gate.
+        const runningTriggers = deriveTurnNotificationTriggers(
+          [
+            makeSessionSetEvent("thread-1", "running", {
+              activeTurnId: "codex-turn-1",
+              providerName: "codex",
+            }),
+          ],
+          () => racedThreadState,
+          () => project,
+        );
+        expect(runningTriggers).toHaveLength(0);
+
+        // The eventual real completion still fires correctly.
+        const completionTriggers = deriveTurnNotificationTriggers(
+          [makeSessionSetEvent("thread-1", "ready", { providerName: "codex" })],
+          () => racedThreadState,
+          () => project,
+        );
+        expect(completionTriggers).toHaveLength(1);
+        expect(completionTriggers[0]!.reason).toBe("turn-completed");
       },
     );
   });

@@ -255,6 +255,80 @@ function buildUnifiedPatch(
   ].join("\n");
 }
 
+const HUNK_HEADER_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/;
+
+function stripEdgePatchContext(patch: string): string {
+  const lines = patch.split("\n");
+  const sections: Array<
+    { type: "line"; value: string } | { type: "hunk"; header: RegExpMatchArray; body: string[] }
+  > = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const headerMatch = lines[index]!.match(HUNK_HEADER_RE);
+    if (!headerMatch) {
+      sections.push({ type: "line", value: lines[index]! });
+      index++;
+      continue;
+    }
+
+    index++;
+    const body: string[] = [];
+    while (index < lines.length && !HUNK_HEADER_RE.test(lines[index]!)) {
+      body.push(lines[index]!);
+      index++;
+    }
+    sections.push({ type: "hunk", header: headerMatch, body });
+  }
+
+  const hunkCount = sections.filter((section) => section.type === "hunk").length;
+  let hunkIndex = 0;
+  const result: string[] = [];
+
+  for (const section of sections) {
+    if (section.type === "line") {
+      result.push(section.value);
+      continue;
+    }
+
+    const { header: headerMatch, body } = section;
+    const firstChangeIndex = body.findIndex((line) => line.startsWith("+") || line.startsWith("-"));
+    const lastChangeIndex = body.findLastIndex(
+      (line) => line.startsWith("+") || line.startsWith("-"),
+    );
+    if (firstChangeIndex === -1 || lastChangeIndex === -1) {
+      result.push(headerMatch[0]);
+      result.push(...body);
+      hunkIndex++;
+      continue;
+    }
+
+    let leadingContext = 0;
+    if (hunkIndex === 0) {
+      for (let i = 0; i < firstChangeIndex; i++) {
+        if (body[i]!.startsWith(" ")) leadingContext++;
+      }
+    }
+
+    let trailingContext = 0;
+    if (hunkIndex === hunkCount - 1) {
+      for (let i = lastChangeIndex + 1; i < body.length; i++) {
+        if (body[i]!.startsWith(" ")) trailingContext++;
+      }
+    }
+
+    const oldStart = Number(headerMatch[1]) + leadingContext;
+    const oldCount = Number(headerMatch[2] ?? 1) - leadingContext - trailingContext;
+    const newStart = Number(headerMatch[3]) + leadingContext;
+    const newCount = Number(headerMatch[4] ?? 1) - leadingContext - trailingContext;
+    result.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@${headerMatch[5] ?? ""}`);
+    result.push(...body.slice(leadingContext, body.length - trailingContext));
+    hunkIndex++;
+  }
+
+  return result.join("\n");
+}
+
 function buildPreviewPatch(
   patch: string,
   renderedLines: ReadonlyArray<DiffLine>,
@@ -263,12 +337,13 @@ function buildPreviewPatch(
   truncated: boolean,
 ): string {
   if (truncated) {
-    return buildUnifiedPatch(filePath, renderedLines, operation === "write");
+    const previewPatch = buildUnifiedPatch(filePath, renderedLines, operation === "write");
+    return operation === "write" ? previewPatch : stripEdgePatchContext(previewPatch);
   }
   if (operation === "write") {
     return patch;
   }
-  return trimPatchContext(patch, CONTEXT_RADIUS);
+  return stripEdgePatchContext(trimPatchContext(patch, CONTEXT_RADIUS));
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -72,14 +72,43 @@ function isThreadSuppressed(threadId: ThreadId): boolean {
 // Persistent per-thread flag: true while a turn is running. The shell stream and
 // the detail stream can race each other — by the time a "ready" status arrives
 // in one stream, the stored session may already read "ready" from the other, so
-// we can't rely on reading `thread.session?.orchestrationStatus` to decide
-// whether a turn *was* active. This map is authoritative across batches.
+// we can't rely on reading `thread.session?.orchestrationStatus` (or any other
+// store-derived state mixed across both streams) to decide whether a turn *was*
+// active. This map is fed exclusively from detail-stream signals — running
+// `thread.session-set` events plus the snapshot delivered when a detail
+// subscription first attaches — so it stays free of shell-stream taint.
 type ActiveTurnState = {
   readonly provider: ProviderKind | null;
   readonly turnId: TurnId | null;
 };
 
 const threadsWithActiveTurn = new Map<ThreadId, ActiveTurnState>();
+
+/**
+ * Sync detail-stream active-turn state from a thread snapshot.
+ *
+ * Call this when a thread detail subscription delivers its initial snapshot,
+ * so that a turn that started in a previous app session (or before the
+ * subscription attached) still arms the strict gate. Detail-stream-only:
+ * never call this from shell-stream handlers — the whole point of this map
+ * is to stay isolated from shell so the cross-stream race can't trip
+ * `deriveTurnNotificationTriggers` into firing phantom completions during
+ * Codex/Claude session establishment (multiple `ready` `thread.session-set`
+ * events fire before the actual `running` event arrives).
+ */
+export function syncThreadActiveTurnFromSnapshot(input: {
+  readonly threadId: ThreadId;
+  readonly providerName: string | null | undefined;
+  readonly status: OrchestrationSessionStatus | undefined;
+  readonly activeTurnId: TurnId | null | undefined;
+}): void {
+  if (input.status === "running" && input.activeTurnId) {
+    threadsWithActiveTurn.set(input.threadId, {
+      provider: providerKindFromSession(input.providerName),
+      turnId: input.activeTurnId,
+    });
+  }
+}
 
 // Persistent recent-completion dedup. `thread.session-set` (ready) and
 // `thread.turn-diff-completed` arrive as two separate single-event batches in
@@ -197,20 +226,18 @@ export function deriveTurnNotificationTriggers(
       if (isThreadSuppressed(threadId)) continue;
 
       // STRICT GATE: only fire if we observed a `running` session-set event
-      // earlier (in this batch or a prior one). This is the single signal that
-      // a real turn actually started. Previous heuristics (stored
-      // orchestrationStatus / activeTurnId / latestTurn) all had failure modes
-      // where session.started's status=ready + stale store state misfired for
-      // OpenCode/Cursor — the flag below is authoritative.
+      // earlier (in this batch or a prior one), or the detail subscription's
+      // snapshot armed `threadsWithActiveTurn` for a turn that started before
+      // the subscription attached. Reading store state (orchestrationStatus,
+      // latestTurn, activeTurnId) is unsafe here: the shell stream and detail
+      // stream race independently, so the store's view of `thread.latestTurn`
+      // can be ahead of the detail event we're processing — a stale `ready`
+      // session-set arriving after a `running` shell update would look like a
+      // legit completion. `threadsWithActiveTurn` is detail-only and immune.
       const thread = getThread(threadId);
       if (!thread) continue;
       const activeTurn = threadsWithActiveTurn.get(threadId);
-      const provider = activeTurn?.provider ?? providerKindFromSession(session.providerName);
-      const hasCodexStoredRunningTurn =
-        provider === "codex" &&
-        thread.latestTurn?.state === "running" &&
-        thread.latestTurn.completedAt === null;
-      if (!activeTurn && !hasCodexStoredRunningTurn) continue;
+      if (!activeTurn) continue;
 
       if (wasRecentlyFired(threadId)) {
         // Another event in the prior ~3s already fired this turn's completion

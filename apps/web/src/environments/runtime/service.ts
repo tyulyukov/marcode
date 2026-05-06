@@ -26,7 +26,10 @@ import {
 import { ensureLocalApi } from "~/localApi";
 import { collectActiveTerminalThreadIds } from "~/lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "~/orchestrationEventEffects";
-import { deriveTurnNotificationTriggers } from "~/turnNotification";
+import {
+  deriveTurnNotificationTriggers,
+  syncThreadActiveTurnFromSnapshot,
+} from "~/turnNotification";
 import {
   dispatchTurnNotifications,
   type TurnNotificationSettings,
@@ -289,6 +292,17 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
     (item) => {
       if (item.kind === "snapshot") {
         useStore.getState().syncServerThreadDetail(item.snapshot.thread, entry.environmentId);
+        // Arm the notification deriver's strict gate from the snapshot so a
+        // turn that was already running before the subscription attached can
+        // still fire its completion notification. Detail-stream-only on
+        // purpose: see `syncThreadActiveTurnFromSnapshot` for why.
+        const session = item.snapshot.thread.session;
+        syncThreadActiveTurnFromSnapshot({
+          threadId: item.snapshot.thread.id,
+          providerName: session?.providerName,
+          status: session?.status,
+          activeTurnId: session?.activeTurnId,
+        });
         return;
       }
       applyEnvironmentThreadDetailEvent(item.event, entry.environmentId);
