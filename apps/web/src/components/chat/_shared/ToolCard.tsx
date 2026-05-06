@@ -154,7 +154,10 @@ export function ToolCard(props: ToolCardProps) {
       </HeaderRow>
       {anyBody && (
         <Collapsible open={isOpen}>
-          <CollapsiblePanel>
+          <CollapsiblePanel
+            animated={false}
+            className="transition-[opacity,translate] duration-150 ease-out will-change-[opacity,transform] data-ending-style:-translate-y-1 data-ending-style:opacity-0 data-starting-style:-translate-y-1 data-starting-style:opacity-0"
+          >
             <div className={cn("border-t border-border/20", bodyClassName)}>
               {showPreview && bodyAvailable && (
                 <div className="relative">
