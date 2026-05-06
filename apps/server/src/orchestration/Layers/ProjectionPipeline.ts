@@ -2,6 +2,7 @@ import {
   ApprovalRequestId,
   type ChatAttachment,
   type OrchestrationEvent,
+  type OrchestrationSessionStatus,
   ThreadId,
 } from "@marcode/contracts";
 import { Effect, FileSystem, Layer, Option, Path, Stream } from "effect";
@@ -81,6 +82,23 @@ const materializeAttachmentsForProjection = Effect.fn("materializeAttachmentsFor
   (input: { readonly attachments: ReadonlyArray<ChatAttachment> }) =>
     Effect.succeed(input.attachments.length === 0 ? [] : input.attachments),
 );
+
+function completedSessionStatusToTurnState(
+  status: OrchestrationSessionStatus,
+): ProjectionTurn["state"] | null {
+  switch (status) {
+    case "ready":
+    case "idle":
+      return "completed";
+    case "error":
+      return "error";
+    case "interrupted":
+    case "stopped":
+      return "interrupted";
+    default:
+      return null;
+  }
+}
 
 function extractActivityRequestId(payload: unknown): ApprovalRequestId | null {
   if (typeof payload !== "object" || payload === null) {
@@ -982,6 +1000,33 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         case "thread.session-set": {
           const turnId = event.payload.session.activeTurnId;
           if (turnId === null || event.payload.session.status !== "running") {
+            const nextState = completedSessionStatusToTurnState(event.payload.session.status);
+            if (nextState === null) {
+              return;
+            }
+            const existingTurns = yield* projectionTurnRepository.listByThreadId({
+              threadId: event.payload.threadId,
+            });
+            const latestIncompleteTurn = existingTurns
+              .toReversed()
+              .find(
+                (turn) =>
+                  turn.turnId !== null && turn.state === "running" && turn.completedAt === null,
+              );
+            if (latestIncompleteTurn === undefined) {
+              return;
+            }
+            const latestIncompleteTurnId = latestIncompleteTurn.turnId;
+            if (latestIncompleteTurnId === null) {
+              return;
+            }
+            yield* projectionTurnRepository.upsertByTurnId({
+              ...latestIncompleteTurn,
+              turnId: latestIncompleteTurnId,
+              state: nextState,
+              startedAt: latestIncompleteTurn.startedAt ?? event.payload.session.updatedAt,
+              completedAt: event.payload.session.updatedAt,
+            });
             return;
           }
 

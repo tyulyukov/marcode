@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer, Option, Stream } from "effect";
 import { beforeEach } from "vitest";
 
 import { ThreadId } from "@marcode/contracts";
@@ -166,23 +166,27 @@ const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory
   listBindings: () => Effect.succeed([]),
 });
 
-const OpenCodeAdapterTestLayer = makeOpenCodeAdapterLive().pipe(
-  Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
-  Layer.provideMerge(
-    ServerSettingsService.layerTest({
-      providers: {
-        opencode: {
-          binaryPath: "fake-opencode",
-          serverUrl: "http://127.0.0.1:9999",
-          serverPassword: "secret-password",
+function makeOpenCodeAdapterTestLayer(options?: Parameters<typeof makeOpenCodeAdapterLive>[0]) {
+  return makeOpenCodeAdapterLive(options).pipe(
+    Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(
+      ServerSettingsService.layerTest({
+        providers: {
+          opencode: {
+            binaryPath: "fake-opencode",
+            serverUrl: "http://127.0.0.1:9999",
+            serverPassword: "secret-password",
+          },
         },
-      },
-    }),
-  ),
-  Layer.provideMerge(providerSessionDirectoryTestLayer),
-  Layer.provideMerge(NodeServices.layer),
-);
+      }),
+    ),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  );
+}
+
+const OpenCodeAdapterTestLayer = makeOpenCodeAdapterTestLayer();
 
 beforeEach(() => {
   runtimeMock.reset();
@@ -341,6 +345,236 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         ["Hello", " world", "!"],
       );
       assert.equal(secondUpdate.latestText, "Hello world!");
+    }),
+  );
+
+  it.effect("emits subagent task progress from distinct running task tool updates", () =>
+    Effect.gen(function* () {
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-task",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "task",
+              callID: "call-task",
+              state: {
+                status: "pending",
+                input: {},
+                raw: "",
+              },
+            },
+            time: 1,
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-task",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "task",
+              callID: "call-task",
+              state: {
+                title: "Reading apps/server/src/git/remoteRefs.ts",
+                metadata: {
+                  sessionId: "ses-child",
+                  model: { modelID: "gpt-5.5", providerID: "openai" },
+                },
+                status: "running",
+                input: {
+                  description: "Random file excerpt",
+                  prompt: "Print 10 lines",
+                  subagent_type: "explore",
+                },
+                time: { start: 10 },
+              },
+            },
+            time: 10,
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-task",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "task",
+              callID: "call-task",
+              state: {
+                title: "Reading apps/server/src/git/remoteRefs.ts",
+                metadata: {
+                  sessionId: "ses-child",
+                  model: { modelID: "gpt-5.5", providerID: "openai" },
+                },
+                status: "running",
+                input: {
+                  description: "Random file excerpt",
+                  prompt: "Print 10 lines",
+                  subagent_type: "explore",
+                },
+                time: { start: 11 },
+              },
+            },
+            time: 11,
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-task",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "task",
+              callID: "call-task",
+              state: {
+                status: "completed",
+                input: {
+                  description: "Random file excerpt",
+                  prompt: "Print 10 lines",
+                  subagent_type: "explore",
+                },
+                output: "done",
+                metadata: {
+                  sessionId: "ses-child",
+                  model: { modelID: "gpt-5.5", providerID: "openai" },
+                },
+                title: "Random file excerpt",
+                time: { start: 11, end: 20 },
+              },
+            },
+            time: 20,
+          },
+        },
+      ];
+
+      const events = yield* Effect.gen(function* () {
+        const adapter = yield* OpenCodeAdapter;
+        yield* adapter.startSession({
+          provider: "opencode",
+          threadId: asThreadId("thread-opencode-subagent"),
+          runtimeMode: "full-access",
+        });
+        return [...(yield* adapter.streamEvents.pipe(Stream.take(9), Stream.runCollect))];
+      }).pipe(Effect.provide(makeOpenCodeAdapterTestLayer()));
+      const progressEvents = events.filter((event) => event.type === "task.progress");
+      const taskStarted = events.find((event) => event.type === "task.started");
+      const taskCompleted = events.find((event) => event.type === "task.completed");
+
+      assert.equal(progressEvents.length, 1);
+      assert.equal(progressEvents[0]?.payload.taskId, "ses-child");
+      assert.equal(
+        progressEvents[0]?.payload.description,
+        "Reading apps/server/src/git/remoteRefs.ts",
+      );
+      assert.equal(progressEvents[0]?.payload.lastToolName, "task");
+      assert.equal(taskStarted?.payload.taskId, "ses-child");
+      assert.equal(taskCompleted?.payload.taskId, "ses-child");
+    }),
+  );
+
+  it.effect("deduplicates identical TodoWrite running and completed plan updates", () =>
+    Effect.gen(function* () {
+      const todoInput = {
+        todos: [
+          { content: "Count occurrences", status: "in_progress", priority: "medium" },
+          { content: "Run tests", status: "pending", priority: "medium" },
+        ],
+      };
+      runtimeMock.state.subscribedEvents = [
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-todo",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "todowrite",
+              callID: "call-todo",
+              state: {
+                status: "pending",
+                input: {},
+                raw: "",
+              },
+            },
+            time: 1,
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-todo",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "todowrite",
+              callID: "call-todo",
+              state: {
+                status: "running",
+                input: todoInput,
+                raw: "",
+                time: { start: 10 },
+              },
+            },
+            time: 10,
+          },
+        },
+        {
+          type: "message.part.updated",
+          properties: {
+            sessionID: "http://127.0.0.1:9999/session",
+            part: {
+              id: "part-todo",
+              messageID: "msg-assistant",
+              sessionID: "http://127.0.0.1:9999/session",
+              type: "tool",
+              tool: "todowrite",
+              callID: "call-todo",
+              state: {
+                status: "completed",
+                input: todoInput,
+                output: "done",
+                time: { start: 10, end: 11 },
+              },
+            },
+            time: 11,
+          },
+        },
+      ];
+
+      const events = yield* Effect.gen(function* () {
+        const adapter = yield* OpenCodeAdapter;
+        yield* adapter.startSession({
+          provider: "opencode",
+          threadId: asThreadId("thread-opencode-todowrite-dedupe"),
+          runtimeMode: "full-access",
+        });
+        return [...(yield* adapter.streamEvents.pipe(Stream.take(6), Stream.runCollect))];
+      }).pipe(Effect.provide(makeOpenCodeAdapterTestLayer()));
+      const planEvents = events.filter((event) => event.type === "turn.plan.updated");
+
+      assert.equal(planEvents.length, 1);
+      assert.deepEqual(planEvents[0]?.payload.plan, [
+        { step: "Count occurrences", status: "inProgress" },
+        { step: "Run tests", status: "pending" },
+      ]);
     }),
   );
 

@@ -1,4 +1,10 @@
-import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@marcode/contracts";
+import type {
+  OrchestrationEvent,
+  OrchestrationLatestTurn,
+  OrchestrationReadModel,
+  OrchestrationSessionStatus,
+  ThreadId,
+} from "@marcode/contracts";
 import {
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
@@ -30,11 +36,45 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
+const MAX_THREAD_ACTIVITIES = 500;
 
 function checkpointStatusToLatestTurnState(status: "ready" | "missing" | "error") {
   if (status === "error") return "error" as const;
   if (status === "missing") return "interrupted" as const;
   return "completed" as const;
+}
+
+function completedSessionStatusToTurnState(
+  status: OrchestrationSessionStatus,
+): OrchestrationLatestTurn["state"] | null {
+  switch (status) {
+    case "ready":
+    case "idle":
+      return "completed";
+    case "error":
+      return "error";
+    case "interrupted":
+    case "stopped":
+      return "interrupted";
+    default:
+      return null;
+  }
+}
+
+function settleLatestTurnFromSession(
+  latestTurn: OrchestrationThread["latestTurn"],
+  session: OrchestrationSession,
+): OrchestrationThread["latestTurn"] {
+  const state = completedSessionStatusToTurnState(session.status);
+  if (!state || latestTurn === null || latestTurn.completedAt !== null) {
+    return latestTurn;
+  }
+  return {
+    ...latestTurn,
+    state,
+    startedAt: latestTurn.startedAt ?? session.updatedAt,
+    completedAt: session.updatedAt,
+  };
 }
 
 function updateThread(
@@ -127,6 +167,47 @@ function retainThreadActivitiesAfterRevert(
   return activities.filter(
     (activity) => activity.turnId === null || retainedTurnIds.has(activity.turnId),
   );
+}
+
+function isRetainedActivity(activity: OrchestrationThread["activities"][number]): boolean {
+  return (
+    activity.kind === "task.started" ||
+    activity.kind === "task.progress" ||
+    activity.kind === "task.completed"
+  );
+}
+
+function retainRecentThreadActivities(
+  activities: ReadonlyArray<OrchestrationThread["activities"][number]>,
+): ReadonlyArray<OrchestrationThread["activities"][number]> {
+  if (activities.length <= MAX_THREAD_ACTIVITIES) {
+    return [...activities];
+  }
+
+  const recent = activities.slice(-MAX_THREAD_ACTIVITIES);
+  const recentIds = new Set(recent.map((activity) => activity.id));
+  const protectedActivities = activities.filter(
+    (activity) => isRetainedActivity(activity) && !recentIds.has(activity.id),
+  );
+  if (protectedActivities.length === 0) {
+    return recent;
+  }
+
+  const protectedIds = new Set(protectedActivities.map((activity) => activity.id));
+  const merged = [
+    ...protectedActivities,
+    ...recent.filter((activity) => !protectedIds.has(activity.id)),
+  ].toSorted(compareThreadActivities);
+
+  if (merged.length <= MAX_THREAD_ACTIVITIES) {
+    return merged;
+  }
+
+  const removable = merged.filter((activity) => !isRetainedActivity(activity));
+  const removableIds = new Set(
+    removable.slice(0, merged.length - MAX_THREAD_ACTIVITIES).map((activity) => activity.id),
+  );
+  return merged.filter((activity) => !removableIds.has(activity.id)).slice(-MAX_THREAD_ACTIVITIES);
 }
 
 function retainThreadProposedPlansAfterRevert(
@@ -445,30 +526,32 @@ export function projectEvent(
           "session",
         );
 
+        const latestTurn =
+          session.status === "running" && session.activeTurnId !== null
+            ? {
+                turnId: session.activeTurnId,
+                state: "running" as const,
+                requestedAt:
+                  thread.latestTurn?.turnId === session.activeTurnId
+                    ? thread.latestTurn.requestedAt
+                    : session.updatedAt,
+                startedAt:
+                  thread.latestTurn?.turnId === session.activeTurnId
+                    ? (thread.latestTurn.startedAt ?? session.updatedAt)
+                    : session.updatedAt,
+                completedAt: null,
+                assistantMessageId:
+                  thread.latestTurn?.turnId === session.activeTurnId
+                    ? thread.latestTurn.assistantMessageId
+                    : null,
+              }
+            : settleLatestTurnFromSession(thread.latestTurn, session);
+
         return {
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             session,
-            latestTurn:
-              session.status === "running" && session.activeTurnId !== null
-                ? {
-                    turnId: session.activeTurnId,
-                    state: "running",
-                    requestedAt:
-                      thread.latestTurn?.turnId === session.activeTurnId
-                        ? thread.latestTurn.requestedAt
-                        : session.updatedAt,
-                    startedAt:
-                      thread.latestTurn?.turnId === session.activeTurnId
-                        ? (thread.latestTurn.startedAt ?? session.updatedAt)
-                        : session.updatedAt,
-                    completedAt: null,
-                    assistantMessageId:
-                      thread.latestTurn?.turnId === session.activeTurnId
-                        ? thread.latestTurn.assistantMessageId
-                        : null,
-                  }
-                : thread.latestTurn,
+            latestTurn,
             updatedAt: event.occurredAt,
           }),
         };
@@ -641,14 +724,12 @@ export function projectEvent(
           const activities = [
             ...thread.activities.filter((entry) => entry.id !== payload.activity.id),
             payload.activity,
-          ]
-            .toSorted(compareThreadActivities)
-            .slice(-500);
+          ].toSorted(compareThreadActivities);
 
           return {
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
-              activities,
+              activities: retainRecentThreadActivities(activities),
               updatedAt: event.occurredAt,
             }),
           };

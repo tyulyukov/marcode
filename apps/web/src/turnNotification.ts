@@ -202,14 +202,15 @@ export function deriveTurnNotificationTriggers(
       // orchestrationStatus / activeTurnId / latestTurn) all had failure modes
       // where session.started's status=ready + stale store state misfired for
       // OpenCode/Cursor — the flag below is authoritative.
-      const activeTurn = threadsWithActiveTurn.get(threadId);
-      if (!activeTurn) continue;
-
-      const provider = providerKindFromSession(session.providerName) ?? activeTurn.provider;
-      if (provider === "codex" && reason === "turn-completed") continue;
-
       const thread = getThread(threadId);
       if (!thread) continue;
+      const activeTurn = threadsWithActiveTurn.get(threadId);
+      const provider = activeTurn?.provider ?? providerKindFromSession(session.providerName);
+      const hasCodexStoredRunningTurn =
+        provider === "codex" &&
+        thread.latestTurn?.state === "running" &&
+        thread.latestTurn.completedAt === null;
+      if (!activeTurn && !hasCodexStoredRunningTurn) continue;
 
       if (wasRecentlyFired(threadId)) {
         // Another event in the prior ~3s already fired this turn's completion
@@ -232,17 +233,18 @@ export function deriveTurnNotificationTriggers(
       continue;
     }
 
-    // Fallback signal: a turn-diff capture completing is a strong guarantee
-    // that a turn ended — CheckpointReactor only fires this after an actual
-    // turn.completed runtime event. Still gated on the armed flag so we never
-    // notify for a turn that never started from the client's perspective.
+    // Fallback signal: a real checkpoint capture completing is a strong
+    // guarantee that a turn ended. Provider placeholder diffs are status
+    // "missing" and can arrive while Codex is still running.
     if (event.type === "thread.turn-diff-completed") {
       const { threadId, turnId } = event.payload;
+      if (event.payload.status !== "ready") continue;
       if (completionFiredThreadIds.has(threadId)) continue;
       if (isThreadSuppressed(threadId)) continue;
       if (userInitiatedThreadIds.has(threadId)) continue;
       const activeTurn = threadsWithActiveTurn.get(threadId);
       if (!activeTurn) continue;
+      if (activeTurn.provider === "codex") continue;
       if (activeTurn.turnId !== null && activeTurn.turnId !== turnId) continue;
       if (wasRecentlyFired(threadId)) {
         // The primary session-set path already fired in a nearby batch.

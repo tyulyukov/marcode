@@ -944,14 +944,6 @@ function buildAgentTaskSummary(
       ? completedPayload.durationMs
       : null;
 
-  const lastToolName = asTrimmedString(latestProgressPayload?.lastToolName) ?? null;
-  const progressSummary =
-    provider === "codex"
-      ? (asTrimmedString(latestProgressPayload?.summary) ?? null)
-      : (asTrimmedString(latestProgressPayload?.detail) ??
-        asTrimmedString(latestProgressPayload?.summary) ??
-        null);
-
   const createdAt =
     group.started?.createdAt ?? latestProgress?.createdAt ?? group.completed?.createdAt ?? "";
 
@@ -982,23 +974,38 @@ function buildAgentTaskSummary(
     };
   });
 
-  const progressHistory: AgentProgressEntry[] = group.progressEntries.map((activity) => {
-    const p = asRecord(activity.payload);
-    const summary = asTrimmedString(p?.summary) ?? null;
-    // Codex's `task.progress.description` is the (repeated) task prompt and the
-    // ingestion layer mirrors that into `payload.detail` whenever there's no
-    // per-step `summary` — so for Codex we read summary only. Other providers
-    // (Claude, ACP) put the per-step content in `description` and the ingestion
-    // layer faithfully forwards it as `payload.detail`, so we keep that source.
-    const description = provider === "codex" ? summary : (asTrimmedString(p?.detail) ?? summary);
-    return {
-      id: activity.id,
-      lastToolName: asTrimmedString(p?.lastToolName) ?? null,
-      description,
-      summary,
-      createdAt: activity.createdAt,
-    };
-  });
+  const progressHistory: AgentProgressEntry[] = group.progressEntries
+    .map((activity) => {
+      const p = asRecord(activity.payload);
+      const summary = asTrimmedString(p?.summary) ?? null;
+      // Codex's `task.progress.description` is the (repeated) task prompt and the
+      // ingestion layer mirrors that into `payload.detail` whenever there's no
+      // per-step `summary` — so for Codex we read summary only. Other providers
+      // (Claude, ACP) put the per-step content in `description` and the ingestion
+      // layer faithfully forwards it as `payload.detail`, so we keep that source.
+      const progressDescription =
+        provider === "codex" ? summary : (asTrimmedString(p?.detail) ?? summary);
+      return {
+        id: activity.id,
+        lastToolName: asTrimmedString(p?.lastToolName) ?? null,
+        description: progressDescription,
+        summary,
+        createdAt: activity.createdAt,
+      };
+    })
+    .filter(
+      (entry) =>
+        !(provider === "opencode" && entry.summary === null && entry.description === description),
+    );
+
+  const latestVisibleProgress = progressHistory.at(-1) ?? null;
+  const latestVisibleProgressPayload = asRecord(
+    latestVisibleProgress
+      ? group.progressEntries.find((entry) => entry.id === latestVisibleProgress.id)?.payload
+      : undefined,
+  );
+  const lastToolName = asTrimmedString(latestVisibleProgressPayload?.lastToolName) ?? null;
+  const progressSummary = latestVisibleProgress?.description ?? null;
 
   return {
     taskId,

@@ -12,6 +12,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationReadModel,
   type OrchestrationShellStreamEvent,
+  type OrchestrationThreadActivity,
   type OrchestrationThreadShell,
 } from "@marcode/contracts";
 import { describe, expect, it } from "vitest";
@@ -37,6 +38,10 @@ import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type Thread } from "./t
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
 const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+
+function timestamp(index: number): string {
+  return new Date(Date.UTC(2026, 1, 27, 0, 0, index)).toISOString();
+}
 
 function withActiveEnvironmentState(
   environmentState: EnvironmentState,
@@ -1075,6 +1080,44 @@ describe("incremental orchestration updates", () => {
     expect(threadsOf(next)[0]?.messages).toHaveLength(1);
   });
 
+  it("settles a running Codex latestTurn from a ready session-set", () => {
+    const thread = makeThread({
+      latestTurn: {
+        turnId: TurnId.make("turn-1"),
+        state: "running",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:01.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.session-set", {
+        threadId: thread.id,
+        session: {
+          threadId: thread.id,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          compacting: false,
+          updatedAt: "2026-02-27T00:00:04.000Z",
+        },
+      }),
+      localEnvironmentId,
+    );
+
+    expect(threadsOf(next)[0]?.latestTurn).toMatchObject({
+      turnId: "turn-1",
+      state: "completed",
+      completedAt: "2026-02-27T00:00:04.000Z",
+    });
+  });
+
   it("does not regress latestTurn when an older turn diff completes late", () => {
     const state = makeState(
       makeThread({
@@ -1509,5 +1552,99 @@ describe("shell events are authoritative for sidebar summary flags", () => {
     expect(
       selectSidebarThreadSummaryByRef(afterShellResolved, ref)?.hasActionableProposedPlan,
     ).toBe(false);
+  });
+
+  it("retains task lifecycle activities when the activity window is capped", () => {
+    const turnId = TurnId.make("turn-1");
+    const oldTaskActivities: OrchestrationThreadActivity[] = [
+      {
+        id: EventId.make("old-task-start"),
+        tone: "info",
+        kind: "task.started",
+        summary: "subagent task started",
+        payload: {
+          taskId: "task-1",
+          taskType: "subagent",
+        },
+        turnId,
+        createdAt: timestamp(0),
+      },
+      {
+        id: EventId.make("old-task-progress"),
+        tone: "info",
+        kind: "task.progress",
+        summary: "subagent task progress",
+        payload: {
+          taskId: "task-1",
+          detail: "Reading files",
+        },
+        turnId,
+        createdAt: timestamp(1),
+      },
+      {
+        id: EventId.make("old-task-completed"),
+        tone: "info",
+        kind: "task.completed",
+        summary: "subagent task completed",
+        payload: {
+          taskId: "task-1",
+          status: "completed",
+        },
+        turnId,
+        createdAt: timestamp(2),
+      },
+    ];
+    const noiseActivities: OrchestrationThreadActivity[] = Array.from(
+      { length: 500 },
+      (_, index) => ({
+        id: EventId.make(`noise-${index}`),
+        tone: "info",
+        kind: "tool.completed",
+        summary: `Noise ${index}`,
+        payload: {
+          itemId: `noise-${index}`,
+          itemType: "dynamic_tool_call",
+        },
+        turnId,
+        createdAt: timestamp(index + 3),
+      }),
+    );
+    const thread = makeThread({
+      activities: [...oldTaskActivities, ...noiseActivities],
+    });
+    const state = makeState(thread);
+
+    const next = applyOrchestrationEvent(
+      state,
+      makeEvent("thread.activity-appended", {
+        threadId: thread.id,
+        activity: {
+          id: EventId.make("new-noise"),
+          tone: "info",
+          kind: "tool.completed",
+          summary: "New noise",
+          payload: {
+            itemId: "new-noise",
+            itemType: "dynamic_tool_call",
+          },
+          turnId,
+          createdAt: "2026-02-27T00:10:00.000Z",
+        },
+      }),
+      localEnvironmentId,
+    );
+
+    const retainedIds = selectThreadByRef(
+      next,
+      scopeThreadRef(thread.environmentId, thread.id),
+    )?.activities.map((activity) => activity.id);
+    expect(retainedIds).toHaveLength(500);
+    expect(retainedIds).toContain("old-task-start");
+    expect(retainedIds).toContain("old-task-progress");
+    expect(retainedIds).toContain("old-task-completed");
+    expect(retainedIds).toContain("new-noise");
+    expect(retainedIds).not.toContain("noise-0");
+    expect(retainedIds).not.toContain("noise-1");
+    expect(retainedIds).not.toContain("noise-2");
   });
 });

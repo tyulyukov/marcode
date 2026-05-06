@@ -37,6 +37,10 @@ function makeEvent(input: {
   } as OrchestrationEvent;
 }
 
+function timestamp(index: number): string {
+  return new Date(Date.UTC(2026, 1, 27, 0, 0, index)).toISOString();
+}
+
 describe("orchestration projector", () => {
   it("applies thread.created events", async () => {
     const now = new Date().toISOString();
@@ -299,6 +303,103 @@ describe("orchestration projector", () => {
     const thread = afterRunning.threads[0];
     expect(thread?.latestTurn?.turnId).toBe("turn-1");
     expect(thread?.session?.status).toBe("running");
+  });
+
+  it("settles latest turn when Codex session becomes ready without a message or checkpoint", async () => {
+    const createdAt = "2026-02-23T08:00:00.000Z";
+    const startedAt = "2026-02-23T08:00:01.000Z";
+    const completedAt = "2026-02-23T08:00:03.000Z";
+    const model = createEmptyReadModel(createdAt);
+
+    const afterCreate = await Effect.runPromise(
+      projectEvent(
+        model,
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: createdAt,
+          commandId: "cmd-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "demo",
+            modelSelection: {
+              provider: "codex",
+              model: "gpt-5.3-codex",
+            },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+
+    const afterRunning = await Effect.runPromise(
+      projectEvent(
+        afterCreate,
+        makeEvent({
+          sequence: 2,
+          type: "thread.session-set",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: startedAt,
+          commandId: "cmd-running",
+          payload: {
+            threadId: "thread-1",
+            session: {
+              threadId: "thread-1",
+              status: "running",
+              providerName: "codex",
+              providerSessionId: "session-1",
+              providerThreadId: "provider-thread-1",
+              runtimeMode: "full-access",
+              activeTurnId: "turn-1",
+              lastError: null,
+              updatedAt: startedAt,
+            },
+          },
+        }),
+      ),
+    );
+
+    const afterReady = await Effect.runPromise(
+      projectEvent(
+        afterRunning,
+        makeEvent({
+          sequence: 3,
+          type: "thread.session-set",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: completedAt,
+          commandId: "cmd-ready",
+          payload: {
+            threadId: "thread-1",
+            session: {
+              threadId: "thread-1",
+              status: "ready",
+              providerName: "codex",
+              providerSessionId: "session-1",
+              providerThreadId: "provider-thread-1",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: completedAt,
+            },
+          },
+        }),
+      ),
+    );
+
+    expect(afterReady.threads[0]?.latestTurn).toMatchObject({
+      turnId: "turn-1",
+      state: "completed",
+      completedAt,
+    });
   });
 
   it("updates canonical thread runtime mode from thread.runtime-mode-set", async () => {
@@ -913,5 +1014,155 @@ describe("orchestration projector", () => {
     expect(thread?.checkpoints).toHaveLength(500);
     expect(thread?.checkpoints[0]?.turnId).toBe("turn-100");
     expect(thread?.checkpoints.at(-1)?.turnId).toBe("turn-599");
+  });
+
+  it("retains task lifecycle activities when the activity window is capped", async () => {
+    const createdAt = timestamp(0);
+    const afterCreate = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(createdAt),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-activity-cap",
+          occurredAt: createdAt,
+          commandId: "cmd-create",
+          payload: {
+            threadId: "thread-activity-cap",
+            projectId: "project-1",
+            title: "activity cap",
+            modelSelection: {
+              provider: "opencode",
+              model: "gpt-5.5",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            additionalDirectories: [],
+            implementingJiraTicketKeys: [],
+            createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ),
+    );
+
+    const taskEvents: ReadonlyArray<OrchestrationEvent> = [
+      makeEvent({
+        sequence: 2,
+        type: "thread.activity-appended",
+        aggregateKind: "thread",
+        aggregateId: "thread-activity-cap",
+        occurredAt: timestamp(1),
+        commandId: "cmd-task-start",
+        payload: {
+          threadId: "thread-activity-cap",
+          activity: {
+            id: "old-task-start",
+            tone: "info",
+            kind: "task.started",
+            summary: "subagent task started",
+            payload: {
+              taskId: "task-1",
+              taskType: "subagent",
+            },
+            turnId: "turn-1",
+            createdAt: timestamp(1),
+          },
+        },
+      }),
+      makeEvent({
+        sequence: 3,
+        type: "thread.activity-appended",
+        aggregateKind: "thread",
+        aggregateId: "thread-activity-cap",
+        occurredAt: timestamp(2),
+        commandId: "cmd-task-progress",
+        payload: {
+          threadId: "thread-activity-cap",
+          activity: {
+            id: "old-task-progress",
+            tone: "info",
+            kind: "task.progress",
+            summary: "subagent task progress",
+            payload: {
+              taskId: "task-1",
+              detail: "Reading files",
+            },
+            turnId: "turn-1",
+            createdAt: timestamp(2),
+          },
+        },
+      }),
+      makeEvent({
+        sequence: 4,
+        type: "thread.activity-appended",
+        aggregateKind: "thread",
+        aggregateId: "thread-activity-cap",
+        occurredAt: timestamp(3),
+        commandId: "cmd-task-complete",
+        payload: {
+          threadId: "thread-activity-cap",
+          activity: {
+            id: "old-task-completed",
+            tone: "info",
+            kind: "task.completed",
+            summary: "subagent task completed",
+            payload: {
+              taskId: "task-1",
+              status: "completed",
+            },
+            turnId: "turn-1",
+            createdAt: timestamp(3),
+          },
+        },
+      }),
+    ];
+    const noiseEvents: ReadonlyArray<OrchestrationEvent> = Array.from({ length: 501 }, (_, index) =>
+      makeEvent({
+        sequence: index + 5,
+        type: "thread.activity-appended",
+        aggregateKind: "thread",
+        aggregateId: "thread-activity-cap",
+        occurredAt: timestamp(index + 4),
+        commandId: `cmd-noise-${index}`,
+        payload: {
+          threadId: "thread-activity-cap",
+          activity: {
+            id: `noise-${index}`,
+            tone: "info",
+            kind: "tool.completed",
+            summary: `Noise ${index}`,
+            payload: {
+              itemId: `noise-${index}`,
+              itemType: "dynamic_tool_call",
+            },
+            turnId: "turn-1",
+            createdAt: timestamp(index + 4),
+          },
+        },
+      }),
+    );
+
+    const finalState = await [...taskEvents, ...noiseEvents].reduce<
+      Promise<ReturnType<typeof createEmptyReadModel>>
+    >(
+      (statePromise, event) =>
+        statePromise.then((state) => Effect.runPromise(projectEvent(state, event))),
+      Promise.resolve(afterCreate),
+    );
+
+    const retainedIds = finalState.threads[0]?.activities.map((activity) => activity.id);
+    expect(retainedIds).toHaveLength(500);
+    expect(retainedIds).toContain("old-task-start");
+    expect(retainedIds).toContain("old-task-progress");
+    expect(retainedIds).toContain("old-task-completed");
+    expect(retainedIds).toContain("noise-500");
+    expect(retainedIds).not.toContain("noise-0");
+    expect(retainedIds).not.toContain("noise-1");
+    expect(retainedIds).not.toContain("noise-2");
+    expect(retainedIds).not.toContain("noise-3");
   });
 });

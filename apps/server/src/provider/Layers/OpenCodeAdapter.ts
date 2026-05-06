@@ -6,6 +6,7 @@ import {
   type ProviderSession,
   RuntimeItemId,
   RuntimeRequestId,
+  RuntimeTaskId,
   ThreadId,
   type ToolLifecycleItemType,
   TurnId,
@@ -72,10 +73,14 @@ interface OpenCodeSessionContext {
   readonly partById: Map<string, Part>;
   readonly emittedTextByPartId: Map<string, string>;
   readonly completedAssistantPartIds: Set<string>;
+  readonly startedSubagentTaskIds: Set<string>;
+  readonly completedSubagentTaskIds: Set<string>;
+  readonly lastSubagentProgressByTaskId: Map<string, string>;
   readonly turns: Array<OpenCodeTurnSnapshot>;
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
   activeVariant: string | undefined;
+  lastPlanUpdateKey: string | undefined;
   /**
    * One-shot guard flipped by `stopOpenCodeContext` / `emitUnexpectedExit`.
    * The session lifecycle is owned by `sessionScope`; this Ref exists only
@@ -364,6 +369,90 @@ function toolStateCreatedAt(part: Extract<Part, { type: "tool" }>): string | und
     default:
       return undefined;
   }
+}
+
+function openCodeTaskInput(
+  part: Extract<Part, { type: "tool" }>,
+): Record<string, unknown> | undefined {
+  if (part.tool !== "task") return undefined;
+  return openCodeToolInput(part.state);
+}
+
+function openCodeTaskMetadata(part: Extract<Part, { type: "tool" }>): Record<string, unknown> {
+  const state = part.state as { metadata?: unknown };
+  return state.metadata && typeof state.metadata === "object" && !Array.isArray(state.metadata)
+    ? (state.metadata as Record<string, unknown>)
+    : {};
+}
+
+function openCodeTaskId(part: Extract<Part, { type: "tool" }>): string {
+  const input = openCodeTaskInput(part);
+  const metadata = openCodeTaskMetadata(part);
+  const rawTaskId =
+    typeof metadata.sessionId === "string" && metadata.sessionId.trim().length > 0
+      ? metadata.sessionId
+      : typeof input?.task_id === "string" && input.task_id.trim().length > 0
+        ? input.task_id
+        : part.callID;
+  return rawTaskId.trim();
+}
+
+function openCodeTaskModel(part: Extract<Part, { type: "tool" }>): string | undefined {
+  const metadata = openCodeTaskMetadata(part);
+  const model = metadata.model;
+  if (!model || typeof model !== "object" || Array.isArray(model)) return undefined;
+  const record = model as Record<string, unknown>;
+  return typeof record.modelID === "string" && record.modelID.trim().length > 0
+    ? record.modelID.trim()
+    : undefined;
+}
+
+function openCodeTaskDescription(part: Extract<Part, { type: "tool" }>): string | undefined {
+  const input = openCodeTaskInput(part);
+  const state = part.state as { title?: string };
+  return typeof input?.description === "string" && input.description.trim().length > 0
+    ? input.description.trim()
+    : typeof state.title === "string" && state.title.trim().length > 0
+      ? state.title.trim()
+      : undefined;
+}
+
+function openCodeTaskAgentType(part: Extract<Part, { type: "tool" }>): string | undefined {
+  const input = openCodeTaskInput(part);
+  return typeof input?.subagent_type === "string" && input.subagent_type.trim().length > 0
+    ? input.subagent_type.trim()
+    : undefined;
+}
+
+function openCodeTaskPrompt(part: Extract<Part, { type: "tool" }>): string | undefined {
+  const input = openCodeTaskInput(part);
+  return typeof input?.prompt === "string" ? input.prompt : undefined;
+}
+
+function openCodeTaskOutput(part: Extract<Part, { type: "tool" }>): string | undefined {
+  const state = part.state as { output?: string; error?: string };
+  if (part.state.status === "completed") return state.output;
+  if (part.state.status === "error") return state.error;
+  return undefined;
+}
+
+function openCodeTaskProgressDescription(part: Extract<Part, { type: "tool" }>): string {
+  const state = part.state as { title?: string };
+  return typeof state.title === "string" && state.title.trim().length > 0
+    ? state.title.trim()
+    : (openCodeTaskDescription(part) ?? "Subagent task");
+}
+
+function shouldEmitOpenCodeTaskProgress(part: Extract<Part, { type: "tool" }>): boolean {
+  const description = openCodeTaskProgressDescription(part);
+  const taskDescription = openCodeTaskDescription(part);
+  return taskDescription === undefined || description !== taskDescription;
+}
+
+function planStepsKey(
+  steps: ReadonlyArray<{ readonly step: string; readonly status: string }>,
+): string {
+  return JSON.stringify(steps.map((step) => [step.step, step.status]));
 }
 
 function sessionErrorMessage(error: unknown): string {
@@ -744,13 +833,13 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
               appendTurnItem(context, turnId, part);
               yield* emit(runtimeEvent);
 
-              // TodoWrite feeds the plan/tasks sidebar — mirror Claude's
-              // behavior: when the agent updates its todo list, translate it
-              // into a turn.plan.updated runtime event so the existing plan
-              // projection and sidebar renderer pick it up.
-              if (isTodoWriteTool(part.tool)) {
-                const planSteps = extractPlanStepsFromTodos(toolInput);
-                if (planSteps && planSteps.length > 0) {
+              if (itemType === "collab_agent_tool_call" && part.tool === "task") {
+                const taskId = openCodeTaskId(part);
+                if (
+                  part.state.status !== "pending" &&
+                  !context.startedSubagentTaskIds.has(taskId)
+                ) {
+                  context.startedSubagentTaskIds.add(taskId);
                   yield* emit({
                     ...buildEventBase({
                       threadId: context.session.threadId,
@@ -759,9 +848,89 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
                       createdAt: toolStateCreatedAt(part),
                       raw: event,
                     }),
-                    type: "turn.plan.updated",
-                    payload: { plan: planSteps },
+                    type: "task.started",
+                    payload: {
+                      taskId: RuntimeTaskId.make(taskId),
+                      taskType: "subagent",
+                      ...(openCodeTaskDescription(part)
+                        ? { description: openCodeTaskDescription(part) }
+                        : {}),
+                      ...(openCodeTaskAgentType(part)
+                        ? { agentType: openCodeTaskAgentType(part) }
+                        : {}),
+                      toolUseId: part.callID,
+                      ...(openCodeTaskPrompt(part) ? { prompt: openCodeTaskPrompt(part) } : {}),
+                      ...(openCodeTaskModel(part) ? { model: openCodeTaskModel(part) } : {}),
+                    },
                   });
+                }
+                if (part.state.status === "running" && shouldEmitOpenCodeTaskProgress(part)) {
+                  const description = openCodeTaskProgressDescription(part);
+                  const progressKey = `${description}\u0000${part.state.status}`;
+                  if (context.lastSubagentProgressByTaskId.get(taskId) !== progressKey) {
+                    context.lastSubagentProgressByTaskId.set(taskId, progressKey);
+                    yield* emit({
+                      ...buildEventBase({
+                        threadId: context.session.threadId,
+                        turnId,
+                        itemId: part.callID,
+                        createdAt: toolStateCreatedAt(part),
+                        raw: event,
+                      }),
+                      type: "task.progress",
+                      payload: {
+                        taskId: RuntimeTaskId.make(taskId),
+                        description,
+                        lastToolName: part.tool,
+                      },
+                    });
+                  }
+                }
+                if (
+                  (part.state.status === "completed" || part.state.status === "error") &&
+                  !context.completedSubagentTaskIds.has(taskId)
+                ) {
+                  context.completedSubagentTaskIds.add(taskId);
+                  yield* emit({
+                    ...buildEventBase({
+                      threadId: context.session.threadId,
+                      turnId,
+                      itemId: part.callID,
+                      createdAt: toolStateCreatedAt(part),
+                      raw: event,
+                    }),
+                    type: "task.completed",
+                    payload: {
+                      taskId: RuntimeTaskId.make(taskId),
+                      status: part.state.status === "error" ? "failed" : "completed",
+                      ...(openCodeTaskOutput(part) ? { summary: openCodeTaskOutput(part) } : {}),
+                    },
+                  });
+                }
+              }
+
+              // TodoWrite feeds the plan/tasks sidebar — mirror Claude's
+              // behavior: when the agent updates its todo list, translate it
+              // into a turn.plan.updated runtime event so the existing plan
+              // projection and sidebar renderer pick it up.
+              if (isTodoWriteTool(part.tool)) {
+                const planSteps = extractPlanStepsFromTodos(toolInput);
+                if (planSteps && planSteps.length > 0) {
+                  const nextPlanUpdateKey = planStepsKey(planSteps);
+                  if (context.lastPlanUpdateKey !== nextPlanUpdateKey) {
+                    context.lastPlanUpdateKey = nextPlanUpdateKey;
+                    yield* emit({
+                      ...buildEventBase({
+                        threadId: context.session.threadId,
+                        turnId,
+                        itemId: part.callID,
+                        createdAt: toolStateCreatedAt(part),
+                        raw: event,
+                      }),
+                      type: "turn.plan.updated",
+                      payload: { plan: planSteps },
+                    });
+                  }
                 }
               }
             }
@@ -1103,10 +1272,14 @@ export function makeOpenCodeAdapterLive(options?: OpenCodeAdapterLiveOptions) {
             emittedTextByPartId: new Map(),
             messageRoleById: new Map(),
             completedAssistantPartIds: new Set(),
+            startedSubagentTaskIds: new Set(),
+            completedSubagentTaskIds: new Set(),
+            lastSubagentProgressByTaskId: new Map(),
             turns: [],
             activeTurnId: undefined,
             activeAgent: undefined,
             activeVariant: undefined,
+            lastPlanUpdateKey: undefined,
             stopped: yield* Ref.make(false),
             sessionScope: started.sessionScope,
           };

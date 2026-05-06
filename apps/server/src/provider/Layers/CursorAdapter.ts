@@ -153,6 +153,8 @@ interface CursorSessionContext {
   // events via `content: [{ type: "terminal", terminalId }]`, and we pull the
   // command text from here to populate the hint for the tool call.
   readonly terminals: Map<string, CursorTerminalEntry>;
+  readonly activeSubagentTaskIds: Set<string>;
+  readonly completedSubagentTaskIds: Set<string>;
   lastPlanFingerprint: string | undefined;
   activeTurnId: TurnId | undefined;
   stopped: boolean;
@@ -225,6 +227,18 @@ export function resolveEffectiveTurnId(
   if (ctx.activeTurnId) return ctx.activeTurnId;
   const lastTurn = ctx.turns[ctx.turns.length - 1];
   return lastTurn?.id;
+}
+
+function cursorSubagentTaskId(turnId: TurnId | undefined): string | undefined {
+  return turnId ? `cursor-subagent:${String(turnId)}` : undefined;
+}
+
+function isCursorSubagentToolCall(toolCall: AcpToolCallState): boolean {
+  return /\nctc_[A-Za-z0-9_-]+/u.test(toolCall.toolCallId);
+}
+
+function cursorSubagentProgressDescription(toolCall: AcpToolCallState): string {
+  return toolCall.detail ?? toolCall.title ?? toolCall.kind ?? "Cursor subagent activity";
 }
 
 function normalizeModeSearchText(mode: AcpSessionMode): string {
@@ -1067,6 +1081,8 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
             turns: [],
             toolCallHints: new Map(),
             terminals: new Map(),
+            activeSubagentTaskIds: new Set(),
+            completedSubagentTaskIds: new Set(),
             lastPlanFingerprint: undefined,
             activeTurnId: undefined,
             stopped: false,
@@ -1124,17 +1140,60 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
                       event.rawPayload,
                       "acp.jsonrpc",
                     );
+                    const toolCall = applyToolCallHint(
+                      event.toolCall,
+                      resolveTerminalHintFromToolCall(event.toolCall, ctx.terminals) ??
+                        ctx.toolCallHints.get(event.toolCall.toolCallId),
+                    );
+                    if (isCursorSubagentToolCall(toolCall)) {
+                      const taskId = cursorSubagentTaskId(ctx.activeTurnId);
+                      if (taskId && !ctx.activeSubagentTaskIds.has(taskId)) {
+                        ctx.activeSubagentTaskIds.add(taskId);
+                        yield* offerRuntimeEvent({
+                          type: "task.started",
+                          ...(yield* makeEventStamp()),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          payload: {
+                            taskId: RuntimeTaskId.make(taskId),
+                            taskType: "subagent",
+                            description: "Cursor subagent",
+                          },
+                          raw: {
+                            source: "acp.jsonrpc",
+                            method: "session/update",
+                            payload: event.rawPayload,
+                          },
+                        });
+                      }
+                      if (taskId) {
+                        yield* offerRuntimeEvent({
+                          type: "task.progress",
+                          ...(yield* makeEventStamp()),
+                          provider: PROVIDER,
+                          threadId: ctx.threadId,
+                          turnId: ctx.activeTurnId,
+                          payload: {
+                            taskId: RuntimeTaskId.make(taskId),
+                            description: cursorSubagentProgressDescription(toolCall),
+                            ...(toolCall.kind ? { lastToolName: toolCall.kind } : {}),
+                          },
+                          raw: {
+                            source: "acp.jsonrpc",
+                            method: "session/update",
+                            payload: event.rawPayload,
+                          },
+                        });
+                      }
+                    }
                     yield* offerRuntimeEvent(
                       makeAcpToolCallEvent({
                         stamp: yield* makeEventStamp(),
                         provider: PROVIDER,
                         threadId: ctx.threadId,
                         turnId: ctx.activeTurnId,
-                        toolCall: applyToolCallHint(
-                          event.toolCall,
-                          resolveTerminalHintFromToolCall(event.toolCall, ctx.terminals) ??
-                            ctx.toolCallHints.get(event.toolCall.toolCallId),
-                        ),
+                        toolCall,
                         rawPayload: event.rawPayload,
                       }),
                     );
@@ -1293,6 +1352,26 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
           updatedAt: yield* nowIso,
           model: resolvedModel,
         };
+
+        const subagentTaskId = cursorSubagentTaskId(turnId);
+        if (
+          subagentTaskId &&
+          ctx.activeSubagentTaskIds.has(subagentTaskId) &&
+          !ctx.completedSubagentTaskIds.has(subagentTaskId)
+        ) {
+          ctx.completedSubagentTaskIds.add(subagentTaskId);
+          yield* offerRuntimeEvent({
+            type: "task.completed",
+            ...(yield* makeEventStamp()),
+            provider: PROVIDER,
+            threadId: input.threadId,
+            turnId,
+            payload: {
+              taskId: RuntimeTaskId.make(subagentTaskId),
+              status: result.stopReason === "cancelled" ? "stopped" : "completed",
+            },
+          });
+        }
 
         yield* offerRuntimeEvent({
           type: "turn.completed",

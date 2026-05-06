@@ -859,6 +859,42 @@ function buildLatestTurn(params: {
   };
 }
 
+function completedSessionStatusToTurnState(
+  status: OrchestrationSessionStatus,
+): NonNullable<Thread["latestTurn"]>["state"] | null {
+  switch (status) {
+    case "ready":
+    case "idle":
+      return "completed";
+    case "error":
+      return "error";
+    case "interrupted":
+    case "stopped":
+      return "interrupted";
+    default:
+      return null;
+  }
+}
+
+function settleLatestTurnFromSession(
+  latestTurn: Thread["latestTurn"],
+  session: OrchestrationSession,
+): Thread["latestTurn"] {
+  const state = completedSessionStatusToTurnState(session.status);
+  if (!state || latestTurn === null || latestTurn.completedAt !== null) {
+    return latestTurn;
+  }
+  return buildLatestTurn({
+    previous: latestTurn,
+    turnId: latestTurn.turnId,
+    state,
+    requestedAt: latestTurn.requestedAt,
+    startedAt: latestTurn.startedAt ?? session.updatedAt,
+    completedAt: session.updatedAt,
+    assistantMessageId: latestTurn.assistantMessageId,
+  });
+}
+
 function rebindTurnDiffSummariesForAssistantMessage(
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>,
   turnId: TurnId,
@@ -956,6 +992,47 @@ function retainThreadActivitiesAfterRevert(
   return activities.filter(
     (activity) => activity.turnId === null || retainedTurnIds.has(activity.turnId),
   );
+}
+
+function isRetainedActivity(activity: OrchestrationThreadActivity): boolean {
+  return (
+    activity.kind === "task.started" ||
+    activity.kind === "task.progress" ||
+    activity.kind === "task.completed"
+  );
+}
+
+function retainRecentThreadActivities(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): OrchestrationThreadActivity[] {
+  if (activities.length <= MAX_THREAD_ACTIVITIES) {
+    return [...activities];
+  }
+
+  const recent = activities.slice(-MAX_THREAD_ACTIVITIES);
+  const recentIds = new Set(recent.map((activity) => activity.id));
+  const protectedActivities = activities.filter(
+    (activity) => isRetainedActivity(activity) && !recentIds.has(activity.id),
+  );
+  if (protectedActivities.length === 0) {
+    return recent;
+  }
+
+  const protectedIds = new Set(protectedActivities.map((activity) => activity.id));
+  const merged = [
+    ...protectedActivities,
+    ...recent.filter((activity) => !protectedIds.has(activity.id)),
+  ].toSorted(compareActivities);
+
+  if (merged.length <= MAX_THREAD_ACTIVITIES) {
+    return merged;
+  }
+
+  const removable = merged.filter((activity) => !isRetainedActivity(activity));
+  const removableIds = new Set(
+    removable.slice(0, merged.length - MAX_THREAD_ACTIVITIES).map((activity) => activity.id),
+  );
+  return merged.filter((activity) => !removableIds.has(activity.id)).slice(-MAX_THREAD_ACTIVITIES);
 }
 
 function retainThreadProposedPlansAfterRevert(
@@ -1560,11 +1637,8 @@ function applyEnvironmentOrchestrationEvent(
       });
 
     case "thread.session-set":
-      return updateThreadState(state, event.payload.threadId, (thread) => ({
-        ...thread,
-        session: mapSession(event.payload.session),
-        error: sanitizeThreadErrorMessage(event.payload.session.lastError),
-        latestTurn:
+      return updateThreadState(state, event.payload.threadId, (thread) => {
+        const latestTurn =
           event.payload.session.status === "running" && event.payload.session.activeTurnId !== null
             ? buildLatestTurn({
                 previous: thread.latestTurn,
@@ -1585,9 +1659,15 @@ function applyEnvironmentOrchestrationEvent(
                     : null,
                 sourceProposedPlan: thread.pendingSourceProposedPlan,
               })
-            : thread.latestTurn,
-        updatedAt: event.occurredAt,
-      }));
+            : settleLatestTurnFromSession(thread.latestTurn, event.payload.session);
+        return {
+          ...thread,
+          session: mapSession(event.payload.session),
+          error: sanitizeThreadErrorMessage(event.payload.session.lastError),
+          latestTurn,
+          updatedAt: event.occurredAt,
+        };
+      });
 
     case "thread.session-stop-requested":
       return updateThreadState(state, event.payload.threadId, (thread) =>
@@ -1730,12 +1810,10 @@ function applyEnvironmentOrchestrationEvent(
         const activities = [
           ...thread.activities.filter((activity) => activity.id !== event.payload.activity.id),
           { ...event.payload.activity },
-        ]
-          .toSorted(compareActivities)
-          .slice(-MAX_THREAD_ACTIVITIES);
+        ].toSorted(compareActivities);
         return {
           ...thread,
-          activities,
+          activities: retainRecentThreadActivities(activities),
           updatedAt: event.occurredAt,
         };
       });

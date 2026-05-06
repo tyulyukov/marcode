@@ -736,6 +736,189 @@ describe("deriveWorkLogEntries", () => {
     expect(task.durationMs).toBe(1234);
   });
 
+  it("renders OpenCode task-tool subagents as agent groups with prompt and response", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "opencode-task-tool",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "tool.completed",
+        summary: "Task complete",
+        tone: "tool",
+        payload: {
+          itemId: "call-task-1",
+          itemType: "collab_agent_tool_call",
+          data: {
+            input: {
+              prompt: "Pick a random file and print 10 lines",
+            },
+            result: {
+              content: "apps/server/src/git/remoteRefs.ts\n\nexport function parseRemoteNames...",
+            },
+          },
+        },
+      }),
+      makeActivity({
+        id: "opencode-task-start",
+        createdAt: "2026-02-23T00:00:01.100Z",
+        kind: "task.started",
+        summary: "subagent task started",
+        tone: "info",
+        payload: {
+          taskId: "ses-child-1",
+          taskType: "subagent",
+          detail: "Print random file",
+          agentType: "explore",
+          toolUseId: "call-task-1",
+          prompt: "Pick a random file and print 10 lines",
+          model: "gpt-5.5",
+        },
+      }),
+      makeActivity({
+        id: "opencode-task-progress",
+        createdAt: "2026-02-23T00:00:01.200Z",
+        kind: "task.progress",
+        summary: "Reasoning update",
+        tone: "info",
+        payload: {
+          taskId: "ses-child-1",
+          detail: "Random file excerpt",
+          lastToolName: "task",
+        },
+      }),
+      makeActivity({
+        id: "opencode-task-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.completed",
+        summary: "Task completed",
+        tone: "info",
+        payload: {
+          taskId: "ses-child-1",
+          status: "completed",
+          detail: "apps/server/src/git/remoteRefs.ts\n\nexport function parseRemoteNames...",
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined, { provider: "opencode" });
+    expect(entries).toHaveLength(1);
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+    expect(task.taskId).toBe("ses-child-1");
+    expect(task.agentType).toBe("explore");
+    expect(task.toolUseId).toBe("call-task-1");
+    expect(task.prompt).toBe("Pick a random file and print 10 lines");
+    expect(task.response).toContain("remoteRefs.ts");
+    expect(task.model).toBe("gpt-5.5");
+    expect(task.progressSummary).toBe("Random file excerpt");
+    expect(task.progressHistory).toEqual([
+      {
+        id: "opencode-task-progress",
+        lastToolName: "task",
+        description: "Random file excerpt",
+        summary: null,
+        createdAt: "2026-02-23T00:00:01.200Z",
+      },
+    ]);
+  });
+
+  it("hides OpenCode subagent progress when it only repeats the task name", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "opencode-task-start",
+        createdAt: "2026-02-23T00:00:01.100Z",
+        kind: "task.started",
+        summary: "subagent task started",
+        tone: "info",
+        payload: {
+          taskId: "ses-child-1",
+          taskType: "subagent",
+          detail: "Trace notification logic",
+          agentType: "explore",
+          toolUseId: "call-task-1",
+          prompt: "Find notification events",
+          model: "gpt-5.5",
+        },
+      }),
+      makeActivity({
+        id: "opencode-task-progress",
+        createdAt: "2026-02-23T00:00:01.200Z",
+        kind: "task.progress",
+        summary: "Trace notification logic",
+        tone: "info",
+        payload: {
+          taskId: "ses-child-1",
+          detail: "Trace notification logic",
+          lastToolName: "task",
+        },
+      }),
+      makeActivity({
+        id: "opencode-task-complete",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.completed",
+        summary: "Task completed",
+        tone: "info",
+        payload: {
+          taskId: "ses-child-1",
+          status: "completed",
+          summary: "Findings: notification logic lives in turnNotification.ts",
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined, { provider: "opencode" });
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+    expect(task.progressSummary).toBeNull();
+    expect(task.progressHistory).toEqual([]);
+    expect(task.response).toContain("notification logic");
+  });
+
+  it("renders Cursor task-call progress as a subagent group without affecting provider-specific progress rules", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "cursor-subagent-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "task.started",
+        summary: "subagent task started",
+        tone: "info",
+        payload: {
+          taskId: "cursor-subagent:turn-1",
+          taskType: "subagent",
+          detail: "Cursor subagent",
+        },
+      }),
+      makeActivity({
+        id: "cursor-subagent-progress",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "task.progress",
+        summary: "Reasoning update",
+        tone: "info",
+        payload: {
+          taskId: "cursor-subagent:turn-1",
+          detail: "Changed files",
+          lastToolName: "edit",
+        },
+      }),
+      makeActivity({
+        id: "cursor-subagent-complete",
+        createdAt: "2026-02-23T00:00:03.000Z",
+        kind: "task.completed",
+        summary: "Task completed",
+        tone: "info",
+        payload: {
+          taskId: "cursor-subagent:turn-1",
+          status: "completed",
+        },
+      }),
+    ];
+
+    const entries = deriveWorkLogEntries(activities, undefined, { provider: "cursor" });
+    expect(entries).toHaveLength(1);
+    const task = entries[0]!.agentGroup!.tasks[0]!;
+    expect(task.description).toBe("Cursor subagent");
+    expect(task.progressSummary).toBe("Changed files");
+    expect(task.progressHistory[0]!.description).toBe("Changed files");
+    expect(task.lastToolName).toBe("edit");
+  });
+
   it("groups multiple tasks into a single agent group entry", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
