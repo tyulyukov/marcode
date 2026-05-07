@@ -67,7 +67,7 @@ const STEPS: Step[] = [
           <ExternalLink href="https://opencode.ai/docs/cli/" color="rebel-mint">
             OpenCode
           </ExternalLink>
-          <ExternalLink href="https://docs.cursor.com/en/cli/installation" color="rebel-mint">
+          <ExternalLink href="https://cursor.com/docs/cli/overview" color="rebel-mint">
             Cursor Agent CLI
           </ExternalLink>
         </span>
