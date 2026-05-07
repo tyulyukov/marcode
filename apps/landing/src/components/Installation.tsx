@@ -19,12 +19,24 @@ const ACCENT_COLOR: Record<string, { text: string; ring: string; glow: string; d
     glow: "shadow-[0_0_24px_rgba(127,161,255,0.25)]",
     dot: "bg-curious-sky",
   },
+  "rebel-mint": {
+    text: "text-rebel-mint",
+    ring: "ring-rebel-mint/30",
+    glow: "shadow-[0_0_24px_rgba(100,225,148,0.25)]",
+    dot: "bg-rebel-mint",
+  },
   "dream-shift": {
     text: "text-dream-shift",
     ring: "ring-dream-shift/30",
     glow: "shadow-[0_0_24px_rgba(195,156,255,0.25)]",
     dot: "bg-dream-shift",
   },
+};
+
+const LINK_COLOR: Record<string, string> = {
+  "curious-sky": "text-curious-sky decoration-curious-sky/30 hover:decoration-curious-sky",
+  "rebel-mint": "text-rebel-mint decoration-rebel-mint/30 hover:decoration-rebel-mint",
+  muted: "text-muted-foreground decoration-muted-foreground/30 hover:decoration-muted-foreground",
 };
 
 const STEPS: Step[] = [
@@ -39,13 +51,37 @@ const STEPS: Step[] = [
     ),
   },
   {
+    title: "Install an Agent CLI",
+    accent: "rebel-mint",
+    description: (
+      <>
+        Install and authorize at least one supported agent CLI before opening MarCode. MarCode runs
+        your already signed-in CLI:
+        <span className="mt-2.5 flex flex-wrap gap-4">
+          <ExternalLink href="https://code.claude.com/docs/en/quickstart" color="rebel-mint">
+            Claude Code
+          </ExternalLink>
+          <ExternalLink href="https://help.openai.com/en/articles/11096431" color="rebel-mint">
+            Codex
+          </ExternalLink>
+          <ExternalLink href="https://opencode.ai/docs/cli/" color="rebel-mint">
+            OpenCode
+          </ExternalLink>
+          <ExternalLink href="https://docs.cursor.com/en/cli/installation" color="rebel-mint">
+            Cursor Agent CLI
+          </ExternalLink>
+        </span>
+      </>
+    ),
+  },
+  {
     title: "Install a Git Host CLI",
     accent: "curious-sky",
     description: (
       <>
         For the full git integration experience (branches, PRs/MRs from chat), install and
         authenticate your host&apos;s CLI:
-        <span className="mt-2.5 flex gap-4">
+        <span className="mt-2.5 flex flex-wrap gap-4">
           <ExternalLink href="https://cli.github.com" color="curious-sky">
             GitHub CLI
           </ExternalLink>
@@ -95,10 +131,7 @@ function ExternalLink({
   color: string;
   children: React.ReactNode;
 }) {
-  const colorClass =
-    color === "muted"
-      ? "text-muted-foreground decoration-muted-foreground/30 hover:decoration-muted-foreground"
-      : `text-${color} decoration-${color}/30 hover:decoration-${color}`;
+  const colorClass = LINK_COLOR[color]!;
 
   return (
     <a
