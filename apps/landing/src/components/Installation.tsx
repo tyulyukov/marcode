@@ -13,12 +13,6 @@ const ACCENT_COLOR: Record<string, { text: string; ring: string; glow: string; d
     glow: "shadow-[0_0_24px_rgba(119,230,233,0.25)]",
     dot: "bg-fresh-syntax",
   },
-  sunbyte: {
-    text: "text-sunbyte",
-    ring: "ring-sunbyte/30",
-    glow: "shadow-[0_0_24px_rgba(249,214,71,0.25)]",
-    dot: "bg-sunbyte",
-  },
   "curious-sky": {
     text: "text-curious-sky",
     ring: "ring-curious-sky/30",
@@ -41,25 +35,6 @@ const STEPS: Step[] = [
       <>
         Grab the latest release for your OS from the button above — free, open source, available on
         macOS, Windows, and Linux.
-      </>
-    ),
-  },
-  {
-    title: "macOS: Bypass Gatekeeper",
-    accent: "sunbyte",
-    description: (
-      <>
-        The app isn&apos;t signed with an Apple Developer certificate yet. After the first launch
-        warning, go to{" "}
-        <span className="text-foreground font-medium">
-          System Settings &rarr; Privacy &amp; Security
-        </span>{" "}
-        &rarr; scroll down &rarr; <span className="text-foreground font-medium">Open Anyway</span>.
-        The code is{" "}
-        <ExternalLink href="https://github.com/tyulyukov/marcode" color="fresh-syntax">
-          fully open source
-        </ExternalLink>{" "}
-        — inspect it yourself.
       </>
     ),
   },
