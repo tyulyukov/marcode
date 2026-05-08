@@ -341,6 +341,11 @@ export function projectEvent(
             interactionMode: payload.interactionMode,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
+            associatedWorktreePath: payload.associatedWorktreePath,
+            associatedWorktreeBranch: payload.associatedWorktreeBranch,
+            associatedWorktreeRef: payload.associatedWorktreeRef,
+            createBranchFlowCompleted: payload.createBranchFlowCompleted,
+            handoff: payload.handoff,
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -413,6 +418,19 @@ export function projectEvent(
             ...(payload.implementingJiraTicketKeys !== undefined
               ? { implementingJiraTicketKeys: payload.implementingJiraTicketKeys }
               : {}),
+            ...(payload.associatedWorktreePath !== undefined
+              ? { associatedWorktreePath: payload.associatedWorktreePath }
+              : {}),
+            ...(payload.associatedWorktreeBranch !== undefined
+              ? { associatedWorktreeBranch: payload.associatedWorktreeBranch }
+              : {}),
+            ...(payload.associatedWorktreeRef !== undefined
+              ? { associatedWorktreeRef: payload.associatedWorktreeRef }
+              : {}),
+            ...(payload.createBranchFlowCompleted !== undefined
+              ? { createBranchFlowCompleted: payload.createBranchFlowCompleted }
+              : {}),
+            ...(payload.handoff !== undefined ? { handoff: payload.handoff } : {}),
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -467,6 +485,7 @@ export function projectEvent(
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
+            source: payload.source ?? "native",
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
           },
@@ -488,6 +507,8 @@ export function projectEvent(
                     streaming: message.streaming,
                     updatedAt: message.updatedAt,
                     turnId: message.turnId,
+                    // Preserve the original source - never overwrite (handoff-import
+                    // messages keep their source even when the assistant streams).
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),

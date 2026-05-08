@@ -111,6 +111,7 @@ describe("MessagesTimeline", () => {
               ].join("\n"),
               createdAt: "2026-03-17T19:12:28.000Z",
               streaming: false,
+              source: "native",
             },
           },
         ]}

@@ -2644,6 +2644,7 @@ describe("deriveTimelineEntries", () => {
           text: "hello",
           createdAt: "2026-02-23T00:00:01.000Z",
           streaming: false,
+          source: "native",
         },
       ],
       [
@@ -2687,6 +2688,7 @@ describe("deriveTimelineEntries", () => {
           text: "progress update",
           createdAt: "2026-02-23T00:00:01.000Z",
           streaming: false,
+          source: "native",
         },
         {
           id: MessageId.make("assistant-final"),
@@ -2694,6 +2696,7 @@ describe("deriveTimelineEntries", () => {
           text: "final answer",
           createdAt: "2026-02-23T00:00:01.000Z",
           streaming: false,
+          source: "native",
         },
       ],
       [],

@@ -10,6 +10,7 @@ import {
   OrchestrationShellSnapshot,
   OrchestrationThread,
   ProjectScript,
+  ThreadHandoff,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
@@ -75,6 +76,10 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     modelSelection: Schema.fromJsonString(ModelSelection),
     additionalDirectories: Schema.fromJsonString(Schema.Array(Schema.String)),
     implementingJiraTicketKeys: Schema.fromJsonString(Schema.Array(Schema.String)),
+    handoff: Schema.NullOr(Schema.fromJsonString(ThreadHandoff)),
+    // Stored as INTEGER (0 or 1); kept raw at the row level and converted to
+    // boolean by callers that map this row to the domain shape.
+    createBranchFlowCompleted: Schema.Number,
   }),
 );
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
@@ -272,6 +277,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          associated_worktree_path AS "associatedWorktreePath",
+          associated_worktree_branch AS "associatedWorktreeBranch",
+          associated_worktree_ref AS "associatedWorktreeRef",
+          create_branch_flow_completed AS "createBranchFlowCompleted",
+          handoff_json AS "handoff",
           additional_directories_json AS "additionalDirectories",
           implementing_jira_ticket_keys_json AS "implementingJiraTicketKeys",
           latest_turn_id AS "latestTurnId",
@@ -301,6 +311,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          source,
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages
@@ -602,6 +613,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          associated_worktree_path AS "associatedWorktreePath",
+          associated_worktree_branch AS "associatedWorktreeBranch",
+          associated_worktree_ref AS "associatedWorktreeRef",
+          create_branch_flow_completed AS "createBranchFlowCompleted",
+          handoff_json AS "handoff",
           additional_directories_json AS "additionalDirectories",
           implementing_jira_ticket_keys_json AS "implementingJiraTicketKeys",
           latest_turn_id AS "latestTurnId",
@@ -633,6 +649,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          source,
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages
@@ -807,6 +824,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
+                  source: row.source,
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                 });
@@ -942,6 +960,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 interactionMode: row.interactionMode,
                 branch: row.branch,
                 worktreePath: row.worktreePath,
+                associatedWorktreePath: row.associatedWorktreePath,
+                associatedWorktreeBranch: row.associatedWorktreeBranch,
+                associatedWorktreeRef: row.associatedWorktreeRef,
+                createBranchFlowCompleted: row.createBranchFlowCompleted === 1,
+                handoff: row.handoff,
                 additionalDirectories: row.additionalDirectories,
                 implementingJiraTicketKeys: row.implementingJiraTicketKeys as ReadonlyArray<
                   OrchestrationThread["implementingJiraTicketKeys"][number]
@@ -1195,6 +1218,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     interactionMode: row.interactionMode,
                     branch: row.branch,
                     worktreePath: row.worktreePath,
+                    handoff: row.handoff,
                     additionalDirectories: row.additionalDirectories,
                     implementingJiraTicketKeys: row.implementingJiraTicketKeys as ReadonlyArray<
                       OrchestrationThreadShell["implementingJiraTicketKeys"][number]
@@ -1295,6 +1319,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
+        handoff: threadRow.value.handoff,
         additionalDirectories: threadRow.value.additionalDirectories,
         implementingJiraTicketKeys: threadRow.value.implementingJiraTicketKeys as ReadonlyArray<
           OrchestrationThreadShell["implementingJiraTicketKeys"][number]
@@ -1393,6 +1418,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         interactionMode: threadRow.value.interactionMode,
         branch: threadRow.value.branch,
         worktreePath: threadRow.value.worktreePath,
+        associatedWorktreePath: threadRow.value.associatedWorktreePath,
+        associatedWorktreeBranch: threadRow.value.associatedWorktreeBranch,
+        associatedWorktreeRef: threadRow.value.associatedWorktreeRef,
+        createBranchFlowCompleted: threadRow.value.createBranchFlowCompleted === 1,
+        handoff: threadRow.value.handoff,
         additionalDirectories: threadRow.value.additionalDirectories,
         implementingJiraTicketKeys: threadRow.value.implementingJiraTicketKeys as ReadonlyArray<
           OrchestrationThread["implementingJiraTicketKeys"][number]
@@ -1409,6 +1439,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             text: row.text,
             turnId: row.turnId,
             streaming: row.isStreaming === 1,
+            source: row.source,
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
           };

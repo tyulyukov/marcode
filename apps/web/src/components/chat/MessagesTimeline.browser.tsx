@@ -36,6 +36,7 @@ function createTimelineEntries(commandDetail?: string): TimelineEntry[] {
         createdAt: userCreatedAt,
         turnId: null,
         streaming: false,
+        source: "native",
       },
     });
     entries.push({
@@ -49,6 +50,7 @@ function createTimelineEntries(commandDetail?: string): TimelineEntry[] {
         createdAt: assistantCreatedAt,
         turnId: null,
         streaming: false,
+        source: "native",
       },
     });
   }

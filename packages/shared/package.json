@@ -75,6 +75,10 @@
     "./cliArgs": {
       "types": "./src/cliArgs.ts",
       "import": "./src/cliArgs.ts"
+    },
+    "./worktreeHandoff": {
+      "types": "./src/worktreeHandoff.ts",
+      "import": "./src/worktreeHandoff.ts"
     }
   },
   "scripts": {

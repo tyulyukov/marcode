@@ -1,5 +1,6 @@
 import {
   ArchiveIcon,
+  ArrowRightIcon,
   ArrowUpDownIcon,
   ChevronRightIcon,
   CloudIcon,
@@ -11,6 +12,8 @@ import {
   TerminalIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+import { PROVIDER_DISPLAY_NAMES } from "@marcode/contracts";
+import { PROVIDER_ICON_BY_PROVIDER } from "./chat/providerIconUtils";
 import {
   prStatusIndicator,
   resolveThreadPr,
@@ -282,6 +285,32 @@ function buildThreadJumpLabelMap(input: {
     }
   }
   return mapping.size > 0 ? mapping : EMPTY_THREAD_JUMP_LABELS;
+}
+
+function ThreadHandoffBadge({
+  handoff,
+}: {
+  handoff: NonNullable<SidebarThreadSummary["handoff"]>;
+}) {
+  const SourceIcon = PROVIDER_ICON_BY_PROVIDER[handoff.sourceProvider];
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            aria-label={`Handoff from ${PROVIDER_DISPLAY_NAMES[handoff.sourceProvider]}`}
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-border/60 bg-background/40 px-1 py-px text-muted-foreground"
+          >
+            <SourceIcon className="size-2.5 text-foreground" />
+            <ArrowRightIcon className="size-2 opacity-60" />
+          </span>
+        }
+      />
+      <TooltipPopup side="top">
+        Handoff from {PROVIDER_DISPLAY_NAMES[handoff.sourceProvider]}
+      </TooltipPopup>
+    </Tooltip>
+  );
 }
 
 interface SidebarThreadRowProps {
@@ -593,6 +622,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             </Tooltip>
           )}
           {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          {thread.handoff && <ThreadHandoffBadge handoff={thread.handoff} />}
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}

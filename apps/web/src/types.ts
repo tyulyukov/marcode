@@ -2,12 +2,14 @@ import type {
   EnvironmentId,
   ModelSelection,
   OrchestrationLatestTurn,
+  OrchestrationMessageSource,
   OrchestrationProposedPlanId,
   RepositoryIdentity,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
   ProjectScript as ContractProjectScript,
   JiraBoardReference,
+  ThreadHandoff,
   ThreadId,
   ProjectId,
   TurnId,
@@ -49,6 +51,7 @@ export interface ChatMessage {
   text: string;
   attachments?: ChatAttachment[];
   turnId?: TurnId | null;
+  source: OrchestrationMessageSource;
   createdAt: string;
   completedAt?: string | undefined;
   streaming: boolean;
@@ -114,6 +117,11 @@ export interface Thread {
   pendingSourceProposedPlan?: OrchestrationLatestTurn["sourceProposedPlan"];
   branch: string | null;
   worktreePath: string | null;
+  associatedWorktreePath: string | null;
+  associatedWorktreeBranch: string | null;
+  associatedWorktreeRef: string | null;
+  createBranchFlowCompleted: boolean;
+  handoff: ThreadHandoff | null;
   additionalDirectories: string[];
   /**
    * Jira ticket keys the user is actively implementing in this thread, as
@@ -140,6 +148,7 @@ export interface ThreadShell {
   updatedAt?: string | undefined;
   branch: string | null;
   worktreePath: string | null;
+  handoff: ThreadHandoff | null;
   additionalDirectories: string[];
   implementingJiraTicketKeys: string[];
 }
@@ -166,6 +175,7 @@ export interface SidebarThreadSummary {
   hasPendingApprovals: boolean;
   hasPendingUserInput: boolean;
   hasActionableProposedPlan: boolean;
+  handoff: ThreadHandoff | null;
 }
 
 export interface ThreadSession {

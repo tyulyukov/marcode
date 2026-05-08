@@ -55,6 +55,12 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
+import {
+  canCreateThreadHandoff,
+  resolveAvailableHandoffTargetProviders,
+  resolveThreadHandoffBadgeLabel,
+} from "../lib/threadHandoff";
+import { useThreadHandoff } from "../hooks/useThreadHandoff";
 import { usePrimaryEnvironmentId } from "../environments/primary";
 import { readEnvironmentApi } from "../environmentApi";
 import { getServerHttpOrigin, isElectron } from "../env";
@@ -824,6 +830,7 @@ export default function ChatView({
   );
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
+  const { createThreadHandoff } = useThreadHandoff();
   const queryClient = useQueryClient();
   const rawSearch = useSearch({
     strict: false,
@@ -1569,6 +1576,26 @@ export default function ChatView({
     hasInFlightTurn ||
     isSessionStarting ||
     hasPendingAssistantResponse;
+  const handoffActionTargetProviders = useMemo(
+    () =>
+      activeThread
+        ? resolveAvailableHandoffTargetProviders(activeThread.modelSelection.provider)
+        : [],
+    [activeThread],
+  );
+  const handoffDisabled = !(
+    activeThread &&
+    canCreateThreadHandoff({
+      thread: activeThread,
+      isBusy: isWorking,
+      hasPendingApprovals: pendingApprovals.length > 0,
+      hasPendingUserInput: pendingUserInputs.length > 0,
+    })
+  );
+  const handoffBadgeLabel = activeThread ? resolveThreadHandoffBadgeLabel(activeThread) : null;
+  const handoffBadgeSourceProvider = activeThread?.handoff?.sourceProvider ?? null;
+  const handoffBadgeTargetProvider =
+    activeThread?.handoff != null ? activeThread.modelSelection.provider : null;
   const isCompacting = activeThread?.session?.compacting === true;
   const isThreadHydrating = false;
   const activeWorkStartedAt =
@@ -3496,6 +3523,7 @@ export default function ChatView({
           ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
           createdAt: messageCreatedAt,
           streaming: false,
+          source: "native",
         },
       ]);
       isAtEndRef.current = true;
@@ -3830,6 +3858,22 @@ export default function ChatView({
     });
   };
 
+  const onCreateHandoff = useCallback(
+    async (target: ProviderKind) => {
+      if (!activeThread) return;
+      try {
+        await createThreadHandoff(activeThread, target);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not create handoff",
+          description: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    },
+    [activeThread, createThreadHandoff],
+  );
+
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
       const api = readNativeApi();
@@ -4029,6 +4073,7 @@ export default function ChatView({
           text: outgoingMessageText,
           createdAt: messageCreatedAt,
           streaming: false,
+          source: "native",
         },
       ]);
       isAtEndRef.current = true;
@@ -4919,6 +4964,12 @@ export default function ChatView({
           hasPlan={Boolean(activePlan || sidebarProposedPlan)}
           planSidebarOpen={effectivePlanSidebarOpen}
           planSidebarLabel={planSidebarLabel}
+          handoffActionTargetProviders={handoffActionTargetProviders}
+          handoffDisabled={handoffDisabled}
+          onCreateHandoff={onCreateHandoff}
+          handoffBadgeLabel={handoffBadgeLabel}
+          handoffBadgeSourceProvider={handoffBadgeSourceProvider}
+          handoffBadgeTargetProvider={handoffBadgeTargetProvider}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}

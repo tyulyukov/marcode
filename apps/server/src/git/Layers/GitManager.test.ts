@@ -3167,4 +3167,142 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       ]);
     }),
   );
+
+  it.effect("handoffThread moves a thread from local to a new named worktree", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("marcode-git-manager-handoff-");
+      yield* initRepo(repoDir);
+      const { manager } = yield* makeManager();
+
+      const result = yield* manager.handoffThread({
+        cwd: repoDir,
+        targetMode: "worktree",
+        currentBranch: "main",
+        worktreePath: null,
+        associatedWorktreePath: null,
+        associatedWorktreeBranch: null,
+        associatedWorktreeRef: null,
+        preferredLocalBranch: null,
+        preferredWorktreeBaseBranch: "main",
+        preferredNewWorktreeName: "feature/handoff-new",
+      });
+
+      expect(result.targetMode).toBe("worktree");
+      expect(result.worktreePath).not.toBeNull();
+      expect(result.branch).toBe("feature/handoff-new");
+      expect(result.changesTransferred).toBe(false);
+      expect(result.conflictsDetected).toBe(false);
+      expect(fs.existsSync(result.worktreePath as string)).toBe(true);
+      const worktreeBranch = (yield* runGit(result.worktreePath as string, [
+        "branch",
+        "--show-current",
+      ])).stdout.trim();
+      expect(worktreeBranch).toBe("feature/handoff-new");
+    }),
+  );
+
+  it.effect("handoffThread carries uncommitted changes from local into the new worktree", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("marcode-git-manager-handoff-changes-");
+      yield* initRepo(repoDir);
+      fs.writeFileSync(path.join(repoDir, "carry.txt"), "carry-me\n");
+      const { manager } = yield* makeManager();
+
+      const result = yield* manager.handoffThread({
+        cwd: repoDir,
+        targetMode: "worktree",
+        currentBranch: "main",
+        worktreePath: null,
+        associatedWorktreePath: null,
+        associatedWorktreeBranch: null,
+        associatedWorktreeRef: null,
+        preferredLocalBranch: null,
+        preferredWorktreeBaseBranch: "main",
+        preferredNewWorktreeName: "feature/handoff-changes",
+      });
+
+      expect(result.changesTransferred).toBe(true);
+      expect(result.conflictsDetected).toBe(false);
+      const carriedPath = path.join(result.worktreePath as string, "carry.txt");
+      expect(fs.existsSync(carriedPath)).toBe(true);
+      expect(fs.readFileSync(carriedPath, "utf-8")).toBe("carry-me\n");
+      expect(fs.existsSync(path.join(repoDir, "carry.txt"))).toBe(false);
+    }),
+  );
+
+  it.effect("handoffThread errors when handing off to local without a materialized worktree", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("marcode-git-manager-handoff-no-worktree-");
+      yield* initRepo(repoDir);
+      const { manager } = yield* makeManager();
+
+      const errorMessage = yield* manager
+        .handoffThread({
+          cwd: repoDir,
+          targetMode: "local",
+          currentBranch: "main",
+          worktreePath: null,
+          associatedWorktreePath: null,
+          associatedWorktreeBranch: null,
+          associatedWorktreeRef: null,
+          preferredLocalBranch: null,
+          preferredWorktreeBaseBranch: null,
+          preferredNewWorktreeName: null,
+        })
+        .pipe(
+          Effect.flip,
+          Effect.map((error) => error.message),
+        );
+
+      expect(errorMessage).toContain("does not have a materialized worktree");
+    }),
+  );
+
+  it.effect("handoffThread moves a worktree thread back to local with carried changes", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("marcode-git-manager-handoff-local-");
+      yield* initRepo(repoDir);
+      const { manager } = yield* makeManager();
+
+      const created = yield* manager.handoffThread({
+        cwd: repoDir,
+        targetMode: "worktree",
+        currentBranch: "main",
+        worktreePath: null,
+        associatedWorktreePath: null,
+        associatedWorktreeBranch: null,
+        associatedWorktreeRef: null,
+        preferredLocalBranch: null,
+        preferredWorktreeBaseBranch: "main",
+        preferredNewWorktreeName: "feature/handoff-local",
+      });
+
+      const worktreePath = created.worktreePath as string;
+      fs.writeFileSync(path.join(worktreePath, "carry-back.txt"), "carry-back\n");
+
+      const result = yield* manager.handoffThread({
+        cwd: repoDir,
+        targetMode: "local",
+        currentBranch: "feature/handoff-local",
+        worktreePath,
+        associatedWorktreePath: worktreePath,
+        associatedWorktreeBranch: "feature/handoff-local",
+        associatedWorktreeRef: null,
+        preferredLocalBranch: null,
+        preferredWorktreeBaseBranch: null,
+        preferredNewWorktreeName: null,
+      });
+
+      expect(result.targetMode).toBe("local");
+      expect(result.worktreePath).toBeNull();
+      expect(result.changesTransferred).toBe(true);
+      expect(result.conflictsDetected).toBe(false);
+      expect(fs.existsSync(worktreePath)).toBe(false);
+      const carriedPath = path.join(repoDir, "carry-back.txt");
+      expect(fs.existsSync(carriedPath)).toBe(true);
+      expect(fs.readFileSync(carriedPath, "utf-8")).toBe("carry-back\n");
+      const branch = (yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim();
+      expect(branch).toBe("feature/handoff-local");
+    }),
+  );
 });

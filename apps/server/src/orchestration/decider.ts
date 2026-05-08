@@ -15,6 +15,7 @@ import {
   requireThreadAbsent,
   requireThreadNotArchived,
 } from "./commandInvariants.ts";
+import { hasNativeHandoffMessages } from "./handoff.ts";
 import { projectEvent } from "./projector.ts";
 
 const nowIso = () => new Date().toISOString();
@@ -228,10 +229,107 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          associatedWorktreePath: command.worktreePath,
+          associatedWorktreeBranch: command.branch,
+          associatedWorktreeRef: command.branch,
+          createBranchFlowCompleted: false,
+          handoff: null,
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
       };
+    }
+
+    case "thread.handoff.create": {
+      yield* requireProject({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      yield* requireThreadAbsent({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const sourceThread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.sourceThreadId,
+      });
+      if (sourceThread.projectId !== command.projectId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Source thread '${command.sourceThreadId}' belongs to a different project.`,
+        });
+      }
+      if (sourceThread.handoff !== null && !hasNativeHandoffMessages(sourceThread)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Source thread '${command.sourceThreadId}' must contain at least one native message after handoff before it can be handed off again.`,
+        });
+      }
+
+      const associatedWorktreePath = command.associatedWorktreePath ?? command.worktreePath ?? null;
+      const associatedWorktreeBranch = command.associatedWorktreeBranch ?? command.branch ?? null;
+      const associatedWorktreeRef =
+        command.associatedWorktreeRef ?? command.associatedWorktreeBranch ?? command.branch ?? null;
+
+      const createdEvent: PlannedOrchestrationEvent = {
+        ...withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        }),
+        type: "thread.created",
+        payload: {
+          threadId: command.threadId,
+          projectId: command.projectId,
+          title: command.title,
+          modelSelection: command.modelSelection,
+          runtimeMode: command.runtimeMode,
+          interactionMode: command.interactionMode,
+          branch: command.branch,
+          worktreePath: command.worktreePath,
+          associatedWorktreePath,
+          associatedWorktreeBranch,
+          associatedWorktreeRef,
+          createBranchFlowCompleted: command.createBranchFlowCompleted ?? false,
+          handoff: {
+            sourceThreadId: command.sourceThreadId,
+            sourceProvider: sourceThread.modelSelection.provider,
+            importedAt: command.createdAt,
+            bootstrapStatus: "pending",
+          },
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+
+      const importedMessageEvents: ReadonlyArray<PlannedOrchestrationEvent> =
+        command.importedMessages.map((message) => ({
+          ...withEventBase({
+            aggregateKind: "thread",
+            aggregateId: command.threadId,
+            occurredAt: command.createdAt,
+            commandId: command.commandId,
+          }),
+          type: "thread.message-sent",
+          payload: {
+            threadId: command.threadId,
+            messageId: message.messageId,
+            role: message.role,
+            text: message.text,
+            ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+            turnId: null,
+            streaming: false,
+            source: "handoff-import" as const,
+            createdAt: message.createdAt,
+            updatedAt: message.updatedAt,
+          },
+        }));
+
+      return [createdEvent, ...importedMessageEvents];
     }
 
     case "thread.delete": {
@@ -330,6 +428,19 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.implementingJiraTicketKeys !== undefined
             ? { implementingJiraTicketKeys: command.implementingJiraTicketKeys }
             : {}),
+          ...(command.associatedWorktreePath !== undefined
+            ? { associatedWorktreePath: command.associatedWorktreePath }
+            : {}),
+          ...(command.associatedWorktreeBranch !== undefined
+            ? { associatedWorktreeBranch: command.associatedWorktreeBranch }
+            : {}),
+          ...(command.associatedWorktreeRef !== undefined
+            ? { associatedWorktreeRef: command.associatedWorktreeRef }
+            : {}),
+          ...(command.createBranchFlowCompleted !== undefined
+            ? { createBranchFlowCompleted: command.createBranchFlowCompleted }
+            : {}),
+          ...(command.handoff !== undefined ? { handoff: command.handoff } : {}),
           updatedAt: occurredAt,
         },
       };

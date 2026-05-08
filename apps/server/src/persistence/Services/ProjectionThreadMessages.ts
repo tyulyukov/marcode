@@ -10,11 +10,12 @@ import {
   ChatAttachment,
   MessageId,
   OrchestrationMessageRole,
+  OrchestrationMessageSource,
   ThreadId,
   TurnId,
   IsoDateTime,
 } from "@marcode/contracts";
-import { Schema, Context } from "effect";
+import { Effect as EffectModule, Schema, Context } from "effect";
 import type { Option } from "effect";
 import type { Effect } from "effect";
 
@@ -28,6 +29,9 @@ export const ProjectionThreadMessage = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   isStreaming: Schema.Boolean,
+  source: OrchestrationMessageSource.pipe(
+    Schema.withDecodingDefault(EffectModule.succeed("native")),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
