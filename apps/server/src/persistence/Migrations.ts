@@ -43,6 +43,7 @@ import Migration0028 from "./Migrations/028_BackfillProjectionThreadShellSummary
 import Migration0029 from "./Migrations/029_CleanupInvalidProjectionPendingApprovals.ts";
 import Migration0030 from "./Migrations/030_CanonicalizeModelSelectionOptions.ts";
 import Migration0031 from "./Migrations/031_ProjectionThreadsImplementingJiraTicketKeys.ts";
+import Migration0032 from "./Migrations/032_ProjectionThreadsHandoffMetadata.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -85,6 +86,7 @@ export const migrationEntries = [
   [29, "CleanupInvalidProjectionPendingApprovals", Migration0029],
   [30, "CanonicalizeModelSelectionOptions", Migration0030],
   [31, "ProjectionThreadsImplementingJiraTicketKeys", Migration0031],
+  [32, "ProjectionThreadsHandoffMetadata", Migration0032],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

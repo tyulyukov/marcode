@@ -36,6 +36,7 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       init: rpcClient.git.init,
       resolvePullRequest: rpcClient.git.resolvePullRequest,
       preparePullRequestThread: rpcClient.git.preparePullRequestThread,
+      handoffThread: rpcClient.git.handoffThread,
       workingTreeDiff: rpcClient.git.workingTreeDiff,
     },
     orchestration: {

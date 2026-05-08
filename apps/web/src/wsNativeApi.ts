@@ -93,6 +93,7 @@ export function createWsNativeApi(): MarCodeNativeApi {
       init: rpcClient.git.init,
       resolvePullRequest: rpcClient.git.resolvePullRequest,
       preparePullRequestThread: rpcClient.git.preparePullRequestThread,
+      handoffThread: rpcClient.git.handoffThread,
       workingTreeDiff: rpcClient.git.workingTreeDiff,
     },
     contextMenu: {

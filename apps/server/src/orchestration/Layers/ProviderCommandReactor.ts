@@ -2,8 +2,10 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  MessageId,
   type ModelSelection,
   type OrchestrationEvent,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderKind,
   type OrchestrationSession,
   ThreadId,
@@ -36,6 +38,11 @@ import {
   type ProviderCommandReactorShape,
 } from "../Services/ProviderCommandReactor.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import {
+  buildHandoffBootstrapText,
+  HANDOFF_CONTEXT_WRAPPER_OVERHEAD,
+  hasNativeAssistantMessagesBefore,
+} from "../handoff.ts";
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -440,6 +447,7 @@ const make = Effect.gen(function* () {
 
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
+    readonly messageId?: MessageId;
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
@@ -461,7 +469,37 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+
+    // Handoff bootstrap injection: on the first user turn after `thread.handoff.create`,
+    // wrap the user's input in a `<handoff_context>` block so the receiving provider
+    // sees the imported conversation. We only inject once per thread (gated by both
+    // `bootstrapStatus === "pending"` and the absence of any prior native assistant
+    // turn).
+    let bootstrapInjected = false;
+    let effectiveMessageText = input.messageText;
+    if (
+      thread.handoff !== null &&
+      thread.handoff.bootstrapStatus === "pending" &&
+      input.messageId !== undefined &&
+      !hasNativeAssistantMessagesBefore(thread, input.messageId)
+    ) {
+      const availableBootstrapChars = Math.max(
+        0,
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+          input.messageText.length -
+          HANDOFF_CONTEXT_WRAPPER_OVERHEAD,
+      );
+      const bootstrapText =
+        availableBootstrapChars > 0
+          ? buildHandoffBootstrapText(thread, availableBootstrapChars)
+          : null;
+      if (bootstrapText !== null) {
+        effectiveMessageText = `<handoff_context>\n${bootstrapText}\n</handoff_context>\n\n<latest_user_message>\n${input.messageText}\n</latest_user_message>`;
+        bootstrapInjected = true;
+      }
+    }
+
+    const normalizedInput = toNonEmptyProviderInput(effectiveMessageText);
     const normalizedAttachments = input.attachments ?? [];
 
     if (!normalizedInput && normalizedAttachments.length === 0) {
@@ -495,6 +533,10 @@ const make = Effect.gen(function* () {
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+      // Internal marker, stripped before reaching the provider; the reactor
+      // reads it after a successful sendTurn to flip `bootstrapStatus` to
+      // `"completed"`.
+      handoffBootstrapInjected: bootstrapInjected,
     };
   });
 
@@ -781,6 +823,7 @@ const make = Effect.gen(function* () {
 
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
+      messageId: event.payload.messageId,
       messageText: message.text,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
@@ -797,9 +840,36 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    yield* providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.catchCause(recoverTurnStartFailure), Effect.forkScoped);
+    const { handoffBootstrapInjected, ...providerSendTurnRequest } = sendTurnRequest.value;
+
+    yield* providerService.sendTurn(providerSendTurnRequest).pipe(
+      Effect.tap(() => {
+        if (!handoffBootstrapInjected || thread.handoff === null) {
+          return Effect.void;
+        }
+        return orchestrationEngine
+          .dispatch({
+            type: "thread.meta.update",
+            commandId: serverCommandId("handoff-bootstrap-complete"),
+            threadId: event.payload.threadId,
+            handoff: { ...thread.handoff, bootstrapStatus: "completed" },
+          })
+          .pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                "provider command reactor failed to mark handoff bootstrap complete",
+                {
+                  threadId: event.payload.threadId,
+                  cause: Cause.pretty(cause),
+                },
+              ),
+            ),
+            Effect.asVoid,
+          );
+      }),
+      Effect.catchCause(recoverTurnStartFailure),
+      Effect.forkScoped,
+    );
   });
 
   const processTurnInterruptRequested = Effect.fn("processTurnInterruptRequested")(function* (

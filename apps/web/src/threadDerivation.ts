@@ -137,6 +137,10 @@ export function getThreadFromEnvironmentState(
     proposedPlans,
     turnDiffSummaries,
     additionalDirectories: shell.additionalDirectories,
+    associatedWorktreePath: null,
+    associatedWorktreeBranch: null,
+    associatedWorktreeRef: null,
+    createBranchFlowCompleted: false,
   };
 
   threadCache.set(shell, {

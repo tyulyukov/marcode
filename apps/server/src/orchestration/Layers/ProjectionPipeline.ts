@@ -593,6 +593,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            associatedWorktreePath: event.payload.associatedWorktreePath,
+            associatedWorktreeBranch: event.payload.associatedWorktreeBranch,
+            associatedWorktreeRef: event.payload.associatedWorktreeRef,
+            createBranchFlowCompleted: event.payload.createBranchFlowCompleted,
+            handoff: event.payload.handoff,
             additionalDirectories: [],
             implementingJiraTicketKeys: [],
             latestTurnId: null,
@@ -818,6 +823,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             text: nextText,
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             isStreaming: event.payload.streaming,
+            // Preserve original source if a row already exists; otherwise use
+            // the source from the event (defaulting to "native" via schema).
+            source: previousMessage?.source ?? event.payload.source,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
           });

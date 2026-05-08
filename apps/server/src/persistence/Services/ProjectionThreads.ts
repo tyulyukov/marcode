@@ -13,10 +13,11 @@ import {
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
+  ThreadHandoff,
   ThreadId,
   TurnId,
 } from "@marcode/contracts";
-import { Option, Schema, Context } from "effect";
+import { Effect as EffectModule, Option, Schema, Context } from "effect";
 import type { Effect } from "effect";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
@@ -30,6 +31,21 @@ export const ProjectionThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
+  associatedWorktreePath: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(EffectModule.succeed(null)),
+  ),
+  associatedWorktreeBranch: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(EffectModule.succeed(null)),
+  ),
+  associatedWorktreeRef: Schema.NullOr(Schema.String).pipe(
+    Schema.withDecodingDefault(EffectModule.succeed(null)),
+  ),
+  createBranchFlowCompleted: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(EffectModule.succeed(false)),
+  ),
+  handoff: Schema.NullOr(ThreadHandoff).pipe(
+    Schema.withDecodingDefault(EffectModule.succeed(null)),
+  ),
   additionalDirectories: Schema.Array(Schema.String),
   implementingJiraTicketKeys: Schema.Array(Schema.String),
   latestTurnId: Schema.NullOr(TurnId),

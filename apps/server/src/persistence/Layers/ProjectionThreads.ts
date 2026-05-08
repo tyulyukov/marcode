@@ -1,6 +1,6 @@
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
-import { Effect, Layer, Schema, Struct } from "effect";
+import { Effect, Layer, Option, Schema, Struct } from "effect";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -11,16 +11,25 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection } from "@marcode/contracts";
+import { ModelSelection, ThreadHandoff } from "@marcode/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
     additionalDirectories: Schema.fromJsonString(Schema.Array(Schema.String)),
     implementingJiraTicketKeys: Schema.fromJsonString(Schema.Array(Schema.String)),
+    handoff: Schema.NullOr(Schema.fromJsonString(ThreadHandoff)),
+    createBranchFlowCompleted: Schema.Number,
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
+
+function toProjectionThread(row: ProjectionThreadDbRow): ProjectionThread {
+  return {
+    ...row,
+    createBranchFlowCompleted: row.createBranchFlowCompleted === 1,
+  };
+}
 
 const makeProjectionThreadRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -38,6 +47,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode,
           branch,
           worktree_path,
+          associated_worktree_path,
+          associated_worktree_branch,
+          associated_worktree_ref,
+          create_branch_flow_completed,
+          handoff_json,
           additional_directories_json,
           implementing_jira_ticket_keys_json,
           latest_turn_id,
@@ -59,6 +73,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.interactionMode},
           ${row.branch},
           ${row.worktreePath},
+          ${row.associatedWorktreePath},
+          ${row.associatedWorktreeBranch},
+          ${row.associatedWorktreeRef},
+          ${row.createBranchFlowCompleted ? 1 : 0},
+          ${row.handoff !== null ? JSON.stringify(row.handoff) : null},
           ${JSON.stringify(row.additionalDirectories)},
           ${JSON.stringify(row.implementingJiraTicketKeys)},
           ${row.latestTurnId},
@@ -80,6 +99,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode = excluded.interaction_mode,
           branch = excluded.branch,
           worktree_path = excluded.worktree_path,
+          associated_worktree_path = excluded.associated_worktree_path,
+          associated_worktree_branch = excluded.associated_worktree_branch,
+          associated_worktree_ref = excluded.associated_worktree_ref,
+          create_branch_flow_completed = excluded.create_branch_flow_completed,
+          handoff_json = excluded.handoff_json,
           additional_directories_json = excluded.additional_directories_json,
           implementing_jira_ticket_keys_json = excluded.implementing_jira_ticket_keys_json,
           latest_turn_id = excluded.latest_turn_id,
@@ -108,6 +132,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          associated_worktree_path AS "associatedWorktreePath",
+          associated_worktree_branch AS "associatedWorktreeBranch",
+          associated_worktree_ref AS "associatedWorktreeRef",
+          create_branch_flow_completed AS "createBranchFlowCompleted",
+          handoff_json AS "handoff",
           additional_directories_json AS "additionalDirectories",
           implementing_jira_ticket_keys_json AS "implementingJiraTicketKeys",
           latest_turn_id AS "latestTurnId",
@@ -138,6 +167,11 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          associated_worktree_path AS "associatedWorktreePath",
+          associated_worktree_branch AS "associatedWorktreeBranch",
+          associated_worktree_ref AS "associatedWorktreeRef",
+          create_branch_flow_completed AS "createBranchFlowCompleted",
+          handoff_json AS "handoff",
           additional_directories_json AS "additionalDirectories",
           implementing_jira_ticket_keys_json AS "implementingJiraTicketKeys",
           latest_turn_id AS "latestTurnId",
@@ -172,11 +206,13 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
   const getById: ProjectionThreadRepositoryShape["getById"] = (input) =>
     getProjectionThreadRow(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.getById:query")),
+      Effect.map(Option.map(toProjectionThread)),
     );
 
   const listByProjectId: ProjectionThreadRepositoryShape["listByProjectId"] = (input) =>
     listProjectionThreadRows(input).pipe(
       Effect.mapError(toPersistenceSqlError("ProjectionThreadRepository.listByProjectId:query")),
+      Effect.map((rows) => rows.map(toProjectionThread)),
     );
 
   const deleteById: ProjectionThreadRepositoryShape["deleteById"] = (input) =>

@@ -142,6 +142,7 @@ function mapMessage(environmentId: EnvironmentId, message: OrchestrationMessage)
     role: message.role,
     text: message.text,
     turnId: message.turnId,
+    source: message.source,
     createdAt: message.createdAt,
     streaming: message.streaming,
     ...(message.streaming ? {} : { completedAt: message.updatedAt }),
@@ -216,6 +217,11 @@ function mapThread(thread: OrchestrationThread, environmentId: EnvironmentId): T
     pendingSourceProposedPlan: thread.latestTurn?.sourceProposedPlan,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    associatedWorktreePath: thread.associatedWorktreePath,
+    associatedWorktreeBranch: thread.associatedWorktreeBranch,
+    associatedWorktreeRef: thread.associatedWorktreeRef,
+    createBranchFlowCompleted: thread.createBranchFlowCompleted,
+    handoff: thread.handoff,
     additionalDirectories: [...(thread.additionalDirectories ?? [])],
     implementingJiraTicketKeys: [...(thread.implementingJiraTicketKeys ?? [])],
     turnDiffSummaries: thread.checkpoints.map(mapTurnDiffSummary),
@@ -247,6 +253,7 @@ function mapThreadShell(
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    handoff: thread.handoff,
     additionalDirectories: [...(thread.additionalDirectories ?? [])],
     implementingJiraTicketKeys: [...(thread.implementingJiraTicketKeys ?? [])],
   };
@@ -272,6 +279,7 @@ function mapThreadShell(
     hasPendingApprovals: thread.hasPendingApprovals,
     hasPendingUserInput: thread.hasPendingUserInput,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
+    handoff: thread.handoff,
   };
   return { shell, session, turnState, summary };
 }
@@ -292,6 +300,7 @@ function toThreadShell(thread: Thread): ThreadShell {
     updatedAt: thread.updatedAt,
     branch: thread.branch,
     worktreePath: thread.worktreePath,
+    handoff: thread.handoff,
     additionalDirectories: thread.additionalDirectories,
     implementingJiraTicketKeys: thread.implementingJiraTicketKeys,
   };
@@ -326,7 +335,8 @@ function sidebarThreadSummariesEqual(
     left.latestUserMessageAt === right.latestUserMessageAt &&
     left.hasPendingApprovals === right.hasPendingApprovals &&
     left.hasPendingUserInput === right.hasPendingUserInput &&
-    left.hasActionableProposedPlan === right.hasActionableProposedPlan
+    left.hasActionableProposedPlan === right.hasActionableProposedPlan &&
+    left.handoff === right.handoff
   );
 }
 
@@ -1440,6 +1450,11 @@ function applyEnvironmentOrchestrationEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          associatedWorktreePath: event.payload.associatedWorktreePath,
+          associatedWorktreeBranch: event.payload.associatedWorktreeBranch,
+          associatedWorktreeRef: event.payload.associatedWorktreeRef,
+          createBranchFlowCompleted: event.payload.createBranchFlowCompleted,
+          handoff: event.payload.handoff,
           additionalDirectories: [],
           implementingJiraTicketKeys: [],
           latestTurn: null,
@@ -1486,6 +1501,19 @@ function applyEnvironmentOrchestrationEvent(
         ...(event.payload.worktreePath !== undefined
           ? { worktreePath: event.payload.worktreePath }
           : {}),
+        ...(event.payload.associatedWorktreePath !== undefined
+          ? { associatedWorktreePath: event.payload.associatedWorktreePath }
+          : {}),
+        ...(event.payload.associatedWorktreeBranch !== undefined
+          ? { associatedWorktreeBranch: event.payload.associatedWorktreeBranch }
+          : {}),
+        ...(event.payload.associatedWorktreeRef !== undefined
+          ? { associatedWorktreeRef: event.payload.associatedWorktreeRef }
+          : {}),
+        ...(event.payload.createBranchFlowCompleted !== undefined
+          ? { createBranchFlowCompleted: event.payload.createBranchFlowCompleted }
+          : {}),
+        ...(event.payload.handoff !== undefined ? { handoff: event.payload.handoff } : {}),
         ...(event.payload.additionalDirectories !== undefined
           ? { additionalDirectories: [...event.payload.additionalDirectories] }
           : {}),
@@ -1557,6 +1585,7 @@ function applyEnvironmentOrchestrationEvent(
             : {}),
           turnId: event.payload.turnId,
           streaming: event.payload.streaming,
+          source: event.payload.source ?? "native",
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
         });

@@ -100,6 +100,7 @@ export interface WsRpcClient {
     readonly preparePullRequestThread: RpcUnaryMethod<
       typeof WS_METHODS.gitPreparePullRequestThread
     >;
+    readonly handoffThread: RpcUnaryMethod<typeof WS_METHODS.gitHandoffThread>;
     readonly workingTreeDiff: RpcUnaryMethod<typeof WS_METHODS.gitWorkingTreeDiff>;
   };
   readonly server: {
@@ -225,6 +226,8 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[WS_METHODS.gitResolvePullRequest](input)),
       preparePullRequestThread: (input) =>
         transport.request((client) => client[WS_METHODS.gitPreparePullRequestThread](input)),
+      handoffThread: (input) =>
+        transport.request((client) => client[WS_METHODS.gitHandoffThread](input)),
       workingTreeDiff: (input) =>
         transport.request((client) => client[WS_METHODS.gitWorkingTreeDiff](input)),
     },
