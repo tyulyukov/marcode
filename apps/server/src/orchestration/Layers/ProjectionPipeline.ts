@@ -483,6 +483,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             projectId: event.payload.projectId,
             title: event.payload.title,
             workspaceRoot: event.payload.workspaceRoot,
+            kind: event.payload.kind,
             defaultModelSelection: event.payload.defaultModelSelection,
             scripts: event.payload.scripts,
             jiraBoard: event.payload.jiraBoard,
@@ -505,6 +506,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.workspaceRoot !== undefined
               ? { workspaceRoot: event.payload.workspaceRoot }
               : {}),
+            ...(event.payload.kind !== undefined ? { kind: event.payload.kind } : {}),
             ...(event.payload.defaultModelSelection !== undefined
               ? { defaultModelSelection: event.payload.defaultModelSelection }
               : {}),

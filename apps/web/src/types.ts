@@ -3,6 +3,7 @@ import type {
   ModelSelection,
   OrchestrationLatestTurn,
   OrchestrationProposedPlanId,
+  ProjectKind,
   RepositoryIdentity,
   OrchestrationSessionStatus,
   OrchestrationThreadActivity,
@@ -86,6 +87,16 @@ export interface Project {
   environmentId: EnvironmentId;
   name: string;
   cwd: string;
+  /**
+   * 'project' = a regular workspace bound to a real directory the user picked.
+   * 'chat' = a scratchpad agent rooted under `~/.marcode/chats/<projectId>`,
+   * created automatically without forcing the user to pick a folder.
+   *
+   * Optional in the type so legacy fixtures and pre-`kind`-migration rows
+   * keep type-checking; runtime-built projects (via `mapProject`) always
+   * resolve this to a concrete value, defaulting to 'project'.
+   */
+  kind?: ProjectKind | undefined;
   repositoryIdentity?: RepositoryIdentity | null;
   defaultModelSelection: ModelSelection | null;
   createdAt?: string | undefined;

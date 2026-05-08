@@ -100,6 +100,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         projectId: command.projectId,
       });
 
+      const workspaceRoot = command.workspaceRoot;
+      // The Normalizer guarantees workspaceRoot is set before we reach the
+      // decider (chat-kind projects get an auto-generated scratch dir). This
+      // assertion catches schema/normalizer drift.
+      if (workspaceRoot === undefined) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `'workspaceRoot' must be normalized before the decider sees a project.create command.`,
+        });
+      }
+
       return {
         ...withEventBase({
           aggregateKind: "project",
@@ -111,7 +122,8 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           projectId: command.projectId,
           title: command.title,
-          workspaceRoot: command.workspaceRoot,
+          workspaceRoot,
+          kind: command.kind ?? "project",
           defaultModelSelection: command.defaultModelSelection ?? null,
           scripts: [],
           jiraBoard: null,
@@ -140,6 +152,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           projectId: command.projectId,
           ...(command.title !== undefined ? { title: command.title } : {}),
           ...(command.workspaceRoot !== undefined ? { workspaceRoot: command.workspaceRoot } : {}),
+          ...(command.kind !== undefined ? { kind: command.kind } : {}),
           ...(command.defaultModelSelection !== undefined
             ? { defaultModelSelection: command.defaultModelSelection }
             : {}),

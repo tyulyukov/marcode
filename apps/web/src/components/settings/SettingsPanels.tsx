@@ -2414,6 +2414,7 @@ export function ArchivedThreadsPanel() {
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
   const archivedGroups = useMemo(() => {
     return projects
+      .filter((project) => project.kind !== "chat")
       .map((project) => ({
         project,
         threads: threads
@@ -2425,6 +2426,20 @@ export function ArchivedThreadsPanel() {
           }),
       }))
       .filter((group) => group.threads.length > 0);
+  }, [projects, threads]);
+  const archivedChatThreads = useMemo(() => {
+    return projects
+      .filter((project) => project.kind === "chat")
+      .flatMap((project) =>
+        threads
+          .filter((thread) => thread.projectId === project.id && thread.archivedAt !== null)
+          .map((thread) => ({ project, thread })),
+      )
+      .toSorted((left, right) => {
+        const leftKey = left.thread.archivedAt ?? left.thread.createdAt;
+        const rightKey = right.thread.archivedAt ?? right.thread.createdAt;
+        return rightKey.localeCompare(leftKey) || right.thread.id.localeCompare(left.thread.id);
+      });
   }, [projects, threads]);
 
   const handleArchivedThreadContextMenu = useCallback(
@@ -2461,6 +2476,53 @@ export function ArchivedThreadsPanel() {
     [confirmAndDeleteThread, unarchiveThread],
   );
 
+  const renderArchivedThreadRow = useCallback(
+    (thread: (typeof threads)[number], projectName?: string) => (
+      <div
+        key={thread.id}
+        className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 first:border-t-0 sm:px-5"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          void handleArchivedThreadContextMenu(scopeThreadRef(thread.environmentId, thread.id), {
+            x: event.clientX,
+            y: event.clientY,
+          });
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-medium text-foreground">{thread.title}</h3>
+          <p className="text-xs text-muted-foreground">
+            {projectName ? `${projectName} · ` : null}
+            Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
+            {" \u00b7 Created "}
+            {formatRelativeTimeLabel(thread.createdAt)}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 shrink-0 cursor-pointer gap-1.5 px-2.5"
+          onClick={() =>
+            void unarchiveThread(scopeThreadRef(thread.environmentId, thread.id)).catch((error) => {
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Failed to unarchive thread",
+                  description: error instanceof Error ? error.message : "An error occurred.",
+                }),
+              );
+            })
+          }
+        >
+          <ArchiveX className="size-3.5" />
+          <span>Unarchive</span>
+        </Button>
+      </div>
+    ),
+    [handleArchivedThreadContextMenu, unarchiveThread],
+  );
+
   return (
     <SettingsPageContainer>
       {archivedGroups.length === 0 ? (
@@ -2471,7 +2533,7 @@ export function ArchivedThreadsPanel() {
             </EmptyMedia>
             <EmptyHeader>
               <EmptyTitle>No archived threads</EmptyTitle>
-              <EmptyDescription>Archived threads will appear here.</EmptyDescription>
+              <EmptyDescription>Archived project threads will appear here.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         </SettingsSection>
@@ -2488,57 +2550,27 @@ export function ArchivedThreadsPanel() {
               />
             }
           >
-            {projectThreads.map((thread) => (
-              <div
-                key={thread.id}
-                className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 first:border-t-0 sm:px-5"
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  void handleArchivedThreadContextMenu(
-                    scopeThreadRef(thread.environmentId, thread.id),
-                    {
-                      x: event.clientX,
-                      y: event.clientY,
-                    },
-                  );
-                }}
-              >
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-medium text-foreground">{thread.title}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
-                    {" \u00b7 Created "}
-                    {formatRelativeTimeLabel(thread.createdAt)}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 shrink-0 cursor-pointer gap-1.5 px-2.5"
-                  onClick={() =>
-                    void unarchiveThread(scopeThreadRef(thread.environmentId, thread.id)).catch(
-                      (error) => {
-                        toastManager.add(
-                          stackedThreadToast({
-                            type: "error",
-                            title: "Failed to unarchive thread",
-                            description:
-                              error instanceof Error ? error.message : "An error occurred.",
-                          }),
-                        );
-                      },
-                    )
-                  }
-                >
-                  <ArchiveX className="size-3.5" />
-                  <span>Unarchive</span>
-                </Button>
-              </div>
-            ))}
+            {projectThreads.map((thread) => renderArchivedThreadRow(thread))}
           </SettingsSection>
         ))
       )}
+      <SettingsSection title="Archived chats">
+        {archivedChatThreads.length === 0 ? (
+          <Empty className="min-h-56">
+            <EmptyMedia variant="icon">
+              <ArchiveIcon />
+            </EmptyMedia>
+            <EmptyHeader>
+              <EmptyTitle>No archived chats</EmptyTitle>
+              <EmptyDescription>Archived chats will appear here.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          archivedChatThreads.map(({ project, thread }) =>
+            renderArchivedThreadRow(thread, project.name),
+          )
+        )}
+      </SettingsSection>
     </SettingsPageContainer>
   );
 }

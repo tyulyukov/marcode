@@ -9,6 +9,7 @@ import {
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
+import { resolveChatScratchDir } from "../os-jank.ts";
 import { WorkspacePaths } from "../workspace/Services/WorkspacePaths.ts";
 
 export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
@@ -46,13 +47,34 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
         );
 
     if (command.type === "project.create") {
+      const isChat = command.kind === "chat";
+      const rawWorkspaceRoot =
+        typeof command.workspaceRoot === "string" ? command.workspaceRoot.trim() : "";
+      // Chat projects are scratchpad agents that don't need a real project dir.
+      // When the client doesn't supply a workspaceRoot (or sends empty), the
+      // server auto-allocates `<baseDir>/chats/<projectId>` and creates it.
+      const resolvedWorkspaceRoot =
+        isChat && rawWorkspaceRoot.length === 0
+          ? yield* resolveChatScratchDir(serverConfig.baseDir, command.projectId)
+          : rawWorkspaceRoot;
+
+      if (resolvedWorkspaceRoot.length === 0) {
+        return yield* new OrchestrationDispatchCommandError({
+          message: `'workspaceRoot' is required when creating a project (kind=${command.kind ?? "project"}).`,
+        });
+      }
+
+      // Chats always create-if-missing so the user never has to mkdir manually.
+      const createIfMissing = isChat ? true : command.createWorkspaceRootIfMissing;
+
       return {
         ...command,
+        kind: command.kind ?? "project",
         workspaceRoot: yield* normalizeProjectWorkspaceRootForCreate(
-          command.workspaceRoot,
-          command.createWorkspaceRootIfMissing,
+          resolvedWorkspaceRoot,
+          createIfMissing,
         ),
-        createWorkspaceRootIfMissing: command.createWorkspaceRootIfMissing === true,
+        createWorkspaceRootIfMissing: createIfMissing === true,
       } satisfies OrchestrationCommand;
     }
 

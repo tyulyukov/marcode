@@ -1,6 +1,7 @@
 import { Effect, Option, Schema, SchemaIssue, Struct } from "effect";
 import { ProviderOptionSelections } from "./model.ts";
 import { JiraBoardReference, JiraIssueKey } from "./jira.ts";
+import { ProjectKind } from "./project.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import {
   ApprovalRequestId,
@@ -176,6 +177,9 @@ export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  kind: Schema.optional(ProjectKind).pipe(
+    Schema.withDecodingDefault(Effect.succeed("project" as const)),
+  ),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
@@ -361,6 +365,9 @@ export const OrchestrationProjectShell = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  kind: Schema.optional(ProjectKind).pipe(
+    Schema.withDecodingDefault(Effect.succeed("project" as const)),
+  ),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
@@ -458,7 +465,13 @@ export const ProjectCreateCommand = Schema.Struct({
   commandId: CommandId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  /**
+   * Required for `kind: 'project'` (default). Optional for `kind: 'chat'` —
+   * when omitted/empty, the server resolves a per-chat scratch dir under
+   * `~/.marcode/chats/<projectId>` and creates it on disk.
+   */
+  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  kind: Schema.optional(ProjectKind),
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   jiraBoard: Schema.optional(Schema.NullOr(JiraBoardReference)),
@@ -471,6 +484,7 @@ const ProjectMetaUpdateCommand = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  kind: Schema.optional(ProjectKind),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   jiraBoard: Schema.optional(Schema.NullOr(JiraBoardReference)),
@@ -809,6 +823,9 @@ export const ProjectCreatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  kind: Schema.optional(ProjectKind).pipe(
+    Schema.withDecodingDefault(Effect.succeed("project" as const)),
+  ),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
@@ -823,6 +840,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  kind: Schema.optional(ProjectKind),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),

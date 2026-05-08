@@ -184,6 +184,7 @@ function mapProject(
     environmentId,
     name: project.title,
     cwd: project.workspaceRoot,
+    kind: project.kind ?? "project",
     repositoryIdentity: project.repositoryIdentity ?? null,
     defaultModelSelection: project.defaultModelSelection
       ? normalizeModelSelection(project.defaultModelSelection)
@@ -1334,6 +1335,7 @@ function applyEnvironmentOrchestrationEvent(
           id: event.payload.projectId,
           title: event.payload.title,
           workspaceRoot: event.payload.workspaceRoot,
+          kind: event.payload.kind ?? "project",
           repositoryIdentity: event.payload.repositoryIdentity ?? null,
           defaultModelSelection: event.payload.defaultModelSelection,
           scripts: event.payload.scripts,
@@ -1389,6 +1391,7 @@ function applyEnvironmentOrchestrationEvent(
         ...project,
         ...(event.payload.title !== undefined ? { name: event.payload.title } : {}),
         ...(event.payload.workspaceRoot !== undefined ? { cwd: event.payload.workspaceRoot } : {}),
+        ...(event.payload.kind !== undefined ? { kind: event.payload.kind } : {}),
         ...(event.payload.repositoryIdentity !== undefined
           ? { repositoryIdentity: event.payload.repositoryIdentity ?? null }
           : {}),
@@ -1952,6 +1955,16 @@ export function selectProjectsAcrossEnvironments(state: AppState): Project[] {
   return getEnvironmentEntries(state).flatMap(([, environmentState]) =>
     getProjects(environmentState),
   );
+}
+
+/** Chat-kind projects across all environments — used by the sidebar's "Chats" section. */
+export function selectChatsAcrossEnvironments(state: AppState): Project[] {
+  return selectProjectsAcrossEnvironments(state).filter((project) => project.kind === "chat");
+}
+
+/** Regular (non-chat) projects across all environments — used by the sidebar's "Projects" section. */
+export function selectRegularProjectsAcrossEnvironments(state: AppState): Project[] {
+  return selectProjectsAcrossEnvironments(state).filter((project) => project.kind !== "chat");
 }
 
 export function selectThreadsAcrossEnvironments(state: AppState): Thread[] {

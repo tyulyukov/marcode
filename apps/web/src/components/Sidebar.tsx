@@ -70,11 +70,13 @@ import {
   selectBootstrapCompleteForActiveEnvironment,
   selectProjectByRef,
   selectProjectsAcrossEnvironments,
+  selectRegularProjectsAcrossEnvironments,
   selectSidebarThreadsForProjectRefs,
   selectSidebarThreadsAcrossEnvironments,
   selectThreadByRef,
   useStore,
 } from "../store";
+import { SidebarChatsSection } from "./SidebarChatsSection";
 import { SidebarProjectsSkeleton } from "./Skeletons";
 import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
 import { useUiStateStore } from "../uiStateStore";
@@ -2792,7 +2794,10 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 });
 
 export default function Sidebar() {
-  const projects = useStore(useShallow(selectProjectsAcrossEnvironments));
+  // Chat-kind projects are rendered in their own SidebarChatsSection — pinned
+  // at the bottom of the sidebar with its own internal scroll. Here we only
+  // consider regular projects so the "Projects" section stays chat-free.
+  const projects = useStore(useShallow(selectRegularProjectsAcrossEnvironments));
   const sidebarThreads = useStore(useShallow(selectSidebarThreadsAcrossEnvironments));
   const bootstrapComplete = useStore(selectBootstrapCompleteForActiveEnvironment);
   const activeEnvironmentId = useStore((store) => store.activeEnvironmentId);
@@ -3473,6 +3478,7 @@ export default function Sidebar() {
             />
           )}
 
+          <SidebarChatsSection />
           <SidebarSeparator />
           <SidebarChromeFooter />
         </>

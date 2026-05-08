@@ -11,10 +11,10 @@ import {
   JiraBoardReference,
   ModelSelection,
   ProjectId,
+  ProjectKind,
   ProjectScript,
 } from "@marcode/contracts";
-import { Option, Schema, Context } from "effect";
-import type { Effect } from "effect";
+import { Effect, Option, Schema, Context } from "effect";
 
 import type { ProjectionRepositoryError } from "../Errors.ts";
 
@@ -22,6 +22,9 @@ export const ProjectionProject = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
   workspaceRoot: Schema.String,
+  kind: Schema.optional(ProjectKind).pipe(
+    Schema.withDecodingDefault(Effect.succeed("project" as const)),
+  ),
   defaultModelSelection: Schema.NullOr(ModelSelection),
   scripts: Schema.Array(ProjectScript),
   jiraBoard: Schema.NullOr(JiraBoardReference),

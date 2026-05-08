@@ -99,3 +99,15 @@ export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
   }
   return resolve(yield* expandHomePath(raw.trim()));
 });
+
+/**
+ * Per-chat scratch dir under the base dir (`~/.marcode/chats/<projectId>` by default).
+ *
+ * Used when a chat-kind project is created without an explicit workspaceRoot —
+ * the server auto-generates an isolated scratch workspace so the user doesn't
+ * have to pick a directory just to talk to the agent.
+ */
+export const resolveChatScratchDir = Effect.fn(function* (baseDir: string, projectId: string) {
+  const { join } = yield* Path.Path;
+  return join(baseDir, "chats", projectId);
+});

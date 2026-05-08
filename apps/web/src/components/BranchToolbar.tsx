@@ -1,5 +1,7 @@
 import { scopeProjectRef, scopeThreadRef } from "@marcode/client-runtime";
-import type { EnvironmentId, ThreadId } from "@marcode/contracts";
+import type { EnvironmentId, ProjectId, ThreadId } from "@marcode/contracts";
+import { useQuery } from "@tanstack/react-query";
+import { useDebouncedValue } from "@tanstack/react-pacer";
 import {
   ChevronDownIcon,
   CloudIcon,
@@ -7,11 +9,15 @@ import {
   FolderGitIcon,
   FolderIcon,
   MonitorIcon,
+  SearchIcon,
 } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
+import { ensureEnvironmentApi } from "../environmentApi";
 import { useIsMobile } from "../hooks/useMediaQuery";
+import { projectBrowseDirectoriesQueryOptions } from "../lib/projectReactQuery";
+import { cn, newCommandId } from "../lib/utils";
 import { useStore } from "../store";
 import { createProjectSelectorByRef, createThreadSelectorByRef } from "../storeSelectors";
 import {
@@ -26,6 +32,7 @@ import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import {
   Menu,
   MenuGroup,
@@ -36,7 +43,12 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "./ui/menu";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Separator } from "./ui/separator";
+import { stackedThreadToast, toastManager } from "./ui/toast";
+
+const CHAT_WORKSPACE_BROWSE_ROOT = "/";
+const CHAT_WORKSPACE_BROWSE_DEBOUNCE_MS = 200;
 
 interface BranchToolbarProps {
   environmentId: EnvironmentId;
@@ -52,6 +64,134 @@ interface BranchToolbarProps {
   availableEnvironments?: readonly EnvironmentOption[];
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
 }
+
+interface ChatWorkspaceSelectorProps {
+  environmentId: EnvironmentId;
+  projectId: ProjectId;
+  projectCwd: string;
+}
+
+function basenameOfPath(path: string): string {
+  const parts = path.split(/[\\/]/);
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index];
+    if (part) {
+      return part;
+    }
+  }
+  return path;
+}
+
+const ChatWorkspaceSelector = memo(function ChatWorkspaceSelector({
+  environmentId,
+  projectId,
+  projectCwd,
+}: ChatWorkspaceSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const [pathInput, setPathInput] = useState("");
+  const [debouncedQuery] = useDebouncedValue(pathInput, {
+    wait: CHAT_WORKSPACE_BROWSE_DEBOUNCE_MS,
+  });
+  const browseQuery = useQuery(
+    projectBrowseDirectoriesQueryOptions({
+      environmentId,
+      cwd: CHAT_WORKSPACE_BROWSE_ROOT,
+      pathQuery: debouncedQuery,
+      enabled: open,
+    }),
+  );
+
+  const submitWorkspaceRoot = useCallback(
+    async (workspaceRoot: string) => {
+      const trimmed = workspaceRoot.trim();
+      if (!trimmed) {
+        return;
+      }
+      try {
+        const api = ensureEnvironmentApi(environmentId);
+        await api.orchestration.dispatchCommand({
+          type: "project.meta.update",
+          commandId: newCommandId(),
+          projectId,
+          workspaceRoot: trimmed,
+        });
+        setOpen(false);
+        setPathInput("");
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to set chat directory",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    },
+    [environmentId, projectId],
+  );
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={<Button variant="ghost" size="xs" />}
+        className="max-w-56 justify-start font-medium"
+        aria-label="Chat directory"
+      >
+        <FolderIcon className="size-3 shrink-0" />
+        <span className="min-w-0 truncate">{basenameOfPath(projectCwd) || projectCwd}</span>
+        <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
+      </PopoverTrigger>
+      <PopoverPopup align="start" side="top" className="w-80 max-w-none p-0">
+        <div className="flex flex-col gap-2">
+          <div className="relative">
+            <SearchIcon className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <Input
+              autoFocus
+              value={pathInput}
+              onChange={(event) => setPathInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") {
+                  return;
+                }
+                event.preventDefault();
+                void submitWorkspaceRoot(pathInput);
+              }}
+              placeholder="/Users/you/some/folder"
+              className="pl-8"
+            />
+          </div>
+          <div className="flex max-h-56 flex-col gap-0.5 overflow-y-auto">
+            {browseQuery.data?.entries.length === 0 ? (
+              <span className="px-1 py-1 text-xs text-muted-foreground/50">
+                Type an absolute directory path.
+              </span>
+            ) : (
+              browseQuery.data?.entries.map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm",
+                    "hover:bg-accent/50",
+                  )}
+                  onClick={() => {
+                    setPathInput(entry.path);
+                    void submitWorkspaceRoot(entry.path);
+                  }}
+                >
+                  <FolderIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
+                  <span className="min-w-0 flex-1 truncate" title={entry.path}>
+                    {entry.path}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      </PopoverPopup>
+    </Popover>
+  );
+});
 
 interface MobileRunContextSelectorProps {
   envLocked: boolean;
@@ -223,6 +363,7 @@ export const BranchToolbar = memo(function BranchToolbar({
   const isMobile = useIsMobile();
 
   if (!hasActiveThread || !activeProject) return null;
+  const isDraftChat = activeProject.kind === "chat" && serverThread === undefined;
 
   return (
     <div className="mx-auto flex w-full max-w-208 items-center gap-2 px-2.5 pb-3 pt-1 sm:px-3">
@@ -251,12 +392,20 @@ export const BranchToolbar = memo(function BranchToolbar({
               <Separator orientation="vertical" className="mx-0.5 h-3.5!" />
             </>
           )}
-          <BranchToolbarEnvModeSelector
-            envLocked={envModeLocked}
-            effectiveEnvMode={effectiveEnvMode}
-            activeWorktreePath={activeWorktreePath}
-            onEnvModeChange={onEnvModeChange}
-          />
+          {isDraftChat ? (
+            <ChatWorkspaceSelector
+              environmentId={activeProject.environmentId}
+              projectId={activeProject.id}
+              projectCwd={activeProject.cwd}
+            />
+          ) : (
+            <BranchToolbarEnvModeSelector
+              envLocked={envModeLocked}
+              effectiveEnvMode={effectiveEnvMode}
+              activeWorktreePath={activeWorktreePath}
+              onEnvModeChange={onEnvModeChange}
+            />
+          )}
         </div>
       )}
 
